@@ -182,6 +182,19 @@ Primary UI state is `focusedWorld`, `selectedTable`, `transitionPhase`, and `mot
 
 <!-- END CACHE ANCHOR -->
 
+## 10.1 Current visual implementation slice — Swiss valley
+
+The first implemented visual proof is the confirmed Swiss-valley table hero rather than the complete lobby. It establishes the reusable rendering language before the other worlds are expanded.
+
+- Art direction: Cozy Stylized Low-poly Diorama / 治愈系低模立体世界.
+- Character direction: Stylized Miniature Adults / 轻卡通微缩成人, 4–4.5 heads tall, rounded forms, modern clothing, four occupied seats and one meaningful empty seat.
+- Hero topic: 为什么我们越来越不会休息？
+- Missing perspective: 还缺一个真正停下来过的人.
+- Composition: alpine lake and mountain depth at left/center, table gathering at lower-right, coral tree framing the upper-right, explorer vehicle entering from lower-left.
+- Rendering approach: a high-fidelity art plate is treated as a depth-aware WebGL world layer; Three.js owns pointer parallax, breathing camera, water glints, drifting petals, cloud haze, light motes and focus lighting. DOM owns exact typography and accessible controls.
+- Interaction: pointer parallax, table focus, empty-seat reveal, scene sound toggle placeholder, and reduced-motion fallback.
+- The image must remain useful if WebGL is unavailable; the DOM and art plate are the fallback.
+
 ## 11. Stacked diff topology
 
 ```text
@@ -199,8 +212,8 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | Step | Status | Output | Verification |
 |---|---|---|---|
 | Design confirmation | complete | Two-level architecture and hybrid 2.5D direction confirmed in chat | Product/user confirmation |
-| D1 shell/contracts | pending | — | `pnpm build` |
-| D2 lobby | pending | — | build + screenshot QA |
+| D1 shell/contracts | complete | React/Vite shell, typed worlds and local routing | `pnpm build` |
+| D2 Swiss valley visual slice | complete | Depth-aware WebGL hero, semantic empty-seat interaction, table panel and responsive layout | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
 | D3 campfire slice | pending | — | build + interaction QA |
 | D4 polish | pending | — | build + responsive/accessibility QA |
 | Integration review | pending | — | interface-only review across diffs |
@@ -210,3 +223,4 @@ Each diff targets at most 300 changed lines where practical and must be independ
 - 2026-08-26: The lobby and concrete table are separate spatial levels.
 - 2026-08-26: The implementation uses a hybrid 2.5D/WebGL approach instead of full free-roam 3D.
 - 2026-08-26: Only the campfire vertical slice receives full interior treatment in V1.
+- 2026-08-27: The Swiss-valley art plate is the first implemented visual proof; exact copy and controls remain accessible DOM while Three.js supplies depth, light and ambient motion.
