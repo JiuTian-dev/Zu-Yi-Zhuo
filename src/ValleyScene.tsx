@@ -3,138 +3,148 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Suspense, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 
+export type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
+
 interface ValleySceneProps {
-  focused: boolean
+  phase: ExperiencePhase
+  activeSpeaker: number
   reducedMotion: boolean
 }
 
-const ART_ASPECT = 16 / 9
+const TABLE_FOCUS = new THREE.Vector3(2.55, -1.22, 0.18)
 
-function makeGlowTexture() {
-  const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 256
-  const context = canvas.getContext('2d')!
-  const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128)
-  gradient.addColorStop(0, 'rgba(255, 220, 150, .62)')
-  gradient.addColorStop(0.32, 'rgba(255, 190, 115, .2)')
-  gradient.addColorStop(1, 'rgba(255, 180, 100, 0)')
-  context.fillStyle = gradient
-  context.fillRect(0, 0, 256, 256)
-  return new THREE.CanvasTexture(canvas)
+function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
+  const mesh = useRef<THREE.Mesh>(null)
+  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
+  colorMap.colorSpace = THREE.SRGBColorSpace
+  colorMap.anisotropy = 8
+  depthMap.colorSpace = THREE.NoColorSpace
+  const uniforms = useMemo(() => ({
+    colorMap: { value: colorMap },
+    depthMap: { value: depthMap },
+    depthScale: { value: 0.82 },
+    depthBias: { value: -0.34 },
+  }), [colorMap, depthMap])
+
+  useFrame(({ clock }) => {
+    if (!mesh.current || reducedMotion) return
+    mesh.current.rotation.y = Math.sin(clock.elapsedTime * 0.22) * 0.006 * (phase === 'discovering' ? 1 : 0.35)
+  })
+
+  return (
+    <mesh ref={mesh}>
+      <planeGeometry args={[16.72, 9.41, 200, 112]} />
+      <shaderMaterial
+        uniforms={uniforms}
+        vertexShader={`
+          uniform sampler2D depthMap;
+          uniform float depthScale;
+          uniform float depthBias;
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            float depth = texture2D(depthMap, uv).r;
+            vec3 displaced = position;
+            displaced.z += depth * depthScale + depthBias;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+          }
+        `}
+        fragmentShader={`
+          uniform sampler2D colorMap;
+          varying vec2 vUv;
+          void main() {
+            gl_FragColor = texture2D(colorMap, vUv);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `}
+      />
+    </mesh>
+  )
 }
 
-function WorldPlate({ focused, reducedMotion }: ValleySceneProps) {
-  const texture = useTexture('/assets/valley-world-clean.png')
-  const group = useRef<THREE.Group>(null)
-  const { viewport, pointer } = useThree()
-
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.minFilter = THREE.LinearFilter
-
-  const plateSize = useMemo(() => {
-    const viewportAspect = viewport.width / viewport.height
-    if (viewportAspect > ART_ASPECT) {
-      return [viewport.width, viewport.width / ART_ASPECT] as const
-    }
-    return [viewport.height * ART_ASPECT, viewport.height] as const
-  }, [viewport.height, viewport.width])
+function CameraRig({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
+  const { camera, pointer, size } = useThree()
+  const lookAt = useRef(new THREE.Vector3())
+  const position = useMemo(() => new THREE.Vector3(), [])
+  const targetLook = useMemo(() => new THREE.Vector3(), [])
 
   useFrame(({ clock }, delta) => {
-    if (!group.current) return
-    const targetX = reducedMotion ? 0 : pointer.x * -0.075
-    const targetY = reducedMotion ? 0 : pointer.y * -0.045
-    group.current.position.x = THREE.MathUtils.damp(group.current.position.x, targetX, 3.6, delta)
-    group.current.position.y = THREE.MathUtils.damp(group.current.position.y, targetY, 3.6, delta)
-    const focusScale = focused ? 1.055 : 1
-    const breath = reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.24) * 0.002
-    const scale = THREE.MathUtils.damp(group.current.scale.x, focusScale + breath, 2.4, delta)
-    group.current.scale.setScalar(scale)
+    const mobile = size.width < 760
+    const close = phase !== 'discovering'
+    const drift = reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.18) * 0.025
+    if (close) {
+      position.set(mobile ? 2.2 : 2.82, mobile ? -0.9 : -1.18, mobile ? 8.15 : 6.35)
+      targetLook.copy(TABLE_FOCUS)
+    } else {
+      position.set(0, 0, 12.22)
+      targetLook.set(0, 0, 0)
+    }
+    if (!reducedMotion) {
+      position.x += pointer.x * (close ? 0.1 : 0.18) + drift
+      position.y += pointer.y * (close ? 0.045 : 0.09)
+      targetLook.x += pointer.x * (close ? 0.045 : 0.08)
+      targetLook.y += pointer.y * (close ? 0.025 : 0.045)
+    }
+    const speed = reducedMotion ? 18 : phase === 'approaching' ? 1.25 : close ? 2.8 : 3.2
+    camera.position.x = THREE.MathUtils.damp(camera.position.x, position.x, speed, delta)
+    camera.position.y = THREE.MathUtils.damp(camera.position.y, position.y, speed, delta)
+    camera.position.z = THREE.MathUtils.damp(camera.position.z, position.z, speed, delta)
+    lookAt.current.lerp(targetLook, 1 - Math.exp(-speed * delta))
+    camera.lookAt(lookAt.current)
+  })
+  return null
+}
+
+function FloatingPetals({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
+  const group = useRef<THREE.Group>(null)
+  const petals = useMemo(() => Array.from({ length: 20 }, (_, index) => ({
+    x: -7 + ((index * 43) % 100) / 100 * 14,
+    y: -4 + ((index * 29) % 100) / 100 * 8,
+    z: 0.35 + ((index * 17) % 100) / 100 * 1.25,
+    speed: 0.05 + (index % 4) * 0.018,
+    size: 0.018 + (index % 3) * 0.008,
+  })), [])
+
+  useFrame((_, delta) => {
+    if (!group.current || reducedMotion) return
+    group.current.children.forEach((child, index) => {
+      child.position.x -= petals[index].speed * delta
+      child.position.y -= petals[index].speed * 0.22 * delta
+      child.rotation.z += delta * 0.22
+      if (child.position.x < -7.4) child.position.x = 7.4
+      if (child.position.y < -4.4) child.position.y = 4.4
+    })
   })
 
   return (
     <group ref={group}>
-      <mesh position={[0, 0, 0]}>
-        <planeGeometry args={[plateSize[0] * 1.025, plateSize[1] * 1.025]} />
-        <meshBasicMaterial map={texture} toneMapped={false} />
-      </mesh>
+      {petals.map((petal, index) => (
+        <mesh key={index} position={[petal.x, petal.y, petal.z]} rotation={[0, 0, index]}>
+          <circleGeometry args={[petal.size, 5]} />
+          <meshBasicMaterial color={index % 3 === 0 ? '#ffd28f' : '#ff8f91'} transparent opacity={phase === 'seated' ? 0.55 : 0.32} depthWrite={false} toneMapped={false} />
+        </mesh>
+      ))}
     </group>
   )
 }
 
-function Atmosphere({ focused, reducedMotion }: ValleySceneProps) {
-  const glowTexture = useMemo(makeGlowTexture, [])
-  const glow = useRef<THREE.Sprite>(null)
-  const petalGroup = useRef<THREE.Group>(null)
-
-  const petals = useMemo(
-    () => Array.from({ length: 16 }, (_, index) => ({
-      x: 2.7 + ((index * 37) % 100) / 100 * 3.8,
-      y: 1.1 - ((index * 53) % 100) / 100 * 3.8,
-      scale: 0.012 + (index % 4) * 0.005,
-      speed: 0.14 + (index % 5) * 0.035,
-    })),
-    [],
-  )
-
-  useFrame(({ clock }, delta) => {
-    if (glow.current) {
-      const material = glow.current.material as THREE.SpriteMaterial
-      const targetOpacity = focused ? 0.34 : 0.12
-      material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity, 3, delta)
-      const pulse = reducedMotion ? 1 : 1 + Math.sin(clock.elapsedTime * 1.1) * 0.035
-      glow.current.scale.set(2.6 * pulse, 2.6 * pulse, 1)
-    }
-    if (petalGroup.current && !reducedMotion) {
-      petalGroup.current.children.forEach((child, index) => {
-        child.position.x -= petals[index].speed * delta
-        child.position.y -= petals[index].speed * 0.35 * delta
-        child.rotation.z += delta * 0.45
-        if (child.position.x < -4.5) child.position.x = 5.5
-        if (child.position.y < -3.3) child.position.y = 2.8
-      })
-    }
-  })
-
+function SceneContent(props: ValleySceneProps) {
   return (
     <>
-      <sprite ref={glow} position={[2.35, -1.1, 0.35]} scale={[2.6, 2.6, 1]}>
-        <spriteMaterial map={glowTexture} transparent opacity={0.12} depthWrite={false} blending={THREE.AdditiveBlending} />
-      </sprite>
-      <Sparkles
-        count={reducedMotion ? 12 : 32}
-        position={[-1.55, -1.05, 0.3]}
-        scale={[5.2, 0.8, 0.1]}
-        size={1.2}
-        speed={reducedMotion ? 0 : 0.12}
-        color="#eaffff"
-        opacity={focused ? 0.6 : 0.36}
-      />
-      <group ref={petalGroup}>
-        {petals.map((petal, index) => (
-          <mesh key={index} position={[petal.x, petal.y, 0.45]} rotation={[0, 0, index * 0.7]}>
-            <circleGeometry args={[petal.scale, 5]} />
-            <meshBasicMaterial color={index % 3 === 0 ? '#ffd079' : '#ff7d88'} transparent opacity={0.72} depthWrite={false} />
-          </mesh>
-        ))}
-      </group>
+      <CameraRig phase={props.phase} reducedMotion={props.reducedMotion} />
+      <DepthPlate phase={props.phase} reducedMotion={props.reducedMotion} />
+      <FloatingPetals phase={props.phase} reducedMotion={props.reducedMotion} />
+      <Sparkles count={props.reducedMotion ? 8 : props.phase === 'seated' ? 34 : 18} position={[2.6, -1.15, 1.15]} scale={[4.4, 2.5, 1.5]} size={1.4} speed={props.reducedMotion ? 0 : 0.12} color="#ffe3a4" opacity={props.phase === 'seated' ? 0.34 : 0.12} />
     </>
   )
 }
 
 export default function ValleyScene(props: ValleySceneProps) {
   return (
-    <Canvas
-      className="valley-canvas"
-      orthographic
-      camera={{ position: [0, 0, 10], zoom: 100 }}
-      dpr={[1, 1.6]}
-      gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
-    >
-      <Suspense fallback={null}>
-        <WorldPlate {...props} />
-        <Atmosphere {...props} />
-      </Suspense>
+    <Canvas className="valley-canvas" camera={{ position: [0, 0, 12.22], fov: 42, near: 0.1, far: 40 }} dpr={[1, 1.65]} gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}>
+      <color attach="background" args={['#779dba']} />
+      <Suspense fallback={null}><SceneContent {...props} /></Suspense>
     </Canvas>
   )
 }

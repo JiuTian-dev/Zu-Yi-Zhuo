@@ -1,4 +1,4 @@
-# 组一桌：发现世界大厅与深夜篝火纵切
+# 组一桌：Table First 沉浸式桌面体验
 
 > Status: confirmed for implementation
 > Last updated: 2026-08-26
@@ -7,44 +7,44 @@
 
 ## 1. Objective
 
-Build a desktop-first, responsive web prototype whose first impression is a living social world rather than an AI tool. The demo must prove one complete vertical slice:
+Build a desktop-first, responsive web prototype whose first impression is a specific conversation already happening inside a living world rather than an AI tool. The demo must prove one continuous vertical slice:
 
-`发现世界大厅 → 靠近篝火世界 → 选择“离开大城市”桌 → 穿越转场 → 坐到篝火旁`
+`打开具体桌的发现远景 → 靠近这桌 → 同场景镜头推进 → 坐到空席位置 → 进入讨论`
 
-The lobby should make users want to enter. The table scene should make them want to stay.
+The discovery state should make users want to approach. The seated state should make them want to stay.
 
 ## 2. Product architecture
 
-### Level 1: Discover Worlds lobby
+### State 1: Discover a specific table
 
-- A spatial gallery containing three distant luminous worlds: 深夜篝火、瑞士山谷、午后 Workshop.
-- Worlds are not rectangular cards. Each is a self-contained environmental aperture with depth, light, and ambient motion.
-- A world reveals several forming tables only when approached/focused.
-- Lobby responsibilities: discovery, curiosity, choice.
-- Lobby must not expose a complete discussion UI or a fully expanded campfire scene.
+- The homepage opens directly on one concrete table already in progress.
+- The scene is that table's world skin, not a world-selection entrance.
+- Scroll, wheel, drag or arrows switch to the next table; the environment changes with the table.
+- Discovery responsibilities: topic, participants, missing perspective, recommendation and desire to approach.
 
-### Level 2: A specific table
+### State 2: Seated at the same table
 
-- The selected world expands into the complete interaction environment.
-- The campfire room includes five seats, four human roles, one meaningful empty seat, Agent-as-fire, table state, discussion cues, and peripheral listeners.
-- Table responsibilities: presence, conversation, belonging, entry.
+- The camera advances through the same scene without navigation or a page cut.
+- The final camera position belongs to the meaningful empty seat.
+- The table contains four human roles, one user seat, one Agent seat, live discussion cues and evolving question structure.
+- Seated responsibilities: presence, conversation, facilitation, contribution and closure.
 
 ### Core boundary
 
-- Do not build one giant campfire hall containing many identical tables.
-- Do not make the homepage itself a specific table.
-- The same world may contain multiple topics, but each selected table becomes a unique encounter.
+- Do not add a lobby, world picker, server hall or intermediate table list.
+- Switch tables, not worlds; the world follows the selected table.
+- Discovery and seated views are camera states of one scene, not routes or pages.
 
 ## 3. Demo content contract
 
-### Flagship table
+### Swiss prototype table
 
-- Topic: 关于离开大城市这件事，他们已经聊了三天。
+- Topic: 为什么我们越来越不会休息？
 - State: 4 人已入席.
-- Missing role: 这一桌，还缺一个真正离开过的人。
-- Primary action: 坐下来看看.
+- Missing role: 这一桌，还缺一个真正停下来过的人。
+- Primary action: 靠近这桌.
 
-### Campfire-world neighboring tables
+### Next discovery tables
 
 - 留在大城市，真的值得吗？
 - 三十岁以后，重新开始意味着什么？
@@ -79,7 +79,7 @@ The lobby should make users want to enter. The table scene should make them want
 
 ### Signature element
 
-The fire is the Agent. It breathes, rises before speaking, and changes the nearby light. No robot avatar or AI badge is allowed.
+The Agent is represented by a scene-native warm light. In the Swiss table it lives near the tabletop flowers; in the campfire table it may be the fire itself. It breathes before speaking and never appears as a robot avatar or AI badge.
 
 ### Composition risk
 
@@ -97,16 +97,15 @@ The lobby is staged as darkness with three spatial light sources rather than a c
 ### World focus
 
 - Pointer movement produces small parallax only.
-- Focusing a world shifts camera, color temperature, sound bed, and table labels together.
-- Scroll, drag, arrow keys, and direct click can change the focused world.
+- Focusing a table shifts camera, color temperature, sound bed, and table labels together.
+- Scroll, drag, arrow keys, and direct click can change the focused table.
 - Reduced-motion mode replaces travel with short crossfades.
 
 ### Table entry
 
-- Selected world aperture expands.
-- Lobby UI recedes and blurs.
+- Discovery UI recedes and blurs.
 - Camera crosses a light/fog threshold.
-- Campfire room resolves from silhouette to warm detail.
+- The depth-authored art surface resolves into a table-focused near-field composition.
 - Empty chair becomes the visual invitation.
 
 ### Agent intervention
@@ -130,10 +129,7 @@ The lobby is staged as darkness with three spatial light sources rather than a c
 - React Three Fiber + Drei for scene graph and camera.
 - GSAP for orchestrated DOM/scene transitions.
 - CSS modules or scoped plain CSS for typography and interface layers.
-- Route/state contract:
-  - `/` — Discover Worlds lobby.
-  - `/world/campfire` — campfire world with forming tables.
-  - `/table/leaving-the-city` — complete campfire table scene.
+- Single-page state contract: `discovering → approaching → seated`; later `switchingTable` moves directly between concrete tables.
 - Initial scene data is local and typed; no backend or AI API in this phase.
 - Generated raster art may provide depth layers, but interactive light, fire, particles, focus, and navigation remain code-driven.
 
@@ -159,7 +155,7 @@ interface TableSummary {
 }
 ```
 
-Primary UI state is `focusedWorld`, `selectedTable`, `transitionPhase`, and `motionPreference`. Scene components consume state but do not own routing decisions.
+Primary UI state is `selectedTable`, `experiencePhase`, `activeSpeaker`, and `motionPreference`. Scene components consume state but do not own table-switching decisions.
 
 ## 9. Non-goals
 
@@ -171,11 +167,11 @@ Primary UI state is `focusedWorld`, `selectedTable`, `transitionPhase`, and `mot
 
 ## 10. Acceptance criteria
 
-- A first-time user can identify three distinct worlds without seeing a card grid.
-- Focusing campfire reveals multiple forming tables and the flagship missing-person hook.
-- Entering the flagship table uses a continuous spatial transition rather than a hard page cut.
+- A first-time user immediately understands one concrete table is already happening.
+- Switching changes the concrete table and its world together without exposing a world picker.
+- Entering the table uses a continuous spatial transition rather than a hard page cut.
 - The table contains four occupied seats and one semantically meaningful empty seat.
-- The fire visibly acts as host at least once.
+- A scene-native light visibly acts as host at least once.
 - The experience is usable at 1440x900, 1920x1080, and 390x844.
 - No critical console errors; production build succeeds.
 - Keyboard and reduced-motion paths are verified.
@@ -195,14 +191,25 @@ The first implemented visual proof is the confirmed Swiss-valley table hero rath
 - Interaction: pointer parallax, table focus, empty-seat reveal, scene sound toggle placeholder, and reduced-motion fallback.
 - The image must remain useful if WebGL is unavailable; the DOM and art plate are the fallback.
 
+## 10.2 Confirmed Plan B2 — depth-authored continuous scene
+
+- The confirmed Swiss art plate remains the visual source of truth in both discovery and seated states; it must never become a blurred backdrop behind visibly cheaper geometry.
+- A generated monocular depth map displaces a high-density WebGL surface so mountains, house, people, table and foreground foliage respond at different depths.
+- Entry is one constrained camera move aimed at the empty seat: discovery UI recedes, depth parallax becomes more legible, the original miniature adults and table become dominant, and no hard scene cut occurs.
+- The seated camera is close enough to read gestures and tabletop objects but remains constrained; no free-roam controls.
+- Discussion UI is spatially anchored with restrained DOM overlays: active-speaker light, a material-like question card, a fifth-seat marker and a single bottom subtitle layer.
+- Agent is a small scene-native warm light near the tabletop, not a robot, AI badge or sixth cartoon character.
+- No procedural placeholder people, green terrain disc, giant floating question ellipse or oversized glass panel is allowed.
+- Reduced motion uses a short dissolve between the two camera compositions.
+
 ## 11. Stacked diff topology
 
 ```text
 main
   └── D1 project shell + typed scene/routing contracts
-        └── D2 discover-worlds lobby
-              └── D3 campfire world + flagship table transition
-                    └── D4 motion/accessibility/performance polish
+        └── D2 Swiss discovery art plate
+              └── D3 Swiss depth-authored entry + seated state
+                    └── D4 table switching + motion/accessibility/performance polish
 ```
 
 Each diff targets at most 300 changed lines where practical and must be independently buildable and reviewable.
@@ -211,10 +218,10 @@ Each diff targets at most 300 changed lines where practical and must be independ
 
 | Step | Status | Output | Verification |
 |---|---|---|---|
-| Design confirmation | complete | Two-level architecture and hybrid 2.5D direction confirmed in chat | Product/user confirmation |
+| Design confirmation | complete | Table First architecture and depth-authored 2.5D direction confirmed in chat | Product/user confirmation |
 | D1 shell/contracts | complete | React/Vite shell, typed worlds and local routing | `pnpm build` |
 | D2 Swiss valley visual slice | complete | Depth-aware WebGL hero, semantic empty-seat interaction, table panel and responsive layout | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
-| D3 campfire slice | pending | — | build + interaction QA |
+| D3 Swiss depth-authored entry | complete | Depth-displaced art surface, continuous table-focused camera entry and restrained spatial discussion UI | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
 | D4 polish | pending | — | build + responsive/accessibility QA |
 | Integration review | pending | — | interface-only review across diffs |
 
@@ -222,5 +229,7 @@ Each diff targets at most 300 changed lines where practical and must be independ
 
 - 2026-08-26: The lobby and concrete table are separate spatial levels.
 - 2026-08-26: The implementation uses a hybrid 2.5D/WebGL approach instead of full free-roam 3D.
-- 2026-08-26: Only the campfire vertical slice receives full interior treatment in V1.
+- 2026-08-26: Only one table vertical slice receives full interior treatment before the other scene skins are expanded.
 - 2026-08-27: The Swiss-valley art plate is the first implemented visual proof; exact copy and controls remain accessible DOM while Three.js supplies depth, light and ambient motion.
+- 2026-08-27: Product architecture corrected to Table First: no lobby or world-selection layer; users switch concrete tables and each table carries its scene skin.
+- 2026-08-27: Plan B2 replaces the rejected procedural near field: one depth-authored art surface preserves the final image through discovery and seated camera states, with restrained spatial UI layered above it.
