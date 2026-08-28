@@ -14,9 +14,20 @@ interface ValleySceneProps {
 }
 
 const TABLE_FOCUS = new THREE.Vector3(2.55, -1.22, 0.18)
+const PLATE_WIDTH = 16.72
+const PLATE_HEIGHT = 9.41
+const PLATE_ASPECT = PLATE_WIDTH / PLATE_HEIGHT
+const PLATE_OVERSCAN = 1.1
+
+function usePlateScale(): [number, number, number] {
+  const { size } = useThree()
+  const aspectScale = Math.max(PLATE_OVERSCAN, (size.width / Math.max(size.height, 1) / PLATE_ASPECT) * PLATE_OVERSCAN)
+  return [aspectScale, aspectScale, 1]
+}
 
 function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
   const mesh = useRef<THREE.Mesh>(null)
+  const plateScale = usePlateScale()
   const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
   colorMap.colorSpace = THREE.SRGBColorSpace
   colorMap.anisotropy = 8
@@ -27,15 +38,14 @@ function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | '
     depthScale: { value: 0.82 },
     depthBias: { value: -0.34 },
   }), [colorMap, depthMap])
-
   useFrame(({ clock }) => {
     if (!mesh.current || reducedMotion) return
     mesh.current.rotation.y = Math.sin(clock.elapsedTime * 0.22) * 0.006 * (phase === 'discovering' ? 1 : 0.35)
   })
 
   return (
-    <mesh ref={mesh}>
-      <planeGeometry args={[16.72, 9.41, 200, 112]} />
+    <mesh ref={mesh} scale={plateScale}>
+      <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
       <shaderMaterial
         uniforms={uniforms}
         vertexShader={`
@@ -46,8 +56,10 @@ function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | '
           void main() {
             vUv = uv;
             float depth = texture2D(depthMap, uv).r;
+            float edgeDistance = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+            float edgeLock = smoothstep(0.0, 0.1, edgeDistance);
             vec3 displaced = position;
-            displaced.z += depth * depthScale + depthBias;
+            displaced.z += (depth * depthScale + depthBias) * edgeLock;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
           }
         `}
@@ -133,6 +145,7 @@ function FloatingPetals({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase'
 
 function HumanMatte({ actor, active, hovered }: { actor: SeatActor; active: boolean; hovered: boolean }) {
   const material = useRef<THREE.ShaderMaterial>(null)
+  const plateScale = usePlateScale()
   const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
   colorMap.colorSpace = THREE.SRGBColorSpace
   depthMap.colorSpace = THREE.NoColorSpace
@@ -154,8 +167,8 @@ function HumanMatte({ actor, active, hovered }: { actor: SeatActor; active: bool
   })
 
   return (
-    <mesh position={[0, 0, 0.012]} renderOrder={2}>
-      <planeGeometry args={[16.72, 9.41, 200, 112]} />
+    <mesh position={[0, 0, 0.012]} scale={plateScale} renderOrder={2}>
+      <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
       <shaderMaterial
         ref={material}
         uniforms={uniforms}
@@ -281,8 +294,13 @@ function SceneContent(props: ValleySceneProps) {
 
 export default function ValleyScene(props: ValleySceneProps) {
   return (
-    <Canvas className="valley-canvas" camera={{ position: [0, 0, 12.22], fov: 42, near: 0.1, far: 40 }} dpr={[1, 1.65]} gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}>
-      <color attach="background" args={['#779dba']} />
+    <Canvas
+      className="valley-canvas"
+      camera={{ position: [0, 0, 12.22], fov: 42, near: 0.1, far: 40 }}
+      dpr={[1, 1.65]}
+      gl={{ antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance' }}
+      onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
+    >
       <Suspense fallback={null}><SceneContent {...props} /></Suspense>
     </Canvas>
   )

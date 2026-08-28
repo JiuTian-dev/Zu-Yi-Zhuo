@@ -226,6 +226,15 @@ interface SeatActor {
 }
 ```
 
+## 10.4 Confirmed Plan B4 — seamless overscan and local layered depth
+
+- The opaque WebGL clear color must never be visible. The approved Swiss plate remains a CSS `cover` safety plate beneath a transparent Canvas.
+- Discovery framing uses aspect-aware overscan with a minimum 7% safety margin. Ultra-wide, 16:9, 4:3 and mobile ratios must not expose any canvas clear color.
+- Depth displacement fades to zero across the outer 10% of UV space so the image boundary remains visually flat even while the center retains depth.
+- The world is locally separated into soft, mutually exclusive depth strata: far sky/mountains, middle valley/buildings and near lake/tree/table. Feathered thresholds must sum to approximately one to prevent brightness seams.
+- The strata may use the approved color/depth plate as a first visual proof. Any revealed pixel falls through to the original safety plate; later inpainted background extensions can replace individual strata without changing the runtime contract.
+- Camera motion stays constrained. The purpose of depth is to make the table feel spatial, not to demonstrate free-look reconstruction.
+
 ## 11. Stacked diff topology
 
 ```text
@@ -235,7 +244,9 @@ main
               └── D3 Swiss depth-authored entry + seated state
                     └── D4 actor identity + layered human mattes
                           └── D5 Table Host SILENCE/PASS + spatial light
-                                └── D6 table switching + motion/accessibility/performance polish
+                                └── D6.1 transparent safety plate + aspect overscan + edge lock
+                                      └── D6.2 soft local depth strata + responsive tuning
+                                            └── D7 table switching + final performance polish
 ```
 
 Each diff targets at most 300 changed lines where practical and must be independently buildable and reviewable.
@@ -250,7 +261,9 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D3 Swiss depth-authored entry | complete | Depth-displaced art surface, continuous table-focused camera entry and restrained spatial discussion UI | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
 | D4 actor identity + layers | complete | Stable user/seat contracts, independent human hover/speaker layers and viewer seat | `pnpm build`; Playwright actor interaction QA at 1440×900; zero console errors |
 | D5 Table Host | complete | Sixth-seat Host with `SILENCE` and `PASS`, real-time halo/core/question point and depth-aware table placement | `pnpm build`; Playwright SILENCE/PASS QA at 1440×900 and seated QA at 390×844; zero new console errors |
-| D6 polish | pending | — | build + responsive/accessibility QA |
+| D6.1 seamless frame | complete | Transparent canvas, original-art safety plate, aspect-aware overscan and edge displacement falloff | `pnpm build`; Playwright edge QA at 21:9, 16:9, 4:3 and 390×844; zero console errors |
+| D6.2 local depth strata | in progress | Soft far/middle/near layers with restrained camera parallax | build + transition/interaction visual QA |
+| D7 polish | pending | — | build + responsive/accessibility QA |
 | Integration review | pending | — | interface-only review across diffs |
 
 ## 13. Decision log
@@ -262,3 +275,4 @@ Each diff targets at most 300 changed lines where practical and must be independ
 - 2026-08-27: Product architecture corrected to Table First: no lobby or world-selection layer; users switch concrete tables and each table carries its scene skin.
 - 2026-08-27: Plan B2 replaces the rejected procedural near field: one depth-authored art surface preserves the final image through discovery and seated camera states, with restrained spatial UI layered above it.
 - 2026-08-28: Plan B3 confirmed: preserve the approved plate, add independent identity-bearing human matte layers, and place a separately rendered Table Host in the rear sixth seat with real-time light language.
+- 2026-08-28: Plan B4 confirmed: remove single-sheet edge exposure with a transparent same-art safety plate and aspect overscan, then split only the visually valuable far/middle/near depth bands.
