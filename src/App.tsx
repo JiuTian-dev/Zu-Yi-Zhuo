@@ -122,6 +122,19 @@ export default function App() {
               <span className="actor-profile"><small>{actor.role}</small><b>{actor.displayName}</b><em>{actor.whyHere}</em><strong>知乎用户 · {actor.userId?.split('/').at(-1)}</strong></span>
             </button>
           ))}
+          <button
+            className="actor-hotspot actor-host"
+            type="button"
+            data-active={currentTurn.id === tableHost.id}
+            aria-label="查看圆桌主持"
+            onMouseEnter={() => setHoveredActorId(tableHost.id)}
+            onMouseLeave={() => setHoveredActorId(null)}
+            onFocus={() => setHoveredActorId(tableHost.id)}
+            onBlur={() => setHoveredActorId(null)}
+          >
+            <i />
+            <span className="actor-profile"><small>第六席 · Table Host</small><b>圆桌主持</b><em>认真听，把问题递给此刻最值得说话的人。</em><strong>状态 · {currentTurn.id === tableHost.id ? 'PASS 递话' : 'SILENCE 听'}</strong></span>
+          </button>
         </div>
         <div className="question-card"><small>此刻的问题</small><p>我们需要的是休息，<br />还是允许自己停下？</p></div>
         <button className="seat-marker" type="button" onClick={() => setJoinOpen(true)}><i /><span><small>第五席</small>这是你的位置</span></button>

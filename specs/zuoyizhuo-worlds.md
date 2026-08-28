@@ -249,7 +249,7 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D2 Swiss valley visual slice | complete | Depth-aware WebGL hero, semantic empty-seat interaction, table panel and responsive layout | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
 | D3 Swiss depth-authored entry | complete | Depth-displaced art surface, continuous table-focused camera entry and restrained spatial discussion UI | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
 | D4 actor identity + layers | complete | Stable user/seat contracts, independent human hover/speaker layers and viewer seat | `pnpm build`; Playwright actor interaction QA at 1440×900; zero console errors |
-| D5 Table Host | in progress | Sixth-seat Host with `SILENCE` and `PASS`, real-time halo/core/question point | build + action-state QA |
+| D5 Table Host | complete | Sixth-seat Host with `SILENCE` and `PASS`, real-time halo/core/question point and depth-aware table placement | `pnpm build`; Playwright SILENCE/PASS QA at 1440×900 and seated QA at 390×844; zero new console errors |
 | D6 polish | pending | — | build + responsive/accessibility QA |
 | Integration review | pending | — | interface-only review across diffs |
 
