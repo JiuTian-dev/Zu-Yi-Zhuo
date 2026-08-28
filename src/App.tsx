@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import ValleyScene, { type ExperiencePhase } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
+import Gallery from './Gallery'
+import type { AppPhase, TableSummary } from './domain'
 
 const turns = [...humanActors, tableHost]
 
@@ -20,7 +22,7 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12 1c1 1.2 1 2.8 0 4m2-7c2.8 2.8 2.8 7.2 0 10" className={muted ? 'muted-wave' : ''} />{muted && <path d="m17 10 4 4m0-4-4 4" />}</svg>
 }
 
-export default function App() {
+function ValleyExperience({ onExit }: { onExit(): void }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
@@ -80,7 +82,7 @@ export default function App() {
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
-        <button className="brand" type="button" onClick={resetDiscovery} aria-label="回到这张桌的远景">
+        <button className="brand" type="button" onClick={phase === 'discovering' ? onExit : resetDiscovery} aria-label={phase === 'discovering' ? '回到桌单' : '回到这张桌的远景'}>
           <span>组一桌</span><i /> <small>湖边这桌</small>
         </button>
         <div className="header-actions">
@@ -166,4 +168,14 @@ export default function App() {
       <footer className="scene-footer"><span>移动鼠标 · 感受山谷的空间</span><span>01 <i /> 03</span></footer>
     </main>
   )
+}
+
+export default function App() {
+  const [appPhase, setAppPhase] = useState<AppPhase>('gallery')
+  const enterTable = (table: TableSummary) => {
+    if (table.entryMode === 'immersive') setAppPhase('world')
+  }
+  return appPhase === 'gallery'
+    ? <Gallery onEnter={enterTable} />
+    : <ValleyExperience onExit={() => setAppPhase('gallery')} />
 }

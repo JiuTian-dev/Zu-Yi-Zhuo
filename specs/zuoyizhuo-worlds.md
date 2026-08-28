@@ -310,7 +310,7 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D7 old switching/polish | superseded | Replaced by the confirmed gallery-to-world architecture | Product/user confirmation |
 | D8.0 research/contracts | complete | Lusion/Three.js evidence, updated states, table visual contract and diff topology | Checkpoint review PASS; `git diff --check`; architecture commit |
 | D8.1a scroll-rig contracts | complete | Installed scroll-rig 8.15.0; added discriminated table visuals and the typed three-table gallery selection | `pnpm build`; dependency/peer audit; checkpoint review PASS |
-| D8.1b global gallery shell | pending | Add editorial DOM grid, capability gate, application-level Canvas and exact card-plane registration | build + scroll/resize alignment QA |
+| D8.1b global gallery shell | complete | Added editorial DOM grid, capability gate, temporary gallery GlobalCanvas and exact ScrollScene card-plane registration | `pnpm build`; Playwright 1440×900 + entry/preview paths; zero console errors; checkpoint review PASS |
 | D8.2 pointer flow/depth | pending | Shared low-resolution flow texture, local UV displacement and restrained card parallax | desktop pointer QA + GPU/console check |
 | D8.3 card-to-world | pending | Swiss card expansion, cover-match crossfade and preserved approach/seated states | complete interaction path at 1440×900 |
 | D8.4 responsive/fallback | pending | Touch/native scroll, reduced motion, keyboard, WebGL fallback and mobile layout | build + 390×844 + reduced-motion QA |
