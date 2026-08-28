@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import ValleyScene, { type ExperiencePhase } from './ValleyScene'
+import { humanActors, tableHost, type ActorId } from './actors'
 
-const turns = [
-  { name: '沈知遥', role: '自由撰稿人', quote: '真正休息时，我会暂时放弃“有用”。' },
-  { name: '周末', role: '产品经理', quote: '我不是没有时间，是不敢让时间空下来。' },
-  { name: '林舟', role: '独立开发者', quote: '自由职业以后，我反而更不会下班了。' },
-  { name: '许青', role: '心理咨询师', quote: '休息不是奖励，它原本就是生活的一部分。' },
-  { name: '圆桌主持', role: '正在递话', quote: '如果不需要向任何人证明，你会怎么度过明天？' },
-]
+const turns = [...humanActors, tableHost]
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -29,6 +24,7 @@ export default function App() {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
+  const [hoveredActorId, setHoveredActorId] = useState<ActorId | null>(null)
   const [joinOpen, setJoinOpen] = useState(false)
   const [muted, setMuted] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -39,6 +35,7 @@ export default function App() {
     timer.current = null
     setJoinOpen(false)
     setMenuOpen(false)
+    setHoveredActorId(null)
     setPhase('discovering')
   }
 
@@ -78,7 +75,7 @@ export default function App() {
   return (
     <main className={`valley-experience phase-${phase} ${joinOpen ? 'has-join-open' : ''}`}>
       <div className="art-fallback" aria-hidden="true" />
-      <ValleyScene phase={phase} activeSpeaker={activeSpeaker} reducedMotion={reducedMotion} />
+      <ValleyScene phase={phase} activeActorId={currentTurn.id} hoveredActorId={hoveredActorId} reducedMotion={reducedMotion} />
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
@@ -91,31 +88,47 @@ export default function App() {
         </div>
       </header>
 
-      <section className="hero-copy" aria-labelledby="valley-title">
+      <section className="hero-copy" aria-labelledby="valley-title" inert={seated || phase === 'approaching'}>
         <p className="eyebrow">瑞士山谷 · 4 人已入席</p>
         <h1 id="valley-title">为什么我们<br />越来越不会休息？</h1>
         <p className="missing-line">这一桌，还缺一个真正停下来过的人。</p>
         <button className="approach-button" type="button" onClick={approachTable}><span>靠近这桌</span><span aria-hidden="true">↗</span></button>
       </section>
 
-      <button className="seat-hotspot" type="button" aria-label="靠近湖边的空席" onClick={approachTable}>
+      <button className="seat-hotspot" type="button" aria-label="靠近湖边的空席" onClick={approachTable} disabled={phase !== 'discovering'}>
         <span className="seat-pulse" /><span className="seat-label"><b>第五席</b>等一个真正停下来过的人</span>
       </button>
 
       <div className="approach-cue" role="status" aria-live="polite"><span />镜头正在穿过湖边的光</div>
 
-      <section className="seated-hud" aria-hidden={!seated}>
+      <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
         <button className="back-to-discovery" type="button" onClick={resetDiscovery}>←&nbsp;&nbsp;退回远景</button>
         <div className="discussion-state"><i />讨论正在发生 <span>04 / 05</span></div>
 
-        <div className={`speaker-beacon beacon-${activeSpeaker}`} aria-hidden="true"><i /><span>{currentTurn.name}</span></div>
-        <div className="agent-presence" aria-hidden="true"><i /><span>圆桌主持</span></div>
+        <div className="actor-hotspots" aria-label="桌上成员">
+          {humanActors.map((actor) => (
+            <button
+              key={actor.id}
+              className={`actor-hotspot ${actor.hotspotClass}`}
+              type="button"
+              data-active={currentTurn.id === actor.id}
+              aria-label={`查看${actor.displayName}，${actor.role}`}
+              onMouseEnter={() => setHoveredActorId(actor.id)}
+              onMouseLeave={() => setHoveredActorId(null)}
+              onFocus={() => setHoveredActorId(actor.id)}
+              onBlur={() => setHoveredActorId(null)}
+            >
+              <i />
+              <span className="actor-profile"><small>{actor.role}</small><b>{actor.displayName}</b><em>{actor.whyHere}</em><strong>知乎用户 · {actor.userId?.split('/').at(-1)}</strong></span>
+            </button>
+          ))}
+        </div>
         <div className="question-card"><small>此刻的问题</small><p>我们需要的是休息，<br />还是允许自己停下？</p></div>
         <button className="seat-marker" type="button" onClick={() => setJoinOpen(true)}><i /><span><small>第五席</small>这是你的位置</span></button>
 
         <div className="conversation-dock" key={activeSpeaker}>
           <p>“{currentTurn.quote}”</p>
-          <div><span><b>{currentTurn.name}</b> · {currentTurn.role}</span><i>{String(activeSpeaker + 1).padStart(2, '0')} / 05</i></div>
+          <div><span><b>{currentTurn.displayName}</b> · {currentTurn.role}</span><i>{String(activeSpeaker + 1).padStart(2, '0')} / 05</i></div>
         </div>
         <button className="join-table-button" type="button" onClick={() => setJoinOpen(true)}><i />坐到空席 <span>→</span></button>
       </section>

@@ -2,12 +2,14 @@ import { Sparkles, useTexture } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Suspense, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { humanActors, type ActorId, type SeatActor } from './actors'
 
 export type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
 
 interface ValleySceneProps {
   phase: ExperiencePhase
-  activeSpeaker: number
+  activeActorId: ActorId
+  hoveredActorId: ActorId | null
   reducedMotion: boolean
 }
 
@@ -129,11 +131,79 @@ function FloatingPetals({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase'
   )
 }
 
+function HumanMatte({ actor, active, hovered }: { actor: SeatActor; active: boolean; hovered: boolean }) {
+  const material = useRef<THREE.ShaderMaterial>(null)
+  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
+  colorMap.colorSpace = THREE.SRGBColorSpace
+  depthMap.colorSpace = THREE.NoColorSpace
+  const uniforms = useMemo(() => ({
+    colorMap: { value: colorMap }, depthMap: { value: depthMap },
+    center: { value: new THREE.Vector2(...actor.plateCenter) },
+    radius: { value: new THREE.Vector2(...actor.plateRadius) },
+    accent: { value: new THREE.Color(actor.accent) }, strength: { value: 0 },
+  }), [actor, colorMap, depthMap])
+
+  useFrame((_, delta) => {
+    if (!material.current) return
+    material.current.uniforms.strength.value = THREE.MathUtils.damp(
+      material.current.uniforms.strength.value,
+      hovered ? 0.34 : active ? 0.2 : 0,
+      7,
+      delta,
+    )
+  })
+
+  return (
+    <mesh position={[0, 0, 0.012]} renderOrder={2}>
+      <planeGeometry args={[16.72, 9.41, 200, 112]} />
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        transparent
+        depthWrite={false}
+        vertexShader={`
+          uniform sampler2D depthMap;
+          varying vec2 vUv;
+          void main(){
+            vUv=uv;
+            vec3 p=position;
+            p.z += texture2D(depthMap,uv).r*.82-.34;
+            gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+          }
+        `}
+        fragmentShader={`
+          uniform sampler2D colorMap;
+          uniform vec2 center;
+          uniform vec2 radius;
+          uniform vec3 accent;
+          uniform float strength;
+          varying vec2 vUv;
+          void main(){
+            vec2 d=(vUv-center)/radius;
+            float matte=1.0-smoothstep(.72,1.0,dot(d,d));
+            vec4 base=texture2D(colorMap,vUv);
+            vec3 lit=mix(base.rgb,accent,.22);
+            gl_FragColor=vec4(lit,matte*strength);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `}
+      />
+    </mesh>
+  )
+}
+
+function HumanMattes({ activeActorId, hoveredActorId, phase }: Pick<ValleySceneProps, 'activeActorId' | 'hoveredActorId' | 'phase'>) {
+  if (phase !== 'seated') return null
+  return <>{humanActors.map((actor) => <HumanMatte key={actor.id} actor={actor} active={activeActorId === actor.id} hovered={hoveredActorId === actor.id} />)}</>
+}
+
 function SceneContent(props: ValleySceneProps) {
   return (
     <>
       <CameraRig phase={props.phase} reducedMotion={props.reducedMotion} />
       <DepthPlate phase={props.phase} reducedMotion={props.reducedMotion} />
+      <HumanMattes activeActorId={props.activeActorId} hoveredActorId={props.hoveredActorId} phase={props.phase} />
       <FloatingPetals phase={props.phase} reducedMotion={props.reducedMotion} />
       <Sparkles count={props.reducedMotion ? 8 : props.phase === 'seated' ? 34 : 18} position={[2.6, -1.15, 1.15]} scale={[4.4, 2.5, 1.5]} size={1.4} speed={props.reducedMotion ? 0 : 0.12} color="#ffe3a4" opacity={props.phase === 'seated' ? 0.34 : 0.12} />
     </>

@@ -79,7 +79,7 @@ The discovery state should make users want to approach. The seated state should 
 
 ### Signature element
 
-The Agent is represented by a scene-native warm light. In the Swiss table it lives near the tabletop flowers; in the campfire table it may be the fire itself. It breathes before speaking and never appears as a robot avatar or AI badge.
+The Agent is a restrained sixth-seat Table Host: a small ivory/warm-gray body with minimal eyes, no prominent mouth, a warm chest core and an incomplete circular halo. It sits opposite the viewer seat and uses posture, gaze, hand motion and light rather than mascot-like expression.
 
 ### Composition risk
 
@@ -198,9 +198,33 @@ The first implemented visual proof is the confirmed Swiss-valley table hero rath
 - Entry is one constrained camera move aimed at the empty seat: discovery UI recedes, depth parallax becomes more legible, the original miniature adults and table become dominant, and no hard scene cut occurs.
 - The seated camera is close enough to read gestures and tabletop objects but remains constrained; no free-roam controls.
 - Discussion UI is spatially anchored with restrained DOM overlays: active-speaker light, a material-like question card, a fifth-seat marker and a single bottom subtitle layer.
-- Agent is a small scene-native warm light near the tabletop, not a robot, AI badge or sixth cartoon character.
+- Agent is a scene-native sixth-seat host rather than a floating deity, robot badge or tabletop ornament.
 - No procedural placeholder people, green terrain disc, giant floating question ellipse or oversized glass panel is allowed.
 - Reduced motion uses a short dissolve between the two camera compositions.
+
+## 10.3 Confirmed Plan B3 — layered 2.5D actors and Table Host
+
+- The complete Swiss art plate remains the discovery source of truth and the seated underlay, preventing generated asset drift from degrading the approved composition.
+- Four visible people, the viewer seat and the Table Host each own an independent WebGL actor layer with a stable `seatId`; human actors additionally own a stable `userId`.
+- Human layers use transparent pixel mattes derived from the approved plate. At rest they align exactly with the underlay; hover and speaker states affect only the selected actor layer.
+- The Table Host is a separately rendered transparent actor placed at the north/rear sixth seat, between the orange and blue participants and directly opposite the empty viewer chair. Its lower body is hidden by the table edge.
+- The Host halo, chest core, local light and moving question point are real-time Three.js elements. Body pose assets provide the first `SILENCE` and `PASS` actions.
+- Entry may use a short petal/sun-glare occlusion while actor layers resolve, but cannot introduce a visible scene cut or replace the approved world with cheaper geometry.
+- Initial action scope is `SILENCE` and `PASS`; `PROBE`, `REFRAME`, `GROUND` and `CLOSE` share the same state contract and are subsequent pose/sequence assets.
+
+```ts
+type AgentAction = 'SILENCE' | 'PASS' | 'PROBE' | 'REFRAME' | 'GROUND' | 'CLOSE'
+
+interface SeatActor {
+  seatId: string
+  actorType: 'human' | 'viewer' | 'agent'
+  userId?: string
+  displayName: string
+  role: string
+  worldAnchor: [number, number, number]
+  visualState: 'idle' | 'listening' | 'speaking'
+}
+```
 
 ## 11. Stacked diff topology
 
@@ -209,7 +233,9 @@ main
   └── D1 project shell + typed scene/routing contracts
         └── D2 Swiss discovery art plate
               └── D3 Swiss depth-authored entry + seated state
-                    └── D4 table switching + motion/accessibility/performance polish
+                    └── D4 actor identity + layered human mattes
+                          └── D5 Table Host SILENCE/PASS + spatial light
+                                └── D6 table switching + motion/accessibility/performance polish
 ```
 
 Each diff targets at most 300 changed lines where practical and must be independently buildable and reviewable.
@@ -222,7 +248,9 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D1 shell/contracts | complete | React/Vite shell, typed worlds and local routing | `pnpm build` |
 | D2 Swiss valley visual slice | complete | Depth-aware WebGL hero, semantic empty-seat interaction, table panel and responsive layout | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
 | D3 Swiss depth-authored entry | complete | Depth-displaced art surface, continuous table-focused camera entry and restrained spatial discussion UI | `pnpm build`; Playwright at 1440×900 and 390×844; zero console errors |
-| D4 polish | pending | — | build + responsive/accessibility QA |
+| D4 actor identity + layers | complete | Stable user/seat contracts, independent human hover/speaker layers and viewer seat | `pnpm build`; Playwright actor interaction QA at 1440×900; zero console errors |
+| D5 Table Host | in progress | Sixth-seat Host with `SILENCE` and `PASS`, real-time halo/core/question point | build + action-state QA |
+| D6 polish | pending | — | build + responsive/accessibility QA |
 | Integration review | pending | — | interface-only review across diffs |
 
 ## 13. Decision log
@@ -233,3 +261,4 @@ Each diff targets at most 300 changed lines where practical and must be independ
 - 2026-08-27: The Swiss-valley art plate is the first implemented visual proof; exact copy and controls remain accessible DOM while Three.js supplies depth, light and ambient motion.
 - 2026-08-27: Product architecture corrected to Table First: no lobby or world-selection layer; users switch concrete tables and each table carries its scene skin.
 - 2026-08-27: Plan B2 replaces the rejected procedural near field: one depth-authored art surface preserves the final image through discovery and seated camera states, with restrained spatial UI layered above it.
+- 2026-08-28: Plan B3 confirmed: preserve the approved plate, add independent identity-bearing human matte layers, and place a separately rendered Table Host in the rear sixth seat with real-time light language.
