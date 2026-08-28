@@ -33,6 +33,7 @@ export default function App() {
   const resetDiscovery = () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
     timer.current = null
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setJoinOpen(false)
     setMenuOpen(false)
     setHoveredActorId(null)

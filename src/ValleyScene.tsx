@@ -25,55 +25,123 @@ function usePlateScale(): [number, number, number] {
   return [aspectScale, aspectScale, 1]
 }
 
-function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
-  const mesh = useRef<THREE.Mesh>(null)
-  const plateScale = usePlateScale()
-  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
-  colorMap.colorSpace = THREE.SRGBColorSpace
-  colorMap.anisotropy = 8
-  depthMap.colorSpace = THREE.NoColorSpace
+type DepthStratum = 'far' | 'middle' | 'near'
+
+const DEPTH_STRATA: Array<{ id: DepthStratum; renderOrder: number }> = [
+  { id: 'far', renderOrder: 0 },
+  { id: 'middle', renderOrder: 1 },
+  { id: 'near', renderOrder: 2 },
+]
+
+const DEPTH_VERTEX_SHADER = `
+  uniform sampler2D depthMap;
+  uniform float depthScale;
+  uniform float depthBias;
+  varying vec2 vUv;
+  varying float vDepth;
+  void main() {
+    vUv = uv;
+    vDepth = texture2D(depthMap, uv).r;
+    float edgeDistance = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+    float edgeLock = smoothstep(0.0, 0.1, edgeDistance);
+    vec3 displaced = position;
+    displaced.z += (vDepth * depthScale + depthBias) * edgeLock;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+  }
+`
+
+const DEPTH_FRAGMENT_SHADER = `
+  uniform sampler2D colorMap;
+  uniform float stratum;
+  varying vec2 vUv;
+  varying float vDepth;
+  void main() {
+    // Two separated feather ranges keep the three weights complementary:
+    // far = 1-a, middle = a*(1-b), near = b. Because a reaches 1.0
+    // before b starts, the visible contribution remains exactly one.
+    float a = smoothstep(0.30, 0.46, vDepth);
+    float b = smoothstep(0.62, 0.78, vDepth);
+    float farWeight = 1.0 - a;
+    float middleWeight = a * (1.0 - b);
+    float nearWeight = b;
+    float weight = stratum < 0.5
+      ? farWeight
+      : stratum < 1.5 ? middleWeight : nearWeight;
+    vec4 color = texture2D(colorMap, vUv);
+    gl_FragColor = vec4(color.rgb, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    // Additive compositing happens in output color space. Premultiply each
+    // stratum after conversion so complementary weights reconstruct one plate.
+    gl_FragColor = vec4(gl_FragColor.rgb * weight, weight);
+  }
+`
+
+function DepthStratumPlate({
+  colorMap,
+  depthMap,
+  stratum,
+  renderOrder,
+}: {
+  colorMap: THREE.Texture
+  depthMap: THREE.Texture
+  stratum: DepthStratum
+  renderOrder: number
+}) {
   const uniforms = useMemo(() => ({
     colorMap: { value: colorMap },
     depthMap: { value: depthMap },
     depthScale: { value: 0.82 },
     depthBias: { value: -0.34 },
-  }), [colorMap, depthMap])
-  useFrame(({ clock }) => {
-    if (!mesh.current || reducedMotion) return
-    mesh.current.rotation.y = Math.sin(clock.elapsedTime * 0.22) * 0.006 * (phase === 'discovering' ? 1 : 0.35)
-  })
+    stratum: { value: stratum === 'far' ? 0 : stratum === 'middle' ? 1 : 2 },
+  }), [colorMap, depthMap, stratum])
 
   return (
-    <mesh ref={mesh} scale={plateScale}>
+    <mesh renderOrder={renderOrder}>
       <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
       <shaderMaterial
         uniforms={uniforms}
-        vertexShader={`
-          uniform sampler2D depthMap;
-          uniform float depthScale;
-          uniform float depthBias;
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            float depth = texture2D(depthMap, uv).r;
-            float edgeDistance = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-            float edgeLock = smoothstep(0.0, 0.1, edgeDistance);
-            vec3 displaced = position;
-            displaced.z += (depth * depthScale + depthBias) * edgeLock;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
-          }
-        `}
-        fragmentShader={`
-          uniform sampler2D colorMap;
-          varying vec2 vUv;
-          void main() {
-            gl_FragColor = texture2D(colorMap, vUv);
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }
-        `}
+        vertexShader={DEPTH_VERTEX_SHADER}
+        fragmentShader={DEPTH_FRAGMENT_SHADER}
+        transparent
+        blending={THREE.CustomBlending}
+        blendEquation={THREE.AddEquation}
+        blendSrc={THREE.OneFactor}
+        blendDst={THREE.OneFactor}
+        blendEquationAlpha={THREE.AddEquation}
+        blendSrcAlpha={THREE.OneFactor}
+        blendDstAlpha={THREE.OneFactor}
+        depthTest={false}
+        depthWrite={false}
       />
     </mesh>
+  )
+}
+
+function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
+  const group = useRef<THREE.Group>(null)
+  const plateScale = usePlateScale()
+  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
+  colorMap.colorSpace = THREE.SRGBColorSpace
+  colorMap.anisotropy = 8
+  depthMap.colorSpace = THREE.NoColorSpace
+  useFrame(({ clock }) => {
+    if (!group.current || reducedMotion) return
+    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.22) * 0.006 * (phase === 'discovering' ? 1 : 0.35)
+  })
+
+  return (
+    <group ref={group} scale={plateScale}>
+      {DEPTH_STRATA.map((layer) => (
+        <DepthStratumPlate
+          key={layer.id}
+          colorMap={colorMap}
+          depthMap={depthMap}
+          stratum={layer.id}
+          renderOrder={layer.renderOrder}
+        />
+      ))}
+    </group>
   )
 }
 

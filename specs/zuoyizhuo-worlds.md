@@ -262,9 +262,9 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D4 actor identity + layers | complete | Stable user/seat contracts, independent human hover/speaker layers and viewer seat | `pnpm build`; Playwright actor interaction QA at 1440×900; zero console errors |
 | D5 Table Host | complete | Sixth-seat Host with `SILENCE` and `PASS`, real-time halo/core/question point and depth-aware table placement | `pnpm build`; Playwright SILENCE/PASS QA at 1440×900 and seated QA at 390×844; zero new console errors |
 | D6.1 seamless frame | complete | Transparent canvas, original-art safety plate, aspect-aware overscan and edge displacement falloff | `pnpm build`; Playwright edge QA at 21:9, 16:9, 4:3 and 390×844; zero console errors |
-| D6.2 local depth strata | in progress | Soft far/middle/near layers with restrained camera parallax | build + transition/interaction visual QA |
+| D6.2 local depth strata | complete | Soft far/middle/near layers with complementary additive feathering and restrained camera parallax | `pnpm build`; Playwright discovery/seated QA at 1440×900 and 390×844; zero console errors |
 | D7 polish | pending | — | build + responsive/accessibility QA |
-| Integration review | pending | — | interface-only review across diffs |
+| Integration review | complete | D6.1 safety frame remains below D6.2 strata; actor mattes and Table Host preserve their existing contracts | build + discovery/entry/seated interface audit |
 
 ## 13. Decision log
 
