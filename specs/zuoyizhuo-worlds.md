@@ -1,39 +1,48 @@
 # 组一桌：Table First 沉浸式桌面体验
 
-> Status: confirmed for implementation
-> Last updated: 2026-08-26
+> Status: confirmed for gallery-to-world implementation
+> Last updated: 2026-08-29
 
 <!-- CACHE ANCHOR: stable product decisions and contracts. Change rarely. -->
 
 ## 1. Objective
 
-Build a desktop-first, responsive web prototype whose first impression is a specific conversation already happening inside a living world rather than an AI tool. The demo must prove one continuous vertical slice:
+Build a desktop-first, responsive web prototype whose first impression is an editorial gallery of concrete conversations already happening, rather than an AI tool or a world picker. The demo must prove one continuous vertical slice:
 
-`打开具体桌的发现远景 → 靠近这桌 → 同场景镜头推进 → 坐到空席位置 → 进入讨论`
+`看到正在发生的桌 → 卡片成为全屏世界 → 同场景镜头推进 → 坐到空席位置 → 进入讨论`
 
 The discovery state should make users want to approach. The seated state should make them want to stay.
 
 ## 2. Product architecture
 
-### State 1: Discover a specific table
+### State 0: Browse concrete tables
 
-- The homepage opens directly on one concrete table already in progress.
-- The scene is that table's world skin, not a world-selection entrance.
-- Scroll, wheel, drag or arrows switch to the next table; the environment changes with the table.
-- Discovery responsibilities: topic, participants, missing perspective, recommendation and desire to approach.
+- The homepage is a Lusion-like editorial gallery of concrete `TableCard` units.
+- Cards represent tables, never abstract worlds; the scene is only the table's cover and world skin.
+- DOM owns titles, status, missing perspective, keyboard focus and document layout.
+- One shared WebGL canvas owns all card images, pointer displacement, image depth and transitions.
+- The first release has one complete Swiss table plus two data-backed forming-table previews.
+
+### State 1: Discover the selected table
+
+- Clicking the Swiss card expands that exact visual surface to the viewport without a route cut.
+- Gallery chrome recedes while the selected title and image keep spatial continuity.
+- The full-screen result is the existing valley discovery camera, not a separate detail page.
+- Discovery responsibilities remain topic, participants, missing perspective and desire to approach.
 
 ### State 2: Seated at the same table
 
-- The camera advances through the same scene without navigation or a page cut.
+- The camera advances through the same scene without navigation or a page cut after the card-to-world handoff.
 - The final camera position belongs to the meaningful empty seat.
 - The table contains four human roles, one user seat, one Agent seat, live discussion cues and evolving question structure.
 - Seated responsibilities: presence, conversation, facilitation, contribution and closure.
 
 ### Core boundary
 
-- Do not add a lobby, world picker, server hall or intermediate table list.
-- Switch tables, not worlds; the world follows the selected table.
-- Discovery and seated views are camera states of one scene, not routes or pages.
+- Do not add a lobby, world picker, server hall or explorable table map.
+- The gallery is a product index of tables, not an intermediate world-selection layer.
+- Select tables, not worlds; the world follows the selected table.
+- Gallery, discovery and seated states share one application and one WebGL canvas, not routes or page cuts.
 
 ## 3. Demo content contract
 
@@ -60,46 +69,60 @@ The discovery state should make users want to approach. The seated state should 
 
 - Subject: high-value encounters emerging from Zhihu's accumulated human experience.
 - Audience: hackathon judges and first-time users, including people uninterested in AI technology.
-- Single first-screen job: create an immediate desire to approach one glowing world.
+- Single first-screen job: make one concrete table feel like a living portal worth entering.
 
 ### Palette
 
-- Midnight Ink: `#07101C`
-- Lake Fog: `#18283A`
-- Coal: `#100C09`
-- Ember: `#FF9B42`
+- Canvas Paper: `#EEF0F5`
+- Carbon: `#111315`
+- Moss: `#315246`
+- Cloud: `#747A82`
 - Fire Gold: `#FFD28A`
-- Moon Paper: `#E9EEF2`
+- World Light: `#FFF9E9`
 
 ### Typography
 
-- Emotional/display role: a restrained Chinese serif stack (`Noto Serif SC`, `Source Han Serif SC`, `Songti SC`).
-- Interface/body role: a modern Chinese sans stack (`Inter`, `Noto Sans SC`, `Microsoft YaHei`).
+- Gallery display and interface role: a modern Chinese sans stack (`Inter`, `Noto Sans SC`, `Microsoft YaHei`) with large, restrained regular-weight titles.
+- Immersive-world emotional role: the existing Chinese serif stack (`Noto Serif SC`, `Source Han Serif SC`, `Songti SC`).
 - Utility labels use modest tracking and no techno-style all-caps decoration.
 
-### Signature element
+### Gallery signature
+
+The card image is the portal: its picture has weight, flow and depth, then becomes the full-screen world. The surrounding layout stays quiet—no glass card shells, large shadows, decorative gradients or badges.
+
+### World signature
 
 The Agent is a restrained sixth-seat Table Host: a small ivory/warm-gray body with minimal eyes, no prominent mouth, a warm chest core and an incomplete circular halo. It sits opposite the viewer seat and uses posture, gaze, hand motion and light rather than mascot-like expression.
 
 ### Composition risk
 
-The lobby is staged as darkness with three spatial light sources rather than a conventional hero layout. Copy remains quiet and subordinate to the scene.
+The outside product uses a deliberately editorial, light two-column grid while the inside world remains cinematic and immersive. The contrast communicates “browse tables outside; inhabit one conversation inside” without making either layer feel like a SaaS dashboard.
 
 ## 5. Motion contract
 
-### Lobby entrance
+### Gallery entrance
 
-1. Near-black opening with distant lights.
-2. Camera drifts forward through soft atmospheric depth.
-3. Brand line appears: “有些答案，不在任何一个人那里。”
-4. Three worlds become legible through light, silhouette, and restrained labels.
+1. Header and “正在发生的桌” appear on Canvas Paper.
+2. The Swiss table card resolves first; secondary forming cards follow with a short stagger.
+3. Image planes remain still until pointer or scroll energy is present.
+4. Copy stays normal DOM and never receives the displacement effect.
 
-### World focus
+### Gallery card response
 
-- Pointer movement produces small parallax only.
-- Focusing a table shifts camera, color temperature, sound bed, and table labels together.
-- Scroll, drag, arrow keys, and direct click can change the focused table.
-- Reduced-motion mode replaces travel with short crossfades.
+- Pointer velocity writes a soft trail into one shared, low-resolution flow texture.
+- Visible WebGL planes sample that flow in local UV space for restrained drag and recovery.
+- Swiss foreground depth moves most, people/table less, mountains least.
+- Scroll velocity may add a small vertical smear, capped below the pointer effect.
+- Keyboard focus uses a stable outline and subtle static lift; it does not require pointer motion.
+
+### Card-to-world entry
+
+1. Capture the selected card and title bounds.
+2. Fade and translate non-selected gallery DOM away.
+3. Animate the selected WebGL plane from card bounds to viewport bounds; border radius reaches zero late in the move.
+4. Crossfade to the full valley discovery composition while both use the same cover-fit crop.
+5. Reveal world chrome; preserve the existing explicit “靠近这桌” action before the seated camera move.
+6. Reduced-motion replaces steps 2–4 with a short opacity dissolve.
 
 ### Table entry
 
@@ -116,7 +139,7 @@ The lobby is staged as darkness with three spatial light sources rather than a c
 
 ## 6. Interaction and accessibility contract
 
-- Keyboard can focus worlds, select a table, enter, and return.
+- Keyboard can focus tables, enter the selected table, approach the seat, and return to the gallery.
 - Focus rings are visible but visually integrated.
 - `prefers-reduced-motion` disables camera sweeps, strong parallax, and long staged delays.
 - Audio is muted by default and requires an explicit toggle.
@@ -126,10 +149,15 @@ The lobby is staged as darkness with three spatial light sources rather than a c
 ## 7. Technical architecture
 
 - Vite + React + TypeScript.
-- React Three Fiber + Drei for scene graph and camera.
-- GSAP for orchestrated DOM/scene transitions.
+- Capable desktop mounts one application-level React Three Fiber renderer through `@14islands/r3f-scroll-rig` `GlobalCanvas`; capability detection happens before mount, so mobile, reduced-capability and WebGL-failure paths stay DOM-only and never create a context.
+- The renderer owns two explicit scenes and cameras: gallery cards use `ScrollScene` with the rig-managed camera; `ValleyScene` renders through an R3F portal with its existing independent perspective camera and never creates a second Canvas.
+- A shared RGBA8 ping-pong flow target runs at 128–256 px; no float-texture requirement.
+- The rig's `SmoothScrollbar` supplies Lenis-backed desktop wheel smoothing and a shared scroll clock; touch remains native.
+- GSAP coordinates DOM chrome and WebGL uniform transitions. The WebGL plane rect is authoritative for image continuity.
 - CSS modules or scoped plain CSS for typography and interface layers.
-- Single-page state contract: `discovering → approaching → seated`; later `switchingTable` moves directly between concrete tables.
+- Application state is distinct from the existing scene state: `AppPhase = gallery | expanding | world | collapsing`, while `ExperiencePhase = discovering | approaching | seated` remains owned by the active world.
+- Legal edges are `gallery → expanding → world/discovering → world/approaching → world/seated`; returning from any world phase uses `collapsing → gallery`.
+- In gallery mode only the gallery pass runs. During expansion the gallery scene and world scene render into separate targets, then a transition pass composites them before DOM UI. In world mode the gallery tracker/pass pauses and only the valley pass runs. The capable-desktop `GlobalCanvas` mounts once, stays transparent, and disposes table textures only when their data leaves the registry.
 - Initial scene data is local and typed; no backend or AI API in this phase.
 - Generated raster art may provide depth layers, but interactive light, fire, particles, focus, and navigation remain code-driven.
 
@@ -152,10 +180,18 @@ interface TableSummary {
   hook: string
   seatedCount: number
   missingPerspective: string
+  sceneTexture: string
+  depthTexture?: string
+  status: 'live' | 'forming'
+  entryMode: 'immersive' | 'preview'
+  transitionPreset: 'valley' | 'cover-only'
+  coverFocus: { x: number; y: number }
 }
 ```
 
-Primary UI state is `selectedTable`, `experiencePhase`, `activeSpeaker`, and `motionPreference`. Scene components consume state but do not own table-switching decisions.
+Primary UI state is `selectedTable`, `appPhase`, `experiencePhase`, `activeActorId`, and `motionPreference`. Scene components consume state but do not own table-switching decisions. `forming/preview` cards may focus and animate but cannot enter the immersive world.
+
+Every card and its destination world use the same CSS-cover contract: `coverScale = max(targetRect.width / sourceWidth, targetRect.height / sourceHeight)` with `coverFocus` applied before cropping. During expansion, crop math uses the interpolated target rect every frame; the gallery shader and valley discovery plate share the identical source aspect, focus point and UV-offset formula so expansion cannot jump.
 
 ## 9. Non-goals
 
@@ -163,13 +199,16 @@ Primary UI state is `selectedTable`, `experiencePhase`, `activeSpeaker`, and `mo
 - Full free-roam game controls.
 - Complex digital-human animation.
 - Three fully developed table interiors.
-- Dashboard, card grid, ChatGPT-style transcript, points, levels, or AI iconography.
+- Dashboard, infinite social feed, ChatGPT-style transcript, points, levels, or AI iconography.
+- Pixel-identical copying of Lusion's private shader or brand presentation.
 
 ## 10. Acceptance criteria
 
-- A first-time user immediately understands one concrete table is already happening.
-- Switching changes the concrete table and its world together without exposing a world picker.
-- Entering the table uses a continuous spatial transition rather than a hard page cut.
+- A first-time user immediately understands the gallery items are concrete conversations already happening.
+- The gallery can render one live table and two forming tables entirely from typed data.
+- Enhanced desktop uses one WebGL context and keeps card media aligned with its DOM card while scrolling; mobile/reduced-capability paths may use semantic `<img>` fallbacks without creating a WebGL context.
+- Pointer movement creates restrained local image displacement on desktop without distorting DOM text.
+- Entering the Swiss table expands the selected card to the existing valley discovery state without a hard page cut or visible crop jump.
 - The table contains four occupied seats and one semantically meaningful empty seat.
 - A scene-native light visibly acts as host at least once.
 - The experience is usable at 1440x900, 1920x1080, and 390x844.
@@ -180,7 +219,7 @@ Primary UI state is `selectedTable`, `experiencePhase`, `activeSpeaker`, and `mo
 
 ## 10.1 Current visual implementation slice — Swiss valley
 
-The first implemented visual proof is the confirmed Swiss-valley table hero rather than the complete lobby. It establishes the reusable rendering language before the other worlds are expanded.
+The first implemented visual proof is the confirmed Swiss-valley table hero rather than a multi-world map. It establishes the reusable rendering language before the other worlds are expanded.
 
 - Art direction: Cozy Stylized Low-poly Diorama / 治愈系低模立体世界.
 - Character direction: Stylized Miniature Adults / 轻卡通微缩成人, 4–4.5 heads tall, rounded forms, modern clothing, four occupied seats and one meaningful empty seat.
@@ -246,7 +285,12 @@ main
                           └── D5 Table Host SILENCE/PASS + spatial light
                                 └── D6.1 transparent safety plate + aspect overscan + edge lock
                                       └── D6.2 soft local depth strata + responsive tuning
-                                            └── D7 table switching + final performance polish
+                                            └── D7 superseded by confirmed gallery architecture
+                                                  └── D8.0 research + gallery contracts
+                                                        └── D8.1 scroll-rig compatibility + global canvas + DOM card registry
+                                                              └── D8.2 shared pointer flow + card depth
+                                                                    └── D8.3 Swiss card-to-world handoff
+                                                                          └── D8.4 responsive, fallback + final polish
 ```
 
 Each diff targets at most 300 changed lines where practical and must be independently buildable and reviewable.
@@ -263,12 +307,17 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D5 Table Host | complete | Sixth-seat Host with `SILENCE` and `PASS`, real-time halo/core/question point and depth-aware table placement | `pnpm build`; Playwright SILENCE/PASS QA at 1440×900 and seated QA at 390×844; zero new console errors |
 | D6.1 seamless frame | complete | Transparent canvas, original-art safety plate, aspect-aware overscan and edge displacement falloff | `pnpm build`; Playwright edge QA at 21:9, 16:9, 4:3 and 390×844; zero console errors |
 | D6.2 local depth strata | complete | Soft far/middle/near layers with complementary additive feathering and restrained camera parallax | `pnpm build`; Playwright discovery/seated QA at 1440×900 and 390×844; zero console errors |
-| D7 polish | pending | — | build + responsive/accessibility QA |
+| D7 old switching/polish | superseded | Replaced by the confirmed gallery-to-world architecture | Product/user confirmation |
+| D8.0 research/contracts | complete | Lusion/Three.js evidence, updated states, table visual contract and diff topology | Checkpoint review PASS; `git diff --check`; architecture commit |
+| D8.1 global gallery shell | pending | Verify scroll-rig compatibility; add editorial DOM grid, typed table data, application-level Canvas and exact card-plane registration | build + scroll/resize alignment QA |
+| D8.2 pointer flow/depth | pending | Shared low-resolution flow texture, local UV displacement and restrained card parallax | desktop pointer QA + GPU/console check |
+| D8.3 card-to-world | pending | Swiss card expansion, cover-match crossfade and preserved approach/seated states | complete interaction path at 1440×900 |
+| D8.4 responsive/fallback | pending | Touch/native scroll, reduced motion, keyboard, WebGL fallback and mobile layout | build + 390×844 + reduced-motion QA |
 | Integration review | complete | D6.1 safety frame remains below D6.2 strata; actor mattes and Table Host preserve their existing contracts | build + discovery/entry/seated interface audit |
 
 ## 13. Decision log
 
-- 2026-08-26: The lobby and concrete table are separate spatial levels.
+- 2026-08-26: The lobby and concrete table are separate spatial levels. Superseded by the 2026-08-29 Table First editorial-gallery decision.
 - 2026-08-26: The implementation uses a hybrid 2.5D/WebGL approach instead of full free-roam 3D.
 - 2026-08-26: Only one table vertical slice receives full interior treatment before the other scene skins are expanded.
 - 2026-08-27: The Swiss-valley art plate is the first implemented visual proof; exact copy and controls remain accessible DOM while Three.js supplies depth, light and ambient motion.
@@ -276,3 +325,5 @@ Each diff targets at most 300 changed lines where practical and must be independ
 - 2026-08-27: Plan B2 replaces the rejected procedural near field: one depth-authored art surface preserves the final image through discovery and seated camera states, with restrained spatial UI layered above it.
 - 2026-08-28: Plan B3 confirmed: preserve the approved plate, add independent identity-bearing human matte layers, and place a separately rendered Table Host in the rear sixth seat with real-time light language.
 - 2026-08-28: Plan B4 confirmed: remove single-sheet edge exposure with a transparent same-art safety plate and aspect overscan, then split only the visually valuable far/middle/near depth bands.
+- 2026-08-29: Product architecture expanded from direct-to-table to a Table First editorial gallery. Cards are concrete tables, not world choices; one global WebGL canvas turns the selected card into the existing immersive scene.
+- 2026-08-29: Lusion-style behavior means DOM/WebGL synchronization, pointer-flow displacement and continuous card-to-world motion; it does not mean copying Lusion's brand or private shader source.
