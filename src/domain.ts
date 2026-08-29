@@ -87,7 +87,7 @@ export const worlds: WorldSummary[] = [
         status: 'live',
         entryMode: 'immersive',
         transitionPreset: 'valley',
-        coverFocus: { x: 0.67, y: 0.58 },
+        coverFocus: { x: 0.5, y: 0.5 },
       }),
       table('worth-the-trip', 'valley', '有哪些值得专程去吃的地方？', 2, '还缺一个会为味道出发的人', preview('/assets/valley-world-clean.png', { x: 0.72, y: 0.46 })),
     ],
