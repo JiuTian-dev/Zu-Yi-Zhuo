@@ -59,12 +59,16 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
   const [activeSpeaker, setActiveSpeaker] = useState(0)
   const [hoveredActorId, setHoveredActorId] = useState<ActorId | null>(null)
   const [joinOpen, setJoinOpen] = useState(false)
-  const [muted, setMuted] = useState(true)
+  const [joined, setJoined] = useState(false)
+  const [seatDraft, setSeatDraft] = useState('')
+  const [joinError, setJoinError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const timer = useRef<number | null>(null)
   const experienceRef = useRef<HTMLElement>(null!)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const joinOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const seatDraftRef = useRef<HTMLTextAreaElement>(null)
+  const joinedStatusRef = useRef<HTMLDivElement>(null)
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
     const active = document.activeElement
@@ -79,8 +83,22 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
     setMenuOpen(false)
   }
   const openJoin = (opener: HTMLButtonElement) => {
+    if (joined) return
     joinOpenerRef.current = opener
+    setJoinError(false)
     setJoinOpen(true)
+  }
+
+  const confirmSeat = () => {
+    if (!seatDraft.trim()) {
+      setJoinError(true)
+      seatDraftRef.current?.focus({ preventScroll: true })
+      return
+    }
+    experienceRef.current?.focus({ preventScroll: true })
+    setJoinError(false)
+    setJoinOpen(false)
+    setJoined(true)
   }
 
   const resetDiscovery = () => {
@@ -115,6 +133,16 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
   }, [phase, reducedMotion])
 
   useEffect(() => {
+    if (!joinOpen) return
+    const frame = window.requestAnimationFrame(() => seatDraftRef.current?.focus({ preventScroll: true }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [joinOpen])
+
+  useEffect(() => {
+    if (joined) joinedStatusRef.current?.focus({ preventScroll: true })
+  }, [joined])
+
+  useEffect(() => {
     if (appPhase === 'world') experienceRef.current.focus({ preventScroll: true })
   }, [appPhase])
 
@@ -144,8 +172,8 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
           <span>组一桌</span><i /> <small>湖边这桌</small>
         </button>
         <div className="header-actions">
-          <button className="icon-button" type="button" aria-label={muted ? '开启环境音' : '关闭环境音'} onClick={() => setMuted(!muted)}><SoundIcon muted={muted} /></button>
-          <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label="打开桌单" aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span /><span /></button>
+          <button className="icon-button sound-unavailable" type="button" aria-label="环境音即将开放" title="环境音即将开放" disabled><SoundIcon muted /></button>
+          <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label={menuOpen ? '关闭桌单' : '打开桌单'} aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span /><span /></button>
         </div>
       </header>
 
@@ -164,7 +192,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
 
       <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
         <button className="back-to-discovery" type="button" onClick={resetDiscovery}>←&nbsp;&nbsp;退回远景</button>
-        <div className="discussion-state"><i />讨论正在发生 <span>04 / 05</span></div>
+        <div className="discussion-state"><i />讨论正在发生 <span>{joined ? '05 / 05' : '04 / 05'}</span></div>
 
         <div className="actor-hotspots" aria-label="桌上成员">
           {humanActors.map((actor) => (
@@ -198,13 +226,16 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
           </button>
         </div>
         <div className="question-card"><small>此刻的问题</small><p>我们需要的是休息，<br />还是允许自己停下？</p></div>
-        <button className="seat-marker" type="button" onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>第五席</small>这是你的位置</span></button>
+        <button className="seat-marker" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>第五席</small>{joined ? '你已在这一席' : '这是你的位置'}</span></button>
 
         <div className="conversation-dock" key={activeSpeaker}>
           <p>“{currentTurn.quote}”</p>
           <div><span><b>{currentTurn.displayName}</b> · {currentTurn.role}</span><i>{String(activeSpeaker + 1).padStart(2, '0')} / 05</i></div>
         </div>
-        <button className="join-table-button" type="button" onClick={(event) => openJoin(event.currentTarget)}><i />坐到空席 <span>→</span></button>
+        <button className="join-table-button" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i />{joined ? '已坐到第五席' : '坐到空席'} <span>{joined ? '✓' : '→'}</span></button>
+        {joined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
+          <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
+        </div>}
       </section>
 
       <aside className="join-sheet" aria-hidden={!joinOpen} inert={!joinOpen}>
@@ -212,13 +243,14 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
         <p className="panel-kicker">第五席 · 正在等你</p>
         <h2>你不需要带来答案。<br />只需要带来真实经历。</h2>
         <div className="seat-profile"><span>为什么是你</span><p>桌上已经有自由职业、职场压力和心理恢复的视角，但还没有一个真正尝试停下来的人。</p></div>
-        <label className="voice-preview"><span>入席后，你想先说什么？</span><textarea placeholder="也许是最近一次，你明明在休息却仍然感到内疚……" /></label>
-        <button className="confirm-seat" type="button">以真实经历入席 <span>→</span></button>
+        <label className="voice-preview"><span>入席后，你想先说什么？</span><textarea ref={seatDraftRef} value={seatDraft} aria-invalid={joinError} aria-describedby={joinError ? 'seat-draft-error' : undefined} onChange={(event) => { setSeatDraft(event.target.value); if (joinError) setJoinError(false) }} placeholder="也许是最近一次，你明明在休息却仍然感到内疚……" /></label>
+        {joinError && <p id="seat-draft-error" className="join-error" role="alert">先留下一句真实经历，再坐到桌边。</p>}
+        <button className="confirm-seat" type="button" onClick={confirmSeat}>以真实经历入席 <span>→</span></button>
       </aside>
 
       <nav className={`table-menu ${menuOpen ? 'is-open' : ''}`} aria-label="正在发生的桌" aria-hidden={!menuOpen} inert={!menuOpen}>
         <p>换一张正在发生的桌</p>
-        <button type="button" className="active"><span>瑞士山谷</span>为什么我们越来越不会休息？</button>
+        <button type="button" className="active" onClick={closeMenu}><span>瑞士山谷</span>为什么我们越来越不会休息？</button>
         <button type="button" disabled><span>深夜篝火</span>关于离开大城市，他们已经聊了三天。<small>下一张</small></button>
         <button type="button" disabled><span>午后 Workshop</span>如果 AI 替你做一半工作，你会把时间还给什么？<small>下一张</small></button>
       </nav>
