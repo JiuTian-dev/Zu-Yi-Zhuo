@@ -4,13 +4,18 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { galleryTables, type TableSummary } from './domain'
+import type { AppPhase } from './domain'
 import { type GalleryFlowTextureRef } from './GalleryFlow'
 import './gallery.css'
 
+export interface GalleryMediaRect { left: number; top: number; width: number; height: number }
+
 interface GalleryProps {
-  onEnter(table: TableSummary): void
+  onEnter(table: TableSummary, rect: GalleryMediaRect): void
   enhanced: boolean
   flowTexture: GalleryFlowTextureRef
+  phase: AppPhase
+  returnFocusId: string | null
 }
 
 const vertexShader = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`
@@ -66,9 +71,14 @@ function GalleryPlane({ table, track, flowTexture }: { table: TableSummary; trac
 function GalleryCard({ table, index, enhanced, forming, flowTexture, onEnter, onForming }: {
   table: TableSummary; index: number; enhanced: boolean
   forming: boolean; flowTexture: GalleryFlowTextureRef
-  onEnter(table: TableSummary): void; onForming(table: TableSummary): void
+  onEnter(table: TableSummary, rect: GalleryMediaRect): void; onForming(table: TableSummary): void
 }) {
   const mediaRef = useRef<HTMLDivElement>(null!)
+  const enter = () => {
+    if (table.entryMode !== 'immersive') return onForming(table)
+    const { left, top, width, height } = mediaRef.current.getBoundingClientRect()
+    onEnter(table, { left, top, width, height })
+  }
   return (
     <article className={`gallery-card card-${index + 1}`}>
       <div className="gallery-media" ref={mediaRef}>
@@ -79,7 +89,7 @@ function GalleryCard({ table, index, enhanced, forming, flowTexture, onEnter, on
         <p><span>{String(index + 1).padStart(2, '0')}</span>{table.worldId === 'valley' ? '瑞士山谷' : table.worldId === 'campfire' ? '深夜篝火' : '午后 Workshop'} · {table.seatedCount} 人已入席</p>
         <h2>{table.hook}</h2>
         <small>{table.missingPerspective}</small>
-        <button type="button" onClick={() => table.entryMode === 'immersive' ? onEnter(table) : onForming(table)}>
+        <button type="button" data-table-id={table.id} onClick={enter}>
           {table.entryMode === 'immersive' ? '进入这桌' : forming ? '还在等合适的人' : '正在形成'} <i>↗</i>
         </button>
       </div>
@@ -87,8 +97,9 @@ function GalleryCard({ table, index, enhanced, forming, flowTexture, onEnter, on
   )
 }
 
-export default function Gallery({ onEnter, enhanced, flowTexture }: GalleryProps) {
+export default function Gallery({ onEnter, enhanced, flowTexture, phase, returnFocusId }: GalleryProps) {
   const [forming, setForming] = useState<string | null>(null)
+  const galleryActive = phase === 'gallery'
   useEffect(() => {
     const previousPointerEvents = document.documentElement.style.pointerEvents
     document.documentElement.classList.add('gallery-mode'); document.body.classList.add('gallery-mode')
@@ -98,14 +109,28 @@ export default function Gallery({ onEnter, enhanced, flowTexture }: GalleryProps
       document.body.classList.remove('gallery-mode', 'ScrollRig-scrollWrapper')
     }
   }, [])
+  useEffect(() => {
+    document.documentElement.classList.toggle('gallery-transition', !galleryActive)
+    document.body.classList.toggle('gallery-transition', !galleryActive)
+    return () => {
+      document.documentElement.classList.remove('gallery-transition')
+      document.body.classList.remove('gallery-transition')
+    }
+  }, [galleryActive])
+  useEffect(() => {
+    if (!galleryActive || !returnFocusId) return
+    const selector = `button[data-table-id="${CSS.escape(returnFocusId)}"]`
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(selector)?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [galleryActive, returnFocusId])
   return (
     <>
-      {enhanced && <SmoothScrollbar config={{ duration: 1.15 }} />}
-      <main className={`gallery-page ${enhanced ? 'is-enhanced' : ''}`}>
+      {enhanced && galleryActive && <SmoothScrollbar config={{ duration: 1.15 }} />}
+      <main className={`gallery-page is-${phase} ${enhanced && galleryActive ? 'is-enhanced' : ''}`} inert={!galleryActive}>
         <header className="gallery-header"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span><em>ZH · 2026</em></header>
         <section className="gallery-intro"><p>正在发生的桌</p><h1>有些答案，<br />不在任何一个人那里。</h1><span>向下走近一场真实交流</span></section>
         <section className="gallery-list" aria-label="正在发生的桌">
-          {galleryTables.map((table, index) => <GalleryCard key={table.id} table={table} index={index} enhanced={enhanced} forming={forming === table.id} flowTexture={flowTexture} onEnter={onEnter} onForming={(item) => setForming(item.id)} />)}
+          {galleryTables.map((table, index) => <GalleryCard key={table.id} table={table} index={index} enhanced={enhanced && galleryActive} forming={forming === table.id} flowTexture={flowTexture} onEnter={onEnter} onForming={(item) => setForming(item.id)} />)}
         </section>
         <p className="forming-note" role="status" aria-live="polite">{forming ? '这张桌还在等待合适的人，形成后会从这里亮起来。' : ''}</p>
         <footer className="gallery-footer"><span>不是浏览内容，是遇见一桌人。</span><span>三张桌 · 一个正在发生</span></footer>

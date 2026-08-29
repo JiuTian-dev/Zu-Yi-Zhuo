@@ -1,9 +1,9 @@
 import { GlobalCanvas, UseCanvas, ViewportScrollScene } from '@14islands/r3f-scroll-rig'
-import { Suspense, useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { Suspense, useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import ValleyScene, { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
-import Gallery from './Gallery'
+import Gallery, { type GalleryMediaRect } from './Gallery'
 import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
 
@@ -53,7 +53,7 @@ function ValleyCanvasPortal({ track, ...sceneProps }: ValleyCanvasPortalProps) {
   )
 }
 
-function ValleyExperience({ onExit, enhanced }: { onExit(): void; enhanced: boolean }) {
+function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enhanced: boolean; appPhase: AppPhase }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
@@ -94,6 +94,10 @@ function ValleyExperience({ onExit, enhanced }: { onExit(): void; enhanced: bool
     return () => window.clearInterval(interval)
   }, [phase, reducedMotion])
 
+  useEffect(() => {
+    if (appPhase === 'world') experienceRef.current.focus({ preventScroll: true })
+  }, [appPhase])
+
   const approachTable = () => {
     if (phase !== 'discovering') return
     setMenuOpen(false)
@@ -109,7 +113,7 @@ function ValleyExperience({ onExit, enhanced }: { onExit(): void; enhanced: bool
   const sceneProps: ValleySceneProps = { phase, activeActorId: currentTurn.id, hoveredActorId, reducedMotion }
 
   return (
-    <main ref={experienceRef} className={`valley-experience phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''}`}>
+    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''}`}>
       <div className="art-fallback" aria-hidden="true" />
       {enhanced
         ? <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>
@@ -205,23 +209,57 @@ function ValleyExperience({ onExit, enhanced }: { onExit(): void; enhanced: bool
   )
 }
 
+interface TransitionSnapshot { table: TableSummary; rect: GalleryMediaRect }
+
+function TransitionCover({ snapshot }: { snapshot: TransitionSnapshot }) {
+  const style = {
+    '--portal-left': `${snapshot.rect.left}px`, '--portal-top': `${snapshot.rect.top}px`,
+    '--portal-width': `${snapshot.rect.width}px`, '--portal-height': `${snapshot.rect.height}px`,
+  } as CSSProperties
+  return <div className="transition-cover" style={style} aria-hidden="true"><img src={snapshot.table.sceneTexture} alt="" style={{ objectPosition: `${snapshot.table.coverFocus.x * 100}% ${snapshot.table.coverFocus.y * 100}%` }} /></div>
+}
+
 export default function App() {
   const [appPhase, setAppPhase] = useState<AppPhase>('gallery')
   const [enhanced, setEnhanced] = useState(false)
+  const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
   const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture) as GalleryFlowTextureRef
+  const transitionTimer = useRef<number | null>(null)
+  const reducedMotion = useReducedMotion()
   useEffect(() => {
     setEnhanced(canEnhance())
-    return () => document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
+    return () => {
+      if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
+      document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
+    }
   }, [])
-  const enterTable = (table: TableSummary) => {
-    if (table.entryMode === 'immersive') setAppPhase('world')
+  const schedulePhase = (phase: AppPhase, delay: number) => {
+    if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
+    transitionTimer.current = window.setTimeout(() => {
+      setAppPhase(phase)
+      transitionTimer.current = null
+    }, delay)
   }
+  const enterTable = (table: TableSummary, rect: GalleryMediaRect) => {
+    if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
+    setTransition({ table, rect })
+    setAppPhase('expanding')
+    schedulePhase('world', reducedMotion ? 180 : 1100)
+  }
+  const exitTable = () => {
+    if (appPhase !== 'world') return
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    setAppPhase('collapsing')
+    schedulePhase('gallery', reducedMotion ? 160 : 450)
+  }
+  const showGallery = appPhase === 'gallery' || appPhase === 'expanding' || appPhase === 'collapsing'
+  const showWorld = appPhase !== 'gallery'
   return (
     <>
       {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{appPhase === 'gallery' && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
-      {appPhase === 'gallery'
-        ? <Gallery onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />
-        : <ValleyExperience enhanced={enhanced} onExit={() => setAppPhase('gallery')} />}
+      {showGallery && <Gallery phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />}
+      {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} onExit={exitTable} />}
+      {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>
   )
 }

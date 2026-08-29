@@ -314,7 +314,8 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D8.2 pointer flow/depth | complete | Shared 128px RGBA8 velocity flow texture, screen-space UV displacement and restrained recovery across all gallery planes | `pnpm build`; pointer/scroll Playwright QA; zero console errors; checkpoint review fixes verified |
 | D8.3a world content extraction | complete | Exported the Swiss R3F content without changing its existing standalone Canvas wrapper or behavior | `pnpm build`; `git diff --check`; three-line extraction diff |
 | D8.3b persistent renderer | complete | Lifted GlobalCanvas to the app shell and renders the Swiss world through an independent ViewportScrollScene camera while preserving DOM fallback | gallery→world→gallery Playwright path; one persistent canvas node; zero console errors; flow paused in world |
-| D8.3 card-to-world | pending | Swiss card expansion, cover-match crossfade and preserved approach/seated states | complete interaction path at 1440×900 |
+| D8.3c card-to-world motion | complete | Added guarded expanding/collapsing phases, card-rect portal motion, paper reveal mask, delayed world chrome and keyboard focus handoff | complete Playwright pointer/keyboard/reduced-motion paths; one canvas identity; zero console errors |
+| D8.3d cover-match calibration | pending | Match the immersive card focus/crop exactly to the Swiss discovery camera and verify the final reveal frame | 1440×900 transition-frame comparison |
 | D8.4 responsive/fallback | pending | Touch/native scroll, reduced motion, keyboard, WebGL fallback and mobile layout | build + 390×844 + reduced-motion QA |
 | Integration review | complete | D6.1 safety frame remains below D6.2 strata; actor mattes and Table Host preserve their existing contracts | build + discovery/entry/seated interface audit |
 
