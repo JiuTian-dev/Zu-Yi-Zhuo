@@ -6,7 +6,7 @@ import { humanActors, type ActorId, type AgentAction, type SeatActor } from './a
 
 export type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
 
-interface ValleySceneProps {
+export interface ValleySceneProps {
   phase: ExperiencePhase
   activeActorId: ActorId
   hoveredActorId: ActorId | null
@@ -346,7 +346,7 @@ function TableHost({ phase, action, hovered, reducedMotion }: {
   )
 }
 
-function SceneContent(props: ValleySceneProps) {
+export function ValleySceneContent(props: ValleySceneProps) {
   const hostAction: AgentAction = props.activeActorId === 'table-host' ? 'PASS' : 'SILENCE'
   return (
     <>
@@ -369,7 +369,7 @@ export default function ValleyScene(props: ValleySceneProps) {
       gl={{ antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
     >
-      <Suspense fallback={null}><SceneContent {...props} /></Suspense>
+      <Suspense fallback={null}><ValleySceneContent {...props} /></Suspense>
     </Canvas>
   )
 }
