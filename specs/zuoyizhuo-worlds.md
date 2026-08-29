@@ -316,7 +316,7 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D8.3b persistent renderer | complete | Lifted GlobalCanvas to the app shell and renders the Swiss world through an independent ViewportScrollScene camera while preserving DOM fallback | gallery→world→gallery Playwright path; one persistent canvas node; zero console errors; flow paused in world |
 | D8.3c card-to-world motion | complete | Added guarded expanding/collapsing phases, card-rect portal motion, paper reveal mask, delayed world chrome and keyboard focus handoff | complete Playwright pointer/keyboard/reduced-motion paths; one canvas identity; zero console errors |
 | D8.3d cover-match calibration | complete | Center-matched the immersive card to the Swiss discovery camera and eased the full-screen plate to the world's 1.1 overscan before reveal | 790ms/1000ms frame comparison; centered transform; one canvas; zero console errors |
-| D8.4 responsive/fallback | pending | Touch/native scroll, reduced motion, keyboard, WebGL fallback and mobile layout | build + 390×844 + reduced-motion QA |
+| D8.4 responsive/fallback | complete | Touch/native scroll, reduced motion, keyboard focus, DOM-only WebGL failure path and mobile layout | iPhone 15 gallery→world Canvas count 0; desktop Canvas count 1; keyboard/reduced-motion paths; zero console errors |
 | Integration review | complete | D6.1 safety frame remains below D6.2 strata; actor mattes and Table Host preserve their existing contracts | build + discovery/entry/seated interface audit |
 
 ## 13. Decision log

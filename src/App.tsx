@@ -1,7 +1,7 @@
 import { GlobalCanvas, UseCanvas, ViewportScrollScene } from '@14islands/r3f-scroll-rig'
 import { Suspense, useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
 import * as THREE from 'three'
-import ValleyScene, { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
+import { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
 import Gallery, { type GalleryMediaRect } from './Gallery'
 import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
@@ -115,9 +115,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
   return (
     <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''}`}>
       <div className="art-fallback" aria-hidden="true" />
-      {enhanced
-        ? <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>
-        : <ValleyScene {...sceneProps} />}
+      {enhanced && <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>}
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
