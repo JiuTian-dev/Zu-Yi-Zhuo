@@ -5,11 +5,25 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $sourcePath = (Resolve-Path -LiteralPath $Source).Path
-$outputPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Output))
+$outputPath = [System.IO.Path]::GetFullPath($Output)
+if ([string]::Equals($sourcePath, $outputPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Source and Output must resolve to different files.'
+}
+
 $workDir = Join-Path (Get-Location) 'output/table-host-optimize-work'
 $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
 $npx = (Get-Command npx.cmd -ErrorAction Stop).Source
 $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+$ffmpegVersionOutput = & $ffmpeg -version 2>&1
+$ffmpegExitCode = $LASTEXITCODE
+$ffmpegVersionLine = [string]($ffmpegVersionOutput | Select-Object -First 1)
+if ($ffmpegExitCode -ne 0 -or $ffmpegVersionLine -notmatch '^ffmpeg version\s+(\d+)') {
+  throw "Unable to determine ffmpeg version: $ffmpegVersionLine"
+}
+if ($ffmpegVersionLine -notmatch '^ffmpeg version\s+8\.1\.1(?:-|\s)') {
+  throw "ffmpeg version 8.1.1 is required; found: $ffmpegVersionLine"
+}
+Write-Host "Using $ffmpegVersionLine"
 
 function Invoke-Checked([string]$Command, [string[]]$Arguments) {
   & $Command @Arguments
@@ -23,8 +37,9 @@ $unpacked = Join-Path $workDir 'source.gltf'
 $webp = Join-Path $workDir 'baseColor.webp'
 $base = Join-Path $workDir 'base.glb'
 $simple = Join-Path $workDir 'simple.glb'
+$staged = Join-Path $workDir 'table-host.staging.glb'
 
-Invoke-Checked $npx @('--yes', '@gltf-transform/cli', 'copy', $sourcePath, $unpacked)
+Invoke-Checked $npx @('--yes', '@gltf-transform/cli@4.4.2', 'copy', $sourcePath, $unpacked)
 $gltf = Get-Content -LiteralPath $unpacked -Raw | ConvertFrom-Json -Depth 100
 if ($gltf.images.Count -ne 1 -or $gltf.textures.Count -ne 1) { throw 'Expected exactly one source texture.' }
 $sourceImage = Join-Path $workDir $gltf.images[0].uri
@@ -40,12 +55,13 @@ $gltf | Add-Member -NotePropertyName extensionsUsed -NotePropertyValue @('EXT_te
 $gltf | Add-Member -NotePropertyName extensionsRequired -NotePropertyValue @('EXT_texture_webp') -Force
 $gltf | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $unpacked -Encoding utf8
 
-Invoke-Checked $npx @('--yes', '@gltf-transform/cli', 'copy', $unpacked, $base)
-Invoke-Checked $npx @('--yes', '@gltf-transform/cli', 'simplify', $base, $simple, '--ratio', '0.17', '--error', '0.0005', '--lock-border', 'true')
-Invoke-Checked $npx @('--yes', '@gltf-transform/cli', 'meshopt', $simple, $outputPath, '--level', 'high', '--quantization-volume', 'mesh')
-Invoke-Checked $npx @('--yes', '@gltf-transform/cli', 'validate', $outputPath)
+Invoke-Checked $npx @('--yes', '@gltf-transform/cli@4.4.2', 'copy', $unpacked, $base)
+Invoke-Checked $npx @('--yes', '@gltf-transform/cli@4.4.2', 'simplify', $base, $simple, '--ratio', '0.17', '--error', '0.0005', '--lock-border', 'true')
+Invoke-Checked $npx @('--yes', '@gltf-transform/cli@4.4.2', 'meshopt', $simple, $staged, '--level', 'high', '--quantization-volume', 'mesh')
+Invoke-Checked $npx @('--yes', '@gltf-transform/cli@4.4.2', 'validate', $staged)
 
 $finalHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash
 if ($finalHash -ne $sourceHash) { throw 'Source GLB hash changed during optimization.' }
+Move-Item -Force -LiteralPath $staged -Destination $outputPath
 Write-Host "Created $outputPath"
 Write-Host "Source SHA256: $sourceHash"
