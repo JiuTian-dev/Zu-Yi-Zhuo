@@ -63,11 +63,31 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
   const [menuOpen, setMenuOpen] = useState(false)
   const timer = useRef<number | null>(null)
   const experienceRef = useRef<HTMLElement>(null!)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const joinOpenerRef = useRef<HTMLButtonElement | null>(null)
+
+  const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active.closest(panelSelector)) opener?.focus({ preventScroll: true })
+  }
+  const closeJoin = () => {
+    focusOpenerFrom('.join-sheet', joinOpenerRef.current)
+    setJoinOpen(false)
+  }
+  const closeMenu = () => {
+    focusOpenerFrom('.table-menu', menuButtonRef.current)
+    setMenuOpen(false)
+  }
+  const openJoin = (opener: HTMLButtonElement) => {
+    joinOpenerRef.current = opener
+    setJoinOpen(true)
+  }
 
   const resetDiscovery = () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
     timer.current = null
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active.closest('.join-sheet,.table-menu')) experienceRef.current?.focus({ preventScroll: true })
     setJoinOpen(false)
     setMenuOpen(false)
     setHoveredActorId(null)
@@ -77,8 +97,8 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (joinOpen) setJoinOpen(false)
-      else if (menuOpen) setMenuOpen(false)
+      if (joinOpen) closeJoin()
+      else if (menuOpen) closeMenu()
       else resetDiscovery()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -124,7 +144,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
         </button>
         <div className="header-actions">
           <button className="icon-button" type="button" aria-label={muted ? '开启环境音' : '关闭环境音'} onClick={() => setMuted(!muted)}><SoundIcon muted={muted} /></button>
-          <button className="icon-button menu-button" type="button" aria-label="打开桌单" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><span /><span /></button>
+          <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label="打开桌单" aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span /><span /></button>
         </div>
       </header>
 
@@ -177,17 +197,17 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
           </button>
         </div>
         <div className="question-card"><small>此刻的问题</small><p>我们需要的是休息，<br />还是允许自己停下？</p></div>
-        <button className="seat-marker" type="button" onClick={() => setJoinOpen(true)}><i /><span><small>第五席</small>这是你的位置</span></button>
+        <button className="seat-marker" type="button" onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>第五席</small>这是你的位置</span></button>
 
         <div className="conversation-dock" key={activeSpeaker}>
           <p>“{currentTurn.quote}”</p>
           <div><span><b>{currentTurn.displayName}</b> · {currentTurn.role}</span><i>{String(activeSpeaker + 1).padStart(2, '0')} / 05</i></div>
         </div>
-        <button className="join-table-button" type="button" onClick={() => setJoinOpen(true)}><i />坐到空席 <span>→</span></button>
+        <button className="join-table-button" type="button" onClick={(event) => openJoin(event.currentTarget)}><i />坐到空席 <span>→</span></button>
       </section>
 
       <aside className="join-sheet" aria-hidden={!joinOpen} inert={!joinOpen}>
-        <button className="panel-close" type="button" aria-label="关闭入席邀请" onClick={() => setJoinOpen(false)}>×</button>
+        <button className="panel-close" type="button" aria-label="关闭入席邀请" onClick={closeJoin}>×</button>
         <p className="panel-kicker">第五席 · 正在等你</p>
         <h2>你不需要带来答案。<br />只需要带来真实经历。</h2>
         <div className="seat-profile"><span>为什么是你</span><p>桌上已经有自由职业、职场压力和心理恢复的视角，但还没有一个真正尝试停下来的人。</p></div>
