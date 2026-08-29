@@ -1,7 +1,7 @@
 import { ScrollScene, SmoothScrollbar, UseCanvas, type ScrollSceneChildProps } from '@14islands/r3f-scroll-rig'
 import { useTexture } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { galleryTables, type TableSummary } from './domain'
 import type { AppPhase } from './domain'
@@ -15,8 +15,15 @@ interface GalleryProps {
   enhanced: boolean
   flowTexture: GalleryFlowTextureRef
   phase: AppPhase
+  restoreScrollY: number
   returnFocusId: string | null
 }
+
+interface SmoothScrollbarHandle {
+  scrollTo(target: number, options?: { immediate?: boolean; force?: boolean }): void
+}
+
+const MAX_WHEEL_STEP = 360
 
 const vertexShader = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`
 const fragmentShader = `
@@ -97,8 +104,9 @@ function GalleryCard({ table, index, enhanced, forming, flowTexture, onEnter, on
   )
 }
 
-export default function Gallery({ onEnter, enhanced, flowTexture, phase, returnFocusId }: GalleryProps) {
+export default function Gallery({ onEnter, enhanced, flowTexture, phase, restoreScrollY, returnFocusId }: GalleryProps) {
   const [forming, setForming] = useState<string | null>(null)
+  const scrollbarRef = useRef<SmoothScrollbarHandle | null>(null)
   const galleryActive = phase === 'gallery'
   useEffect(() => {
     const previousPointerEvents = document.documentElement.style.pointerEvents
@@ -117,15 +125,33 @@ export default function Gallery({ onEnter, enhanced, flowTexture, phase, returnF
       document.body.classList.remove('gallery-transition')
     }
   }, [galleryActive])
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!galleryActive || !returnFocusId) return
+    const restore = () => {
+      window.scrollTo({ top: restoreScrollY, behavior: 'auto' })
+      scrollbarRef.current?.scrollTo(restoreScrollY, { immediate: true, force: true })
+    }
+    restore()
     const selector = `button[data-table-id="${CSS.escape(returnFocusId)}"]`
-    const frame = requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(selector)?.focus({ preventScroll: true }))
+    const frame = requestAnimationFrame(() => {
+      restore()
+      document.querySelector<HTMLButtonElement>(selector)?.focus({ preventScroll: true })
+    })
     return () => cancelAnimationFrame(frame)
-  }, [galleryActive, returnFocusId])
+  }, [galleryActive, restoreScrollY, returnFocusId])
   return (
     <>
-      {enhanced && galleryActive && <SmoothScrollbar config={{ duration: 1.15 }} />}
+      {enhanced && galleryActive && <SmoothScrollbar ref={scrollbarRef} config={{
+        duration: .72,
+        wheelMultiplier: 1,
+        virtualScroll: (data: { deltaX: number; deltaY: number; event: WheelEvent | TouchEvent }) => {
+          if (data.event instanceof WheelEvent) {
+            data.deltaX = THREE.MathUtils.clamp(data.deltaX, -MAX_WHEEL_STEP, MAX_WHEEL_STEP)
+            data.deltaY = THREE.MathUtils.clamp(data.deltaY, -MAX_WHEEL_STEP, MAX_WHEEL_STEP)
+          }
+          return true
+        },
+      }} />}
       <main className={`gallery-page is-${phase} ${enhanced && galleryActive ? 'is-enhanced' : ''}`} inert={!galleryActive}>
         <header className="gallery-header"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span><em>ZH · 2026</em></header>
         <section className="gallery-intro"><p>正在发生的桌</p><h1>有些答案，<br />不在任何一个人那里。</h1><span>向下走近一场真实交流</span></section>

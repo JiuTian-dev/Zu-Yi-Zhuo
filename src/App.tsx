@@ -186,7 +186,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
         <button className="join-table-button" type="button" onClick={() => setJoinOpen(true)}><i />坐到空席 <span>→</span></button>
       </section>
 
-      <aside className="join-sheet" aria-hidden={!joinOpen}>
+      <aside className="join-sheet" aria-hidden={!joinOpen} inert={!joinOpen}>
         <button className="panel-close" type="button" aria-label="关闭入席邀请" onClick={() => setJoinOpen(false)}>×</button>
         <p className="panel-kicker">第五席 · 正在等你</p>
         <h2>你不需要带来答案。<br />只需要带来真实经历。</h2>
@@ -195,7 +195,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
         <button className="confirm-seat" type="button">以真实经历入席 <span>→</span></button>
       </aside>
 
-      <nav className={`table-menu ${menuOpen ? 'is-open' : ''}`} aria-label="正在发生的桌">
+      <nav className={`table-menu ${menuOpen ? 'is-open' : ''}`} aria-label="正在发生的桌" aria-hidden={!menuOpen} inert={!menuOpen}>
         <p>换一张正在发生的桌</p>
         <button type="button" className="active"><span>瑞士山谷</span>为什么我们越来越不会休息？</button>
         <button type="button" disabled><span>深夜篝火</span>关于离开大城市，他们已经聊了三天。<small>下一张</small></button>
@@ -223,6 +223,7 @@ export default function App() {
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
   const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture) as GalleryFlowTextureRef
   const transitionTimer = useRef<number | null>(null)
+  const galleryScrollY = useRef(0)
   const reducedMotion = useReducedMotion()
   useEffect(() => {
     setEnhanced(canEnhance())
@@ -240,6 +241,7 @@ export default function App() {
   }
   const enterTable = (table: TableSummary, rect: GalleryMediaRect) => {
     if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
+    galleryScrollY.current = window.scrollY
     setTransition({ table, rect })
     setAppPhase('expanding')
     schedulePhase('world', reducedMotion ? 180 : 1100)
@@ -255,7 +257,7 @@ export default function App() {
   return (
     <>
       {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{appPhase === 'gallery' && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
-      {showGallery && <Gallery phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />}
+      {showGallery && <Gallery phase={appPhase} restoreScrollY={galleryScrollY.current} returnFocusId={transition?.table.id ?? null} onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />}
       {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} onExit={exitTable} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>

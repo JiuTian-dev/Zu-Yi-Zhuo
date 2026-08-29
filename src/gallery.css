@@ -2,7 +2,7 @@ html.gallery-mode,body.gallery-mode{height:auto;overflow:auto;background:#eef0f5
 html.gallery-transition,body.gallery-transition{overflow:hidden}
 .gallery-mode #root{height:auto;min-height:100%}#ScrollRig-canvas{position:fixed!important;z-index:2;pointer-events:none!important}
 .valley-experience.is-enhanced{isolation:auto;background:transparent}.valley-experience.is-enhanced .world-grade{z-index:3}
-.valley-experience.app-expanding,.valley-experience.app-collapsing{position:fixed;inset:0;z-index:5}.valley-experience.app-collapsing{animation:world-stage-out .45s cubic-bezier(.4,0,1,1) both;pointer-events:none}
+.valley-experience.app-expanding,.valley-experience.app-world,.valley-experience.app-collapsing{position:fixed;inset:0;z-index:5;width:100%;height:100svh}.valley-experience.app-collapsing{animation:world-stage-out .45s cubic-bezier(.4,0,1,1) both;pointer-events:none}
 .valley-experience.app-expanding .site-header,.valley-experience.app-expanding .hero-copy,.valley-experience.app-expanding .seat-hotspot,.valley-experience.app-expanding .scene-footer{animation:world-chrome-in .42s ease .68s both}
 .gallery-page{min-height:100vh;padding:0 clamp(24px,4.2vw,72px) 56px;background:#eef0f5;color:#111315;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif}
 .gallery-page.is-expanding{position:relative;z-index:4;animation:gallery-leave .82s cubic-bezier(.55,0,1,.45) both;pointer-events:none}.gallery-page.is-collapsing{position:relative;z-index:6;animation:gallery-return .45s cubic-bezier(.2,.72,.2,1) both;pointer-events:none}

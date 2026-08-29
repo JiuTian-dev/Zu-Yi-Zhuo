@@ -291,6 +291,10 @@ main
                                                               └── D8.2 shared pointer flow + card depth
                                                                     └── D8.3 Swiss card-to-world handoff
                                                                           └── D8.4 responsive, fallback + final polish
+                                                                                └── D9.1 world viewport + gallery scroll-state repair
+                                                                                      └── D9.2 optimized Table Host GLB asset
+                                                                                            └── D9.3 hybrid GLB Host + runtime light language
+                                                                                                  └── D9.4 interaction/performance integration QA
 ```
 
 Each diff targets at most 300 changed lines where practical and must be independently buildable and reviewable.
@@ -318,6 +322,11 @@ Each diff targets at most 300 changed lines where practical and must be independ
 | D8.3d cover-match calibration | complete | Center-matched the immersive card to the Swiss discovery camera and eased the full-screen plate to the world's 1.1 overscan before reveal | 790ms/1000ms frame comparison; centered transform; one canvas; zero console errors |
 | D8.4 responsive/fallback | complete | Touch/native scroll, reduced motion, keyboard focus, DOM-only WebGL failure path and mobile layout | iPhone 15 gallery→world Canvas count 0; desktop Canvas count 1; keyboard/reduced-motion paths; zero console errors |
 | D8 integration review | complete | Domain, gallery, shared flow, persistent renderer, Valley viewport, transition state, focus and fallback contracts connected end to end | Integration review PASS; `pnpm build`; tracked worktree clean |
+| D9 design confirmation | complete | User confirmed Plan 1: repair the world-entry defects, then use an optimized GLB body with the existing real-time halo/core/question light | Product/user confirmation and supplied GLB audit |
+| D9.1 world/scroll repair | complete | World fixed across all active phases; gallery scroll/focus restored through the smooth-scroll owner; wheel step bounded; inactive UI isolated from pointer input | `pnpm build`; Playwright at 1440×900 and 2559×1529: single viewport/Canvas, 0px return error, 520px wheel→360px, console errors 0 |
+| D9.2 optimized Host asset | pending | Produce a web derivative of the supplied 44.8 MB GLB with reduced geometry, compressed texture and retained rig/idle clip; keep the source untouched | glTF inspection; output-size/GPU audit; loader smoke test |
+| D9.3 hybrid GLB Host | pending | Replace the temporary Host body with the optimized skinned model while preserving code-driven incomplete halo, chest core, question point, hover and SILENCE/PASS state | seated sixth-seat visual/interaction QA; sprite fallback remains available |
+| D9.4 integration QA | pending | Repair remaining dead-end controls honestly, verify responsive hotspot alignment, loading/fallback, reduced motion and runtime performance | production build; Playwright desktop/mobile/reduced-motion; console/network audit |
 | Integration review | complete | D6.1 safety frame remains below D6.2 strata; actor mattes and Table Host preserve their existing contracts | build + discovery/entry/seated interface audit |
 
 ## 13. Decision log
@@ -332,3 +341,31 @@ Each diff targets at most 300 changed lines where practical and must be independ
 - 2026-08-28: Plan B4 confirmed: remove single-sheet edge exposure with a transparent same-art safety plate and aspect overscan, then split only the visually valuable far/middle/near depth bands.
 - 2026-08-29: Product architecture expanded from direct-to-table to a Table First editorial gallery. Cards are concrete tables, not world choices; one global WebGL canvas turns the selected card into the existing immersive scene.
 - 2026-08-29: Lusion-style behavior means DOM/WebGL synchronization, pointer-flow displacement and continuous card-to-world motion; it does not mean copying Lusion's brand or private shader source.
+- 2026-08-29: D9 Plan 1 confirmed. The supplied Host GLB becomes the sixth-seat body only after web optimization; the existing Three.js halo, core, local light and question point remain the brand/state layer. The raw source GLB is immutable.
+- 2026-08-29: World UI and the persistent Canvas must share viewport coordinates. Gallery scroll is captured before entry, the world stays fixed for expanding/world/collapsing, and the captured position is restored only after the gallery tracker remounts.
+
+## 14. D9 confirmed repair and GLB integration contract
+
+### Cache anchor addendum
+
+- Reproduced defect: a gallery card can be entered while the document retains a non-zero smooth-scroll position. The fixed shared Canvas then renders the world in viewport coordinates while the world DOM/safety plate renders in document coordinates, producing the duplicated upper/lower Swiss scene shown by the user.
+- The world root is viewport-fixed during `expanding`, `world`, and `collapsing`; body/document scroll cannot move any world layer.
+- Entry captures the gallery scroll position before its smooth-scroll controller unmounts. Return remounts the gallery, restores that position through the scroll owner, and then focuses the source table without forcing a second scroll.
+- A normal wheel gesture must not skip an entire featured table. Smooth scrolling keeps inertia but uses near-1:1 input distance with a bounded maximum step.
+- Inactive discovery/seated/join/menu controls must be both visually hidden and non-interactive; no invisible hotspot may intercept the pointer.
+- The source GLB at `3D/5c8a94ea-b4d5-4f7d-aed7-b94cd6f0a81b.glb` is never overwritten. A derived web asset is generated under `public/assets/actors/`.
+- Raw audit baseline: 46,947,728 bytes; 282,671 uploaded vertices; approximately 470,012 triangles; one 8192×8192 PNG texture; 49-joint skin; one 1-second clip. Raw minimum texture allocation is approximately 358 MB and is not production-safe.
+- Web derivative target: no more than 80k triangles where visual comparison permits, 2K texture, GPU texture compression when tool support is deterministic, mesh compression, retained skin and idle clip, and a practical transfer target below 8 MB.
+- The GLB owns the Host silhouette, skinning and embedded idle motion. Three.js continues to own visibility staging, incomplete halo, chest core, question orb, local light, hover and AgentAction transitions.
+- `SILENCE` uses the embedded idle clip plus restrained listening motion. `PASS` uses an additive parent/bone gesture and the existing question-orb travel until a dedicated authored PASS clip exists. Other AgentAction values keep the stable contract but do not invent exaggerated animation.
+- Loading failure, low-capability mode and reduced-motion mode retain the current transparent sprite Host as a fallback.
+
+### D9 acceptance criteria
+
+- Entering the Swiss table from any gallery scroll position produces exactly one full-viewport scene with no horizontal seam or duplicate art plate.
+- Returning restores the source card within 8 px of its prior viewport position and gives visible focus without jumping to the top.
+- One 520 px wheel input cannot advance more than one featured-card interval.
+- The optimized Host occupies the rear sixth seat, remains visually behind the table edge, and preserves the approved human/empty-seat composition.
+- The Host can be identified and hovered independently as `table-host`; SILENCE and PASS remain visibly distinct.
+- No raw 8K texture or 44.8 MB GLB is requested by the browser.
+- Production build passes; desktop uses one Canvas, fallback/mobile uses zero or the explicitly supported low-cost path; no console or network errors are introduced.
