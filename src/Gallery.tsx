@@ -1,52 +1,70 @@
-import { GlobalCanvas, ScrollScene, SmoothScrollbar, UseCanvas } from '@14islands/r3f-scroll-rig'
+import { GlobalCanvas, ScrollScene, SmoothScrollbar, UseCanvas, type ScrollSceneChildProps } from '@14islands/r3f-scroll-rig'
 import { useTexture } from '@react-three/drei'
-import { useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { galleryTables, type TableSummary } from './domain'
+import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import './gallery.css'
 
 interface GalleryProps { onEnter(table: TableSummary): void }
 
+const zeroFlowTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType)
+zeroFlowTexture.needsUpdate = true
 const vertexShader = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`
 const fragmentShader = `
-  uniform sampler2D map; uniform vec2 imageSize; uniform vec2 planeSize; uniform vec2 focus; varying vec2 vUv;
+  uniform sampler2D map, flowMap; uniform vec2 imageSize, planeSize, focus, resolution; varying vec2 vUv;
   void main(){
     float planeAspect=planeSize.x/planeSize.y, imageAspect=imageSize.x/imageSize.y;
     vec2 span=vec2(1.); if(planeAspect>imageAspect) span.y=imageAspect/planeAspect; else span.x=planeAspect/imageAspect;
     vec2 origin=clamp(focus-span*.5,vec2(0.),vec2(1.)-span);
-    gl_FragColor=texture2D(map,origin+vUv*span);
+    vec2 screenUv=gl_FragCoord.xy/resolution;
+    vec4 encoded=texture2D(flowMap,clamp(screenUv,vec2(0.),vec2(1.)));
+    vec2 localUv=vUv+vec2(encoded.r-encoded.g,encoded.b-encoded.a)*.065;
+    vec2 sampleUv=clamp(origin+localUv*span,origin+span*.002,origin+span*.998);
+    gl_FragColor=texture2D(map,sampleUv);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }`
 
-function GalleryPlane({ table, track }: { table: TableSummary; track: MutableRefObject<HTMLElement> }) {
+function FlowPlaneMesh({ table, texture, scale, flowTexture }: {
+  table: TableSummary; texture: THREE.Texture
+  scale: ScrollSceneChildProps['scale']; flowTexture: GalleryFlowTextureRef
+}) {
+  const material = useRef<THREE.ShaderMaterial>(null)
+  const { gl } = useThree()
+  const drawingSize = useMemo(() => new THREE.Vector2(), [])
+  const image = texture.image as { width?: number; height?: number }
+  const uniforms = useMemo(() => ({
+    map: { value: texture }, flowMap: { value: flowTexture.current },
+    imageSize: { value: new THREE.Vector2(image.width ?? 16, image.height ?? 9) },
+    planeSize: { value: new THREE.Vector2(scale[0], scale[1]) },
+    focus: { value: new THREE.Vector2(table.coverFocus.x, 1 - table.coverFocus.y) },
+    resolution: { value: drawingSize },
+  }), [drawingSize, flowTexture, image.height, image.width, scale, table.coverFocus.x, table.coverFocus.y, texture])
+  useFrame(() => {
+    if (!material.current) return
+    material.current.uniforms.flowMap.value = flowTexture.current
+    material.current.uniforms.planeSize.value.set(scale[0], scale[1])
+    gl.getDrawingBufferSize(drawingSize)
+  })
+  return <mesh scale={scale}><planeGeometry /><shaderMaterial ref={material} uniforms={uniforms} vertexShader={vertexShader} fragmentShader={fragmentShader} /></mesh>
+}
+
+function GalleryPlane({ table, track, flowTexture }: { table: TableSummary; track: MutableRefObject<HTMLElement>; flowTexture: GalleryFlowTextureRef }) {
   const texture = useTexture(table.sceneTexture)
   texture.colorSpace = THREE.SRGBColorSpace
-  const image = texture.image as { width?: number; height?: number }
   return (
     <ScrollScene track={track} inViewportMargin="35%">
-      {({ scale }) => (
-        <mesh scale={scale}>
-          <planeGeometry />
-          <shaderMaterial
-            uniforms={{
-              map: { value: texture },
-              imageSize: { value: new THREE.Vector2(image.width ?? 16, image.height ?? 9) },
-              planeSize: { value: new THREE.Vector2(scale[0], scale[1]) },
-              focus: { value: new THREE.Vector2(table.coverFocus.x, 1 - table.coverFocus.y) },
-            }}
-            vertexShader={vertexShader}
-            fragmentShader={fragmentShader}
-          />
-        </mesh>
-      )}
+      {({ scale }) => <FlowPlaneMesh table={table} texture={texture} scale={scale} flowTexture={flowTexture} />}
     </ScrollScene>
   )
 }
 
-function GalleryCard({ table, index, enhanced, forming, onEnter, onForming }: {
+function GalleryCard({ table, index, enhanced, forming, flowTexture, onEnter, onForming }: {
   table: TableSummary; index: number; enhanced: boolean
-  forming: boolean; onEnter(table: TableSummary): void; onForming(table: TableSummary): void
+  forming: boolean; flowTexture: GalleryFlowTextureRef
+  onEnter(table: TableSummary): void; onForming(table: TableSummary): void
 }) {
   const mediaRef = useRef<HTMLDivElement>(null!)
   return (
@@ -54,7 +72,7 @@ function GalleryCard({ table, index, enhanced, forming, onEnter, onForming }: {
       <div className="gallery-media" ref={mediaRef}>
         <img src={table.sceneTexture} alt={`${table.hook}的场景`} loading={index ? 'lazy' : 'eager'} style={{ objectPosition: `${table.coverFocus.x * 100}% ${table.coverFocus.y * 100}%` }} />
       </div>
-      {enhanced && <UseCanvas><GalleryPlane table={table} track={mediaRef as MutableRefObject<HTMLElement>} /></UseCanvas>}
+      {enhanced && <UseCanvas><GalleryPlane table={table} track={mediaRef as MutableRefObject<HTMLElement>} flowTexture={flowTexture} /></UseCanvas>}
       <div className="gallery-copy">
         <p><span>{String(index + 1).padStart(2, '0')}</span>{table.worldId === 'valley' ? '瑞士山谷' : table.worldId === 'campfire' ? '深夜篝火' : '午后 Workshop'} · {table.seatedCount} 人已入席</p>
         <h2>{table.hook}</h2>
@@ -79,6 +97,7 @@ function canEnhance() {
 export default function Gallery({ onEnter }: GalleryProps) {
   const [enhanced, setEnhanced] = useState(false)
   const [forming, setForming] = useState<string | null>(null)
+  const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture)
   useEffect(() => {
     const previousPointerEvents = document.documentElement.style.pointerEvents
     document.documentElement.classList.add('gallery-mode'); document.body.classList.add('gallery-mode')
@@ -92,12 +111,12 @@ export default function Gallery({ onEnter }: GalleryProps) {
   return (
     <>
       {/* D8.1b boundary: this canvas exists only in gallery until the shared portal renderer lands. */}
-      {enhanced && <><GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)} /><SmoothScrollbar config={{ duration: 1.15 }} /></>}
+      {enhanced && <><GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}><GalleryFlow textureRef={flowTexture} /></GlobalCanvas><SmoothScrollbar config={{ duration: 1.15 }} /></>}
       <main className={`gallery-page ${enhanced ? 'is-enhanced' : ''}`}>
         <header className="gallery-header"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span><em>ZH · 2026</em></header>
         <section className="gallery-intro"><p>正在发生的桌</p><h1>有些答案，<br />不在任何一个人那里。</h1><span>向下走近一场真实交流</span></section>
         <section className="gallery-list" aria-label="正在发生的桌">
-          {galleryTables.map((table, index) => <GalleryCard key={table.id} table={table} index={index} enhanced={enhanced} forming={forming === table.id} onEnter={onEnter} onForming={(item) => setForming(item.id)} />)}
+          {galleryTables.map((table, index) => <GalleryCard key={table.id} table={table} index={index} enhanced={enhanced} forming={forming === table.id} flowTexture={flowTexture} onEnter={onEnter} onForming={(item) => setForming(item.id)} />)}
         </section>
         <p className="forming-note" role="status" aria-live="polite">{forming ? '这张桌还在等待合适的人，形成后会从这里亮起来。' : ''}</p>
         <footer className="gallery-footer"><span>不是浏览内容，是遇见一桌人。</span><span>三张桌 · 一个正在发生</span></footer>
