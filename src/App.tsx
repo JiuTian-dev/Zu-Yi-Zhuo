@@ -136,6 +136,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
     <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''}`}>
       <div className="art-fallback" aria-hidden="true" />
       {enhanced && <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>}
+      {!enhanced && seated && <img className="dom-host-fallback" src="/assets/actors/table-host-silence.png" alt="" aria-hidden="true" />}
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">

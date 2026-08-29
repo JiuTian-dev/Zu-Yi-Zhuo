@@ -11,6 +11,7 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
 .art-fallback,.valley-canvas,.world-grade { position:absolute!important; inset:0; width:100%!important; height:100%!important; }
 .art-fallback { z-index:0; background:url('/assets/valley-world-clean.png') center/cover no-repeat; }
 .valley-canvas { z-index:1; pointer-events:none; }
+.dom-host-fallback { position:absolute; z-index:1; top:31%; left:43%; width:clamp(58px,7.2vw,104px); height:auto; opacity:.96; filter:drop-shadow(0 8px 15px rgba(52,37,19,.28)); transform:translate(-50%,-50%); pointer-events:none; }
 .world-grade { z-index:2; pointer-events:none; background:linear-gradient(90deg,rgba(37,63,66,.3),rgba(37,63,66,.07) 35%,transparent 58%),linear-gradient(0deg,rgba(24,43,39,.23),transparent 25%); transition:background 1.2s ease,backdrop-filter .8s ease; }
 .phase-approaching .world-grade { background:radial-gradient(circle at 65% 65%,transparent 0 17%,rgba(31,42,36,.12) 48%,rgba(25,42,40,.4) 100%); }
 .phase-seated .world-grade { background:radial-gradient(circle at 58% 55%,transparent 0 24%,rgba(28,43,39,.16) 58%,rgba(19,35,35,.55) 100%); }
@@ -141,6 +142,7 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
   .question-card { top:17%; right:20px; width:210px; }
   .question-card p { font-size:14px; }
   .actor-hotspots { display:none; }
+  .dom-host-fallback { top:35%; left:50%; width:66px; }
   .seat-marker { left:28%; top:76%; }
   .conversation-dock { bottom:20px; width:calc(100% - 38px); }
   .conversation-dock p { font-size:14px; }

@@ -283,10 +283,13 @@ function HumanMattes({ activeActorId, hoveredActorId, phase }: Pick<ValleySceneP
 const HOST_MODEL_URL = '/assets/actors/table-host.glb'
 const HOST_CLIP_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.17)
 
-class HostModelBoundary extends Component<{ children: ReactNode; onError(): void }, { failed: boolean }> {
+class HostModelBoundary extends Component<{ children: ReactNode; resetKey: string; onError(): void }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
   componentDidCatch() { this.props.onError() }
+  componentDidUpdate(previous: Readonly<{ resetKey: string }>) {
+    if (this.state.failed && previous.resetKey !== this.props.resetKey) this.setState({ failed: false })
+  }
   render() { return this.state.failed ? null : this.props.children }
 }
 
@@ -312,7 +315,7 @@ function HostModel({ phase, action, onReady }: {
         const copy = material.clone()
         copy.transparent = true
         copy.opacity = 0
-        copy.depthTest = false
+        copy.depthTest = true
         copy.depthWrite = false
         copy.clippingPlanes = [HOST_CLIP_PLANE]
         owned.push(copy)
@@ -384,6 +387,10 @@ function TableHost({ phase, action, hovered, reducedMotion }: {
   const orbHome = useMemo(() => new THREE.Vector3(0.28, -0.18, 0.08), [])
   const orbTarget = useMemo(() => new THREE.Vector3(1.25, -0.08, 0.16), [])
   const modelLoaded = useCallback(() => setModelReady(true), [])
+  const modelFailed = useCallback(() => {
+    useGLTF.clear(HOST_MODEL_URL)
+    setModelReady(false)
+  }, [])
 
   useEffect(() => { if (reducedMotion) setModelReady(false) }, [reducedMotion])
 
@@ -408,31 +415,73 @@ function TableHost({ phase, action, hovered, reducedMotion }: {
 
   return (
     <group ref={group} position={[2.14, -1.04, 0.28]} renderOrder={5}>
-      {!reducedMotion && <HostModelBoundary onError={() => setModelReady(false)}>
+      {!reducedMotion && <HostModelBoundary resetKey={phase} onError={modelFailed}>
         <Suspense fallback={null}><HostModel phase={phase} action={action} onReady={modelLoaded} /></Suspense>
       </HostModelBoundary>}
       <hemisphereLight color="#fff0d0" groundColor="#4b6259" intensity={1.15} />
       <directionalLight color="#ffe8c0" intensity={1.3} position={[-2, 3, 4]} />
       <mesh position={[0, 0.26, -0.008]} rotation={[0, 0, -0.28]}>
         <ringGeometry args={[0.255, 0.278, 72, 1, 0.2, Math.PI * 1.72]} />
-        <meshBasicMaterial ref={haloMaterial} color="#ffd782" transparent opacity={0} depthTest={false} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial ref={haloMaterial} color="#ffd782" transparent opacity={0} depthWrite={false} toneMapped={false} />
       </mesh>
       <sprite position={[0, -0.08, 0]} scale={[0.72, 0.84, 1]}>
-        <spriteMaterial ref={silenceMaterial} map={silenceMap} transparent opacity={0} depthTest={false} depthWrite={false} alphaTest={0.06} toneMapped={false} />
+        <spriteMaterial ref={silenceMaterial} map={silenceMap} transparent opacity={0} depthWrite={false} alphaTest={0.06} toneMapped={false} />
       </sprite>
       <sprite position={[0.05, -0.08, 0.002]} scale={[0.78, 0.84, 1]}>
-        <spriteMaterial ref={passMaterial} map={passMap} transparent opacity={0} depthTest={false} depthWrite={false} alphaTest={0.06} toneMapped={false} />
+        <spriteMaterial ref={passMaterial} map={passMap} transparent opacity={0} depthWrite={false} alphaTest={0.06} toneMapped={false} />
       </sprite>
       <mesh position={[0, -0.17, 0.012]}>
         <ringGeometry args={[0.048, 0.063, 48]} />
-        <meshBasicMaterial ref={coreMaterial} color="#ffe09a" transparent opacity={0} depthTest={false} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial ref={coreMaterial} color="#ffe09a" transparent opacity={0} depthWrite={false} toneMapped={false} />
       </mesh>
       <mesh ref={orb} position={orbHome} renderOrder={7}>
         <sphereGeometry args={[0.035, 20, 16]} />
-        <meshBasicMaterial ref={orbMaterial} color="#fff0bd" transparent opacity={0} depthTest={false} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial ref={orbMaterial} color="#fff0bd" transparent opacity={0} depthWrite={false} toneMapped={false} />
         <pointLight ref={orbLight} color="#ffd176" intensity={0} distance={1.4} decay={2} />
       </mesh>
     </group>
+  )
+}
+
+function HostForegroundMatte() {
+  const plateScale = usePlateScale()
+  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
+  colorMap.colorSpace = THREE.SRGBColorSpace
+  depthMap.colorSpace = THREE.NoColorSpace
+
+  return (
+    <mesh position={[0, 0, 0.018]} scale={plateScale} renderOrder={8}>
+      <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
+      <shaderMaterial
+        uniforms={{ colorMap: { value: colorMap }, depthMap: { value: depthMap } }}
+        transparent
+        depthTest={false}
+        depthWrite={false}
+        vertexShader={`
+          uniform sampler2D depthMap;
+          varying vec2 vUv;
+          void main(){
+            vUv=uv;
+            vec3 p=position;
+            p.z += texture2D(depthMap,uv).r*.82-.34;
+            gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+          }
+        `}
+        fragmentShader={`
+          uniform sampler2D colorMap;
+          varying vec2 vUv;
+          void main(){
+            vec2 d=(vUv-vec2(.628,.372))/vec2(.145,.09);
+            float rim=1.0-smoothstep(.72,1.0,dot(d,d));
+            float lower=1.0-smoothstep(.382,.412,vUv.y);
+            vec4 color=texture2D(colorMap,vUv);
+            gl_FragColor=vec4(color.rgb,color.a*rim*lower);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `}
+      />
+    </mesh>
   )
 }
 
@@ -444,6 +493,7 @@ export function ValleySceneContent(props: ValleySceneProps) {
       <DepthPlate phase={props.phase} reducedMotion={props.reducedMotion} />
       <HumanMattes activeActorId={props.activeActorId} hoveredActorId={props.hoveredActorId} phase={props.phase} />
       <TableHost phase={props.phase} action={hostAction} hovered={props.hoveredActorId === 'table-host'} reducedMotion={props.reducedMotion} />
+      {props.phase === 'seated' && <HostForegroundMatte />}
       <FloatingPetals phase={props.phase} reducedMotion={props.reducedMotion} />
       <Sparkles count={props.reducedMotion ? 8 : props.phase === 'seated' ? 34 : 18} position={[2.6, -1.15, 1.15]} scale={[4.4, 2.5, 1.5]} size={1.4} speed={props.reducedMotion ? 0 : 0.12} color="#ffe3a4" opacity={props.phase === 'seated' ? 0.34 : 0.12} />
     </>
