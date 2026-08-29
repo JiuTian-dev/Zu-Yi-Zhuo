@@ -1,16 +1,18 @@
-import { GlobalCanvas, ScrollScene, SmoothScrollbar, UseCanvas, type ScrollSceneChildProps } from '@14islands/r3f-scroll-rig'
+import { ScrollScene, SmoothScrollbar, UseCanvas, type ScrollSceneChildProps } from '@14islands/r3f-scroll-rig'
 import { useTexture } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { galleryTables, type TableSummary } from './domain'
-import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
+import { type GalleryFlowTextureRef } from './GalleryFlow'
 import './gallery.css'
 
-interface GalleryProps { onEnter(table: TableSummary): void }
+interface GalleryProps {
+  onEnter(table: TableSummary): void
+  enhanced: boolean
+  flowTexture: GalleryFlowTextureRef
+}
 
-const zeroFlowTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType)
-zeroFlowTexture.needsUpdate = true
 const vertexShader = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`
 const fragmentShader = `
   uniform sampler2D map, flowMap; uniform vec2 imageSize, planeSize, focus, resolution; varying vec2 vUv;
@@ -85,33 +87,20 @@ function GalleryCard({ table, index, enhanced, forming, flowTexture, onEnter, on
   )
 }
 
-function canEnhance() {
-  if (!matchMedia('(pointer:fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return false
-  const canvas = document.createElement('canvas')
-  const context = canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: true }) ?? canvas.getContext('webgl')
-  if (!context) return false
-  context.getExtension('WEBGL_lose_context')?.loseContext()
-  return true
-}
-
-export default function Gallery({ onEnter }: GalleryProps) {
-  const [enhanced, setEnhanced] = useState(false)
+export default function Gallery({ onEnter, enhanced, flowTexture }: GalleryProps) {
   const [forming, setForming] = useState<string | null>(null)
-  const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture)
   useEffect(() => {
     const previousPointerEvents = document.documentElement.style.pointerEvents
     document.documentElement.classList.add('gallery-mode'); document.body.classList.add('gallery-mode')
-    setEnhanced(canEnhance())
     return () => {
       document.documentElement.style.pointerEvents = previousPointerEvents
-      document.documentElement.classList.remove('gallery-mode', 'js-has-global-canvas', 'js-global-canvas-error', 'js-smooth-scrollbar-enabled', 'js-smooth-scrollbar-disabled')
+      document.documentElement.classList.remove('gallery-mode', 'js-smooth-scrollbar-enabled', 'js-smooth-scrollbar-disabled')
       document.body.classList.remove('gallery-mode', 'ScrollRig-scrollWrapper')
     }
   }, [])
   return (
     <>
-      {/* D8.1b boundary: this canvas exists only in gallery until the shared portal renderer lands. */}
-      {enhanced && <><GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}><GalleryFlow textureRef={flowTexture} /></GlobalCanvas><SmoothScrollbar config={{ duration: 1.15 }} /></>}
+      {enhanced && <SmoothScrollbar config={{ duration: 1.15 }} />}
       <main className={`gallery-page ${enhanced ? 'is-enhanced' : ''}`}>
         <header className="gallery-header"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span><em>ZH · 2026</em></header>
         <section className="gallery-intro"><p>正在发生的桌</p><h1>有些答案，<br />不在任何一个人那里。</h1><span>向下走近一场真实交流</span></section>

@@ -1,5 +1,6 @@
 html.gallery-mode,body.gallery-mode{height:auto;overflow:auto;background:#eef0f5;color:#111315}
-.gallery-mode #root{height:auto;min-height:100%}.gallery-mode #ScrollRig-canvas{z-index:2;pointer-events:none!important}
+.gallery-mode #root{height:auto;min-height:100%}#ScrollRig-canvas{position:fixed!important;z-index:2;pointer-events:none!important}
+.valley-experience.is-enhanced{isolation:auto;background:transparent}.valley-experience.is-enhanced .world-grade{z-index:3}
 .gallery-page{min-height:100vh;padding:0 clamp(24px,4.2vw,72px) 56px;background:#eef0f5;color:#111315;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif}
 .gallery-header{position:relative;z-index:3;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;height:92px;border-bottom:1px solid #c9cdd2;font-size:10px;letter-spacing:.12em}
 .gallery-header b{font-size:22px;font-weight:500;letter-spacing:.08em}.gallery-header span{color:#5e646a}.gallery-header em{justify-self:end;font-style:normal;color:#777d83}

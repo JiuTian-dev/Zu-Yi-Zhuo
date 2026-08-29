@@ -1,10 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
-import ValleyScene, { type ExperiencePhase } from './ValleyScene'
+import { GlobalCanvas, UseCanvas, ViewportScrollScene } from '@14islands/r3f-scroll-rig'
+import { Suspense, useEffect, useRef, useState, type MutableRefObject } from 'react'
+import * as THREE from 'three'
+import ValleyScene, { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
 import Gallery from './Gallery'
+import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
 
 const turns = [...humanActors, tableHost]
+const zeroFlowTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType)
+zeroFlowTexture.needsUpdate = true
+
+function canEnhance() {
+  if (!matchMedia('(pointer:fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return false
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: true }) ?? canvas.getContext('webgl')
+  if (!context) return false
+  context.getExtension('WEBGL_lose_context')?.loseContext()
+  return true
+}
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -22,7 +36,24 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12 1c1 1.2 1 2.8 0 4m2-7c2.8 2.8 2.8 7.2 0 10" className={muted ? 'muted-wave' : ''} />{muted && <path d="m17 10 4 4m0-4-4 4" />}</svg>
 }
 
-function ValleyExperience({ onExit }: { onExit(): void }) {
+interface ValleyCanvasPortalProps extends ValleySceneProps {
+  track: MutableRefObject<HTMLElement>
+}
+
+function ValleyCanvasPortal({ track, ...sceneProps }: ValleyCanvasPortalProps) {
+  return (
+    <ViewportScrollScene
+      track={track}
+      visible
+      hideOffscreen={false}
+      camera={{ position: [0, 0, 12.22], fov: 42, near: .1, far: 40 }}
+    >
+      {() => <Suspense fallback={null}><ValleySceneContent {...sceneProps} /></Suspense>}
+    </ViewportScrollScene>
+  )
+}
+
+function ValleyExperience({ onExit, enhanced }: { onExit(): void; enhanced: boolean }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
@@ -31,6 +62,7 @@ function ValleyExperience({ onExit }: { onExit(): void }) {
   const [muted, setMuted] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const timer = useRef<number | null>(null)
+  const experienceRef = useRef<HTMLElement>(null!)
 
   const resetDiscovery = () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
@@ -74,11 +106,14 @@ function ValleyExperience({ onExit }: { onExit(): void }) {
 
   const seated = phase === 'seated'
   const currentTurn = turns[activeSpeaker]
+  const sceneProps: ValleySceneProps = { phase, activeActorId: currentTurn.id, hoveredActorId, reducedMotion }
 
   return (
-    <main className={`valley-experience phase-${phase} ${joinOpen ? 'has-join-open' : ''}`}>
+    <main ref={experienceRef} className={`valley-experience phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''}`}>
       <div className="art-fallback" aria-hidden="true" />
-      <ValleyScene phase={phase} activeActorId={currentTurn.id} hoveredActorId={hoveredActorId} reducedMotion={reducedMotion} />
+      {enhanced
+        ? <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>
+        : <ValleyScene {...sceneProps} />}
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
@@ -172,10 +207,21 @@ function ValleyExperience({ onExit }: { onExit(): void }) {
 
 export default function App() {
   const [appPhase, setAppPhase] = useState<AppPhase>('gallery')
+  const [enhanced, setEnhanced] = useState(false)
+  const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture) as GalleryFlowTextureRef
+  useEffect(() => {
+    setEnhanced(canEnhance())
+    return () => document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
+  }, [])
   const enterTable = (table: TableSummary) => {
     if (table.entryMode === 'immersive') setAppPhase('world')
   }
-  return appPhase === 'gallery'
-    ? <Gallery onEnter={enterTable} />
-    : <ValleyExperience onExit={() => setAppPhase('gallery')} />
+  return (
+    <>
+      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{appPhase === 'gallery' && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
+      {appPhase === 'gallery'
+        ? <Gallery onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />
+        : <ValleyExperience enhanced={enhanced} onExit={() => setAppPhase('gallery')} />}
+    </>
+  )
 }
