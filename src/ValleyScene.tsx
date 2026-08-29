@@ -1,7 +1,8 @@
-import { Sparkles, useTexture } from '@react-three/drei'
+import { Sparkles, useAnimations, useGLTF, useTexture } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Suspense, useMemo, useRef } from 'react'
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
+import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { humanActors, type ActorId, type AgentAction, type SeatActor } from './actors'
 
 export type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
@@ -279,6 +280,84 @@ function HumanMattes({ activeActorId, hoveredActorId, phase }: Pick<ValleySceneP
   return <>{humanActors.map((actor) => <HumanMatte key={actor.id} actor={actor} active={activeActorId === actor.id} hovered={hoveredActorId === actor.id} />)}</>
 }
 
+const HOST_MODEL_URL = '/assets/actors/table-host.glb'
+const HOST_CLIP_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.17)
+
+class HostModelBoundary extends Component<{ children: ReactNode; onError(): void }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch() { this.props.onError() }
+  render() { return this.state.failed ? null : this.props.children }
+}
+
+function HostModel({ phase, action, onReady }: {
+  phase: ExperiencePhase
+  action: AgentAction
+  onReady(): void
+}) {
+  const source = useGLTF(HOST_MODEL_URL, false, true)
+  const { gl } = useThree()
+  const root = useRef<THREE.Group>(null)
+  const model = useMemo(() => clone(source.scene), [source.scene])
+  const materials = useMemo(() => {
+    const owned: THREE.Material[] = []
+    model.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return
+      object.frustumCulled = false
+      object.renderOrder = 6
+      object.castShadow = false
+      object.receiveShadow = false
+      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material]
+      const local = sourceMaterials.map((material) => {
+        const copy = material.clone()
+        copy.transparent = true
+        copy.opacity = 0
+        copy.depthTest = false
+        copy.depthWrite = false
+        copy.clippingPlanes = [HOST_CLIP_PLANE]
+        owned.push(copy)
+        return copy
+      })
+      object.material = Array.isArray(object.material) ? local : local[0]
+    })
+    return owned
+  }, [model])
+  const { actions } = useAnimations(source.animations, root)
+  const opacity = useRef(0)
+
+  useEffect(() => {
+    const previous = gl.localClippingEnabled
+    gl.localClippingEnabled = true
+    return () => { gl.localClippingEnabled = previous }
+  }, [gl])
+  useEffect(() => {
+    const idle = actions.Armature ?? Object.values(actions)[0]
+    idle?.reset().fadeIn(.18).play()
+    onReady()
+    return () => { idle?.fadeOut(.12); materials.forEach((material) => material.dispose()) }
+  }, [actions, materials, onReady])
+
+  useFrame((_, delta) => {
+    if (!root.current) return
+    const present = phase === 'seated' ? 1 : phase === 'approaching' ? .42 : 0
+    opacity.current = THREE.MathUtils.damp(opacity.current, present, 4.8, delta)
+    materials.forEach((material) => { material.opacity = opacity.current })
+    const passing = action === 'PASS' ? 1 : 0
+    root.current.rotation.y = THREE.MathUtils.damp(root.current.rotation.y, Math.PI + passing * .1, 4.2, delta)
+    root.current.rotation.z = THREE.MathUtils.damp(root.current.rotation.z, passing * -.035, 4.2, delta)
+    root.current.position.x = THREE.MathUtils.damp(root.current.position.x, passing * .025, 4.2, delta)
+    root.current.position.z = THREE.MathUtils.damp(root.current.position.z, passing * .035, 4.2, delta)
+    const scale = .42 * (1 + passing * .025)
+    root.current.scale.setScalar(THREE.MathUtils.damp(root.current.scale.x, scale, 4.2, delta))
+  })
+
+  return (
+    <group ref={root} name="TableHostGLB" position={[0, -.08, .006]} scale={.42}>
+      <primitive object={model} />
+    </group>
+  )
+}
+
 function TableHost({ phase, action, hovered, reducedMotion }: {
   phase: ExperiencePhase
   action: AgentAction
@@ -294,6 +373,8 @@ function TableHost({ phase, action, hovered, reducedMotion }: {
   const orbLight = useRef<THREE.PointLight>(null)
   const orb = useRef<THREE.Mesh>(null)
   const visibility = useRef(0)
+  const spriteVisibility = useRef(1)
+  const [modelReady, setModelReady] = useState(false)
   const [silenceMap, passMap] = useTexture([
     '/assets/actors/table-host-silence.png',
     '/assets/actors/table-host-pass.png',
@@ -302,14 +383,18 @@ function TableHost({ phase, action, hovered, reducedMotion }: {
   passMap.colorSpace = THREE.SRGBColorSpace
   const orbHome = useMemo(() => new THREE.Vector3(0.28, -0.18, 0.08), [])
   const orbTarget = useMemo(() => new THREE.Vector3(1.25, -0.08, 0.16), [])
+  const modelLoaded = useCallback(() => setModelReady(true), [])
+
+  useEffect(() => { if (reducedMotion) setModelReady(false) }, [reducedMotion])
 
   useFrame(({ clock }, delta) => {
     if (!group.current || !silenceMaterial.current || !passMaterial.current || !haloMaterial.current || !coreMaterial.current || !orbMaterial.current || !orbLight.current || !orb.current) return
     const present = phase === 'seated' ? 1 : phase === 'approaching' ? 0.42 : 0
     visibility.current = THREE.MathUtils.damp(visibility.current, present, 4.8, delta)
+    spriteVisibility.current = THREE.MathUtils.damp(spriteVisibility.current, modelReady ? 0 : 1, 5.5, delta)
     const passing = action === 'PASS' ? 1 : 0
-    silenceMaterial.current.opacity = visibility.current * (1 - passing)
-    passMaterial.current.opacity = visibility.current * passing
+    silenceMaterial.current.opacity = visibility.current * (1 - passing) * spriteVisibility.current
+    passMaterial.current.opacity = visibility.current * passing * spriteVisibility.current
     const pulse = reducedMotion ? 1 : 1 + Math.sin(clock.elapsedTime * 1.35) * 0.035
     group.current.position.y = -1.04 + (reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.72) * 0.008)
     group.current.scale.setScalar(0.96 + passing * 0.035)
@@ -323,23 +408,28 @@ function TableHost({ phase, action, hovered, reducedMotion }: {
 
   return (
     <group ref={group} position={[2.14, -1.04, 0.28]} renderOrder={5}>
+      {!reducedMotion && <HostModelBoundary onError={() => setModelReady(false)}>
+        <Suspense fallback={null}><HostModel phase={phase} action={action} onReady={modelLoaded} /></Suspense>
+      </HostModelBoundary>}
+      <hemisphereLight color="#fff0d0" groundColor="#4b6259" intensity={1.15} />
+      <directionalLight color="#ffe8c0" intensity={1.3} position={[-2, 3, 4]} />
       <mesh position={[0, 0.26, -0.008]} rotation={[0, 0, -0.28]}>
         <ringGeometry args={[0.255, 0.278, 72, 1, 0.2, Math.PI * 1.72]} />
-        <meshBasicMaterial ref={haloMaterial} color="#ffd782" transparent opacity={0} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial ref={haloMaterial} color="#ffd782" transparent opacity={0} depthTest={false} depthWrite={false} toneMapped={false} />
       </mesh>
       <sprite position={[0, -0.08, 0]} scale={[0.72, 0.84, 1]}>
-        <spriteMaterial ref={silenceMaterial} map={silenceMap} transparent opacity={0} depthWrite={false} alphaTest={0.06} toneMapped={false} />
+        <spriteMaterial ref={silenceMaterial} map={silenceMap} transparent opacity={0} depthTest={false} depthWrite={false} alphaTest={0.06} toneMapped={false} />
       </sprite>
       <sprite position={[0.05, -0.08, 0.002]} scale={[0.78, 0.84, 1]}>
-        <spriteMaterial ref={passMaterial} map={passMap} transparent opacity={0} depthWrite={false} alphaTest={0.06} toneMapped={false} />
+        <spriteMaterial ref={passMaterial} map={passMap} transparent opacity={0} depthTest={false} depthWrite={false} alphaTest={0.06} toneMapped={false} />
       </sprite>
       <mesh position={[0, -0.17, 0.012]}>
         <ringGeometry args={[0.048, 0.063, 48]} />
-        <meshBasicMaterial ref={coreMaterial} color="#ffe09a" transparent opacity={0} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial ref={coreMaterial} color="#ffe09a" transparent opacity={0} depthTest={false} depthWrite={false} toneMapped={false} />
       </mesh>
       <mesh ref={orb} position={orbHome} renderOrder={7}>
         <sphereGeometry args={[0.035, 20, 16]} />
-        <meshBasicMaterial ref={orbMaterial} color="#fff0bd" transparent opacity={0} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial ref={orbMaterial} color="#fff0bd" transparent opacity={0} depthTest={false} depthWrite={false} toneMapped={false} />
         <pointLight ref={orbLight} color="#ffd176" intensity={0} distance={1.4} decay={2} />
       </mesh>
     </group>
