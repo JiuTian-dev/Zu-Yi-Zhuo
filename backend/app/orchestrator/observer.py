@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from app.domain import Action, DisagreementType, HumanTurn, Level, ParticipantSeed, Phase, SafetyLevel, TableState
 from app.domain.schemas import ConversationState, Disagreement, EvidenceStatement, InterventionState, OpenLoop, ParticipantState
+from .close import refresh_close_readiness
 
 TECH = ("技术", "模型", "精度", "延迟", "架构")
 BUYING = ("采购", "预算", "招标", "责任", "供应商")
@@ -94,4 +95,7 @@ def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
                 confidence=.82, last_action=previous.intervention.last_action,
                 last_agent_turn_id=previous.intervention.last_agent_turn_id,
                 human_turns_since_last_intervention=previous.intervention.human_turns_since_last_intervention + 1)
-    return TableState.model_validate(state.model_dump())
+    # Persist the same marginal-value signal that Gate/Router will use. Keeping
+    # it on the immutable snapshot prevents clients from seeing stale readiness
+    # after a human turn.
+    return refresh_close_readiness(TableState.model_validate(state.model_dump()))

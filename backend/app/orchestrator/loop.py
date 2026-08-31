@@ -25,7 +25,9 @@ def record_intervention(previous: TableState, decision: RouteDecision, agent_tur
     if decision.target_participant_id is not None and decision.target_participant_id not in previous.participants:
         raise ValueError("unknown target participant")
 
-    state = previous.model_copy(deep=True)
+    # Host writeback must carry the refreshed readiness value used by routing;
+    # otherwise the action and persisted snapshot disagree on close state.
+    state = refresh_close_readiness(previous)
     state.version += 1
     state.intervention.recommended_action = Action.SILENCE
     state.intervention.last_action = decision.action

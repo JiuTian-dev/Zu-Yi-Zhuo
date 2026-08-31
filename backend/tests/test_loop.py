@@ -1,7 +1,8 @@
 import pytest
 
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import Action, HumanTurn, RouteDecision
+from app.domain import Action, HumanTurn, Level, RouteDecision
+from app.domain.schemas import EvidenceStatement
 from app.orchestrator import build_initial_state, decide_intervention, enforce_safety, evaluate_safety, observe_turn, record_intervention
 
 QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
@@ -26,6 +27,16 @@ def test_record_intervention_is_immutable_and_writes_cooldown_fields() -> None:
     assert recorded.intervention.recommended_action is Action.SILENCE
     assert recorded.intervention.human_turns_since_last_intervention == 0
     assert not recorded.participants["buyer"].good_pass_opportunity
+
+
+def test_record_intervention_persists_refreshed_close_readiness() -> None:
+    previous = replay("natural").model_copy(deep=True)
+    previous.momentum = Level.LOW
+    previous.new_insights = [EvidenceStatement(text="已有可复用结论", evidence_turns=[2])]
+    decision = RouteDecision(action=Action.PROBE, evidence_turns=[2])
+    recorded = record_intervention(previous, decision, "agent-close")
+
+    assert recorded.close_readiness is Level.HIGH
 
 
 @pytest.mark.parametrize(("decision", "turn_id", "message"), [
