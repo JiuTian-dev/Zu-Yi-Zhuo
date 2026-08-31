@@ -429,6 +429,13 @@
 - **替代方案**: 创建桌时直接发送无证据 Agent 话、绕过 Gate 强行主持、或引入后台 scheduler；这些方案分别破坏 evidence-first、冷却/安全边界或 V1 单体约束。
 - **代价**: 客户端需要在合适的等待时机发送 `request_nudge`；递话和普通主持一样会推进一个状态版本并计入干预审计。
 
+### ADR-59: REST 与 WebSocket 共享递话提交服务
+
+- **决策**: 增加 `POST /tables/{table_id}/nudge?participant_id=...`，并把递话的证据选择、Host 生成、干预记录和原子状态提交抽成同一服务；REST 返回 `gate + route + action + projected state`，WebSocket 继续广播同一动作和状态。两种入口共享成员、生命周期、安全和冷却边界。
+- **理由**: 前端可按连接状态选择 HTTP 或 WebSocket 调度，但不能因为传输方式不同而得到不同的主持判断或审计链；统一服务也让 provider fallback、状态版本和 race 失败语义保持一致。
+- **替代方案**: 复制一份 REST 递话逻辑、只保留 WebSocket 或让前端自己生成递话；这些方案会产生行为漂移、无法覆盖断线调度或绕过 evidence-first。
+- **代价**: REST 递话失败返回 409/403，调用方需要按结构化错误等待或重新连接；两个入口仍共享当前单进程仓储和 broadcaster 限制。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -444,6 +451,7 @@ GET  /tables/{id}
 POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
+POST /tables/{id}/nudge?participant_id={participant_id}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -699,6 +707,7 @@ master
 | D79 safety report transition audit | complete | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility and tamper-evident chain validation | 321 tests + compileall + diff check | `41653a9` + `e2ebdb1` |
 | D80 bounded moderator safety queue | complete | Moderator report queue supports status filtering and stable bounded `offset`/`limit` pagination without changing private persistence or broadcast semantics | 322 tests + compileall + diff check | `d7472b1` |
 | D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response; audit retains the nudge rationale | 324 tests + compileall + diff check | `5f430a5` + `41b823b` |
+| D82 REST/WebSocket shared nudge service | in_progress | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
