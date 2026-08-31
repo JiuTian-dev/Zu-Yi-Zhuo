@@ -31,6 +31,13 @@ class ParticipantSeed(ContractModel):
     declared_position: str = Field(min_length=1)
     relevant_experience: list[RelevantExperience] = Field(default_factory=list)
     roundtable_invite_preference: InvitationPreference = InvitationPreference.FEW
+    # Public opportunity provenance only; private profile sources stay in
+    # relevant_experience and are never copied into match explanations.
+    public_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
 
 
 class ContentSignal(ContractModel):
@@ -213,6 +220,11 @@ class MatchReason(ContractModel):
     participant_id: str = Field(min_length=1)
     reason: str = Field(min_length=1)
     evidence_terms: list[str] = Field(default_factory=list, max_length=5)
+    evidence_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        exclude_if=lambda value: not value,
+    )
 
 
 class CandidateRecommendation(ContractModel):

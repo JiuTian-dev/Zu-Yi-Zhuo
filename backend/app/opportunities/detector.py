@@ -52,6 +52,7 @@ def _candidate_seeds(signals: list[ContentSignal]) -> list[ParticipantSeed]:
             role=first.author_role or "讨论参与者",
             declared_position=first.public_stance or "围绕该问题提供公开观点",
             relevant_experience=experience,
+            public_signal_ids=[signal.signal_id for signal in author_signals[:20]],
         ))
     return result
 

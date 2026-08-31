@@ -34,6 +34,10 @@ def test_opportunity_preview_exposes_unfinishedness_roles_and_candidates() -> No
     assert preview.core_question == "企业 Agent 如何落地？"
     assert preview.signal_ids == ["s1", "s2"]
     assert {candidate.participant_id for candidate in preview.candidates} == {"u1", "u2"}
+    assert {
+        candidate.participant_id: candidate.public_signal_ids
+        for candidate in preview.candidates
+    } == {"u1": ["s1"], "u2": ["s2"]}
     assert preview.unfinishedness[1].signal_ids == ["s2"]
     assert preview.role_gaps == ["实践者"]
     assert preview.confidence == 0.75
@@ -57,6 +61,10 @@ def test_opportunity_preview_can_feed_existing_match_preview() -> None:
     })
     assert matched.status_code == 200
     assert {seat["participant_id"] for seat in matched.json()["selected"]} == {"u1", "u2"}
+    assert {
+        reason["participant_id"]: reason["evidence_signal_ids"]
+        for reason in matched.json()["reasons"]
+    } == {"u1": ["s1"], "u2": ["s2"]}
 
 
 def test_opportunity_request_rejects_duplicate_or_private_signals() -> None:

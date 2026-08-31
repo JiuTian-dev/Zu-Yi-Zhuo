@@ -87,6 +87,7 @@ def build_match_plan(request: MatchRequest) -> MatchPlan:
             participant_id=candidate.participant_id,
             reason=reason,
             evidence_terms=overlap,
+            evidence_signal_ids=candidate.public_signal_ids[:5],
         ))
     return MatchPlan(
         core_question=request.core_question,
