@@ -70,6 +70,25 @@ def test_source_opportunity_preview_fails_closed_without_source_or_with_bad_sign
     assert response.json() == {"detail": "content source returned invalid signals"}
 
 
+def test_source_opportunity_preview_consumes_only_requested_signal_limit() -> None:
+    def rows():
+        yield _signal("s1", "u1", "question")
+        yield _signal("s2", "u2")
+        raise AssertionError("source rows beyond the requested limit must not be consumed")
+
+    class _LazySource:
+        async def search(self, *, query, limit):
+            return rows()
+
+    response = TestClient(create_app(content_source=_LazySource())).post(
+        "/opportunities/source-preview",
+        json={"query": "企业 Agent 如何落地？", "limit": 2},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["signal_ids"] == ["s1", "s2"]
+
+
 def test_source_opportunity_preview_times_out_and_rejects_non_positive_timeout() -> None:
     client = TestClient(create_app(
         content_source=_HangingSource(), content_source_timeout_seconds=0.01,

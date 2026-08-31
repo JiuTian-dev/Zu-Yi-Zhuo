@@ -3,6 +3,7 @@
 import asyncio
 import os
 from collections.abc import Sequence
+from itertools import islice
 from typing import Literal
 from uuid import uuid4
 
@@ -24,6 +25,11 @@ from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
+
+
+def _bounded_source_rows(rows: object, limit: int) -> list[object]:
+    """Consume at most ``limit`` rows from an injected source iterable."""
+    return list(islice(rows, limit))
 
 
 class CreateTableRequest(BaseModel):
@@ -674,8 +680,8 @@ def create_app(
             )
             signals = [
                 item if isinstance(item, ContentSignal) else ContentSignal.model_validate(item)
-                for item in raw_signals
-            ][:payload.limit]
+                for item in _bounded_source_rows(raw_signals, payload.limit)
+            ]
             request = OpportunityRequest(query=payload.query, signals=signals)
         except ContentSignalSourceError as error:
             raise HTTPException(status_code=502, detail="content source unavailable") from error
@@ -715,8 +721,8 @@ def create_app(
             signals = [
                 item if isinstance(item, PersonalContextSignal)
                 else PersonalContextSignal.model_validate(item)
-                for item in raw_signals
-            ][:payload.limit]
+                for item in _bounded_source_rows(raw_signals, payload.limit)
+            ]
             return build_personal_context_preview(viewer_id, payload.query, signals)
         except PersonalContextSourceError as error:
             raise HTTPException(status_code=502, detail="personal context source unavailable") from error
@@ -746,8 +752,8 @@ def create_app(
             )
             candidates = [
                 item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
-                for item in raw_candidates
-            ][:payload.limit]
+                for item in _bounded_source_rows(raw_candidates, payload.limit)
+            ]
             request = MatchRequest(
                 core_question=payload.core_question,
                 candidates=candidates,
@@ -901,8 +907,8 @@ def create_app(
             )
             candidates = [
                 item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
-                for item in raw_candidates
-            ][:payload.limit]
+                for item in _bounded_source_rows(raw_candidates, payload.limit)
+            ]
             existing_invited = {
                 item.candidate.participant_id for item in repo.invitations(table_id)
             }

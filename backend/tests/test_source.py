@@ -81,6 +81,25 @@ def test_source_preview_hides_upstream_failure_details() -> None:
     assert response.json() == {"detail": "candidate source unavailable"}
 
 
+def test_source_preview_consumes_only_requested_candidate_limit() -> None:
+    def rows():
+        yield _candidate("p1", "研究员")
+        yield _candidate("p2", "采购负责人")
+        raise AssertionError("source rows beyond the requested limit must not be consumed")
+
+    class _LazySource:
+        async def search(self, *, query, limit):
+            return rows()
+
+    response = TestClient(create_app(candidate_source=_LazySource())).post(
+        "/matches/source-preview",
+        json={"core_question": "采购如何落地 AI？", "table_size": 2, "limit": 2},
+    )
+
+    assert response.status_code == 200
+    assert {seat["participant_id"] for seat in response.json()["selected"]} == {"p1", "p2"}
+
+
 def test_source_preview_times_out_without_leaking_adapter_details() -> None:
     response = TestClient(create_app(
         candidate_source=_HangingSource(), candidate_source_timeout_seconds=0.01,

@@ -92,6 +92,30 @@ def test_personal_context_source_is_explicitly_unavailable_or_bounded() -> None:
     assert timed_out.json() == {"detail": "personal context source timed out"}
 
 
+def test_personal_context_preview_consumes_only_requested_signal_limit() -> None:
+    def rows():
+        yield _signal("alice", "s1")
+        raise AssertionError("source rows beyond the requested limit must not be consumed")
+
+    class _LazySource:
+        async def search(self, *, viewer_id, scopes, query, limit):
+            return rows()
+
+    client = TestClient(create_app(personal_context_source=_LazySource()))
+    assert client.put(
+        "/participants/alice/personal-context/consent?viewer_id=alice",
+        json={"scopes": ["favorites"]},
+    ).status_code == 200
+
+    response = client.post(
+        "/personal-context/source-preview?viewer_id=alice",
+        json={"query": "长期创作", "limit": 1, "scopes": ["favorites"]},
+    )
+
+    assert response.status_code == 200
+    assert [signal["signal_id"] for signal in response.json()["signals"]] == ["s1"]
+
+
 def test_personal_context_consent_is_self_scoped_scope_limited_and_reversible() -> None:
     client = TestClient(create_app())
     assert client.post(
