@@ -1,25 +1,41 @@
 """Small repositories used by the first HTTP integration slice."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from functools import wraps
 import json
 import os
 from pathlib import Path
 import tempfile
+from threading import RLock
+from typing import Any
 
 from app.domain import Action, GroundingCard, HumanTurn, InterventionRecord, Level, ParticipantSeed, Phase, TableState
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
 
+def _synchronized(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Serialize one repository operation while allowing nested calls."""
+
+    @wraps(method)
+    def wrapped(self, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class InMemoryTableRepository:
     """Store immutable state snapshots and committed human turns by table."""
 
     def __init__(self) -> None:
+        self._lock = RLock()
         self._states: dict[str, list[TableState]] = {}
         self._turns: dict[str, list[HumanTurn]] = {}
         self._interventions: dict[str, list[InterventionRecord]] = {}
         self._trusted_grounding_cards: dict[str, GroundingCard] = {}
 
+    @_synchronized
     def create(
         self, table_id: str, core_question: str, participants: Sequence[ParticipantSeed]
     ) -> TableState:
@@ -31,12 +47,14 @@ class InMemoryTableRepository:
         self._interventions[table_id] = []
         return state.model_copy(deep=True)
 
+    @_synchronized
     def get(self, table_id: str) -> TableState:
         try:
             return self._states[table_id][-1].model_copy(deep=True)
         except KeyError as error:
             raise KeyError(f"unknown table: {table_id}") from error
 
+    @_synchronized
     def add_participant(self, table_id: str, seed: ParticipantSeed) -> TableState:
         state = self.get(table_id)
         if state.conversation.closed:
@@ -55,6 +73,7 @@ class InMemoryTableRepository:
         )
         return self._append(table_id, updated)
 
+    @_synchronized
     def remove_participant(self, table_id: str, participant_id: str) -> TableState:
         """Remove a departing participant while preserving prior snapshots."""
         state = self.get(table_id)
@@ -67,6 +86,7 @@ class InMemoryTableRepository:
         del updated.participants[participant_id]
         return self._append(table_id, updated)
 
+    @_synchronized
     def set_profile_consent(self, table_id: str, participant_id: str, shared: bool) -> TableState:
         """Set one participant's explicit profile-sharing consent."""
         state = self.get(table_id)
@@ -82,6 +102,7 @@ class InMemoryTableRepository:
         updated.participants[participant_id].profile_shared = shared
         return self._append(table_id, updated)
 
+    @_synchronized
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
         """Commit a human turn; the WebSocket adapter will use this helper later."""
         if self.get(table_id).conversation.closed:
@@ -91,6 +112,7 @@ class InMemoryTableRepository:
         self._turns[table_id].append(committed)
         return self._append(table_id, state)
 
+    @_synchronized
     def close_table(self, table_id: str) -> TableState:
         """Mark a table closed exactly once after close artifacts are ready."""
         state = self.get(table_id)
@@ -105,6 +127,7 @@ class InMemoryTableRepository:
         updated.intervention.recommended_action = Action.SILENCE
         return self._append(table_id, updated)
 
+    @_synchronized
     def append_intervention_state(self, table_id: str, state: TableState) -> TableState:
         """Commit the one follow-up snapshot produced by a real host intervention."""
         latest = self.get(table_id)
@@ -114,6 +137,7 @@ class InMemoryTableRepository:
             raise ValueError("intervention state must be the next snapshot for its table")
         return self._append(table_id, state)
 
+    @_synchronized
     def append_intervention_record(self, table_id: str, record: InterventionRecord) -> None:
         """Persist one explainable non-SILENCE action without changing table state."""
         latest = self.get(table_id)
@@ -125,6 +149,7 @@ class InMemoryTableRepository:
             raise ValueError(f"intervention already exists: {record.intervention_id}")
         self._interventions[table_id].append(record.model_copy(deep=True))
 
+    @_synchronized
     def update_intervention_record(self, table_id: str, record: InterventionRecord) -> InterventionRecord:
         """Replace an existing audit entry when post-intervention evidence arrives."""
         self.get(table_id)
@@ -136,10 +161,12 @@ class InMemoryTableRepository:
                 return record.model_copy(deep=True)
         raise ValueError(f"unknown intervention: {record.intervention_id}")
 
+    @_synchronized
     def interventions(self, table_id: str) -> list[InterventionRecord]:
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._interventions[table_id]]
 
+    @_synchronized
     def append_safety_state(self, table_id: str, state: TableState) -> TableState:
         """Commit a safety-only snapshot without recording the intercepted human turn."""
         latest = self.get(table_id)
@@ -149,6 +176,7 @@ class InMemoryTableRepository:
             raise ValueError("safety state must be the next snapshot for its table")
         return self._append(table_id, state)
 
+    @_synchronized
     def replay(self, table_id: str, from_version: int | None = None) -> list[TableState]:
         snapshots = sorted(self._states[table_id], key=lambda state: state.version)
         if from_version is not None:
@@ -157,10 +185,12 @@ class InMemoryTableRepository:
             snapshots = [state for state in snapshots if state.version >= from_version]
         return [state.model_copy(deep=True) for state in snapshots]
 
+    @_synchronized
     def turns(self, table_id: str) -> list[HumanTurn]:
         self.get(table_id)
         return [turn.model_copy(deep=True) for turn in self._turns[table_id]]
 
+    @_synchronized
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage one validated demo-injected source for the table's next GROUND action."""
         self.get(table_id)
@@ -168,12 +198,14 @@ class InMemoryTableRepository:
             raise ValueError("grounding card title, excerpt, and source_ref must be non-empty")
         self._trusted_grounding_cards[table_id] = card.model_copy(deep=True)
 
+    @_synchronized
     def take_trusted_grounding_card(self, table_id: str) -> GroundingCard | None:
         """Consume the staged source so it cannot be silently reused for later claims."""
         self.get(table_id)
         card = self._trusted_grounding_cards.pop(table_id, None)
         return card.model_copy(deep=True) if card is not None else None
 
+    @_synchronized
     def _append(self, table_id: str, state: TableState) -> TableState:
         snapshot = TableState.model_validate(state.model_dump())
         self._states[table_id].append(snapshot)
@@ -189,6 +221,7 @@ class JsonTableRepository(InMemoryTableRepository):
         if self.path.exists():
             self._states, self._turns, self._trusted_grounding_cards, self._interventions = self._load()
 
+    @_synchronized
     def create(
         self, table_id: str, core_question: str, participants: Sequence[ParticipantSeed]
     ) -> TableState:
@@ -201,6 +234,7 @@ class JsonTableRepository(InMemoryTableRepository):
         self._commit(states, turns, self._trusted_grounding_cards, interventions)
         return state.model_copy(deep=True)
 
+    @_synchronized
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
         committed = turn.model_copy(deep=True)
         current = self.get(table_id)
@@ -213,6 +247,7 @@ class JsonTableRepository(InMemoryTableRepository):
         self._commit(states, turns, self._trusted_grounding_cards, self._interventions)
         return snapshot.model_copy(deep=True)
 
+    @_synchronized
     def append_intervention_record(self, table_id: str, record: InterventionRecord) -> None:
         latest = self.get(table_id)
         if latest.conversation.closed:
@@ -227,6 +262,7 @@ class JsonTableRepository(InMemoryTableRepository):
         }
         self._commit(self._states, self._turns, self._trusted_grounding_cards, interventions)
 
+    @_synchronized
     def update_intervention_record(self, table_id: str, record: InterventionRecord) -> InterventionRecord:
         self.get(table_id)
         if record.table_id != table_id:
@@ -243,6 +279,7 @@ class JsonTableRepository(InMemoryTableRepository):
         self._commit(self._states, self._turns, self._trusted_grounding_cards, interventions)
         return record.model_copy(deep=True)
 
+    @_synchronized
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage a source and persist it before acknowledging the write."""
         self.get(table_id)
@@ -251,6 +288,7 @@ class JsonTableRepository(InMemoryTableRepository):
         cards = {**self._trusted_grounding_cards, table_id: card.model_copy(deep=True)}
         self._commit(self._states, self._turns, cards)
 
+    @_synchronized
     def take_trusted_grounding_card(self, table_id: str) -> GroundingCard | None:
         """Consume a source only after the removal is atomically persisted."""
         self.get(table_id)
@@ -262,12 +300,14 @@ class JsonTableRepository(InMemoryTableRepository):
         self._commit(self._states, self._turns, cards)
         return card.model_copy(deep=True)
 
+    @_synchronized
     def _append(self, table_id: str, state: TableState) -> TableState:
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         self._commit(states, self._turns, self._trusted_grounding_cards)
         return snapshot.model_copy(deep=True)
 
+    @_synchronized
     def _commit(
         self,
         states: dict[str, list[TableState]],

@@ -1,4 +1,6 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 
@@ -109,3 +111,25 @@ def test_flagship_replay_is_stable_across_ten_persisted_runs(tmp_path) -> None:
         restored = JsonTableRepository(repository.path)
         histories.append(([state.version for state in restored.replay("flagship")], routes))
     assert histories == [histories[0]] * 10
+
+
+def test_in_memory_repository_serializes_competing_consent_writes() -> None:
+    from app.api.repository import InMemoryTableRepository
+
+    repository = InMemoryTableRepository()
+    repository.create("concurrent", "Q", [
+        flagship_participants[0].model_copy(update={"participant_id": "p1"}),
+        flagship_participants[1].model_copy(update={"participant_id": "p2"}),
+    ])
+    barrier = Barrier(2)
+
+    def share(participant_id: str) -> None:
+        barrier.wait()
+        repository.set_profile_consent("concurrent", participant_id, True)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(share, ("p1", "p2")))
+
+    state = repository.get("concurrent")
+    assert state.version == 2
+    assert all(person.profile_shared for person in state.participants.values())
