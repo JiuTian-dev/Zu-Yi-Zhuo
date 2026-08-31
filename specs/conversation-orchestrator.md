@@ -698,7 +698,7 @@ master
 | D78 moderator safety report status lifecycle | complete | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | 318 tests + compileall + diff check | `276b595` + `a115fef` |
 | D79 safety report transition audit | complete | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility and tamper-evident chain validation | 321 tests + compileall + diff check | `41653a9` + `e2ebdb1` |
 | D80 bounded moderator safety queue | complete | Moderator report queue supports status filtering and stable bounded `offset`/`limit` pagination without changing private persistence or broadcast semantics | 322 tests + compileall + diff check | `d7472b1` |
-| D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response | 324 tests + compileall + diff check | `5f430a5` |
+| D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response; audit retains the nudge rationale | 324 tests + compileall + diff check | `5f430a5` + `41b823b` |
 
 ## 已知坑位（Running Gotchas）
 
