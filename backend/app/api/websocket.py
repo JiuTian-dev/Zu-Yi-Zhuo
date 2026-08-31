@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, AgentActionEvent, InterventionRecord, ReflectionResult, RouteDecision, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import (
     build_personal_card,
@@ -62,6 +62,14 @@ class _RequestDebugState(_ClientEvent):
 
 class _RequestClose(_ClientEvent):
     type: Literal["request_close"]
+
+
+class _PeripheralComment(_ClientEvent):
+    type: Literal["peripheral_comment"]
+    comment_id: str = Field(min_length=1)
+    author_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1, max_length=120)
+    text: str = Field(min_length=1, max_length=500)
 
 
 def _state_event(state: TableState) -> dict:
@@ -178,7 +186,7 @@ def register_websocket_routes(
         websocket: WebSocket,
         table_id: str,
         participant_id: str = "",
-        viewer_mode: Literal["participant", "observer"] = "participant",
+        viewer_mode: Literal["participant", "observer", "commenter"] = "participant",
     ) -> None:
         await websocket.accept()
         if not participant_id.strip():
@@ -198,7 +206,7 @@ def register_websocket_routes(
 
         connection_viewer_id = participant_id if viewer_mode == "participant" else ""
         connections.setdefault(table_id, {})[websocket] = connection_viewer_id
-        if viewer_mode == "observer":
+        if viewer_mode in {"observer", "commenter"}:
             await websocket.send_json(_state_event(project_state_for_viewer(state, None)))
         table_lock = table_locks.setdefault(table_id, asyncio.Lock())
         try:
@@ -215,10 +223,14 @@ def register_websocket_routes(
                     await _send_error(websocket, "invalid_event", "event must include a string type")
                     continue
 
-                mutates_table = viewer_mode == "participant" and payload["type"] in {
-                    "human_message", "participant_joined", "participant_left",
-                    "participant_consent", "request_close",
-                }
+                mutates_table = (
+                    viewer_mode == "participant" and payload["type"] in {
+                        "human_message", "participant_joined", "participant_left",
+                        "participant_consent", "request_close",
+                    }
+                ) or (
+                    viewer_mode == "commenter" and payload["type"] == "peripheral_comment"
+                )
                 if mutates_table:
                     await table_lock.acquire()
                 try:
@@ -228,6 +240,53 @@ def register_websocket_routes(
                             "observer_read_only",
                             "observer connections cannot mutate the table",
                         )
+                        continue
+                    if viewer_mode == "commenter" and payload["type"] not in {
+                        "peripheral_comment", "request_debug_state",
+                    }:
+                        await _send_error(
+                            websocket,
+                            "commenter_read_only",
+                            "commenter connections can only submit peripheral comments",
+                        )
+                        continue
+                    if payload["type"] == "peripheral_comment":
+                        event = _PeripheralComment.model_validate(payload)
+                        if viewer_mode != "commenter":
+                            await _send_error(
+                                websocket,
+                                "commenter_only",
+                                "peripheral comments require commenter mode",
+                            )
+                            continue
+                        if event.author_id != participant_id:
+                            raise ValueError("author_id must match the WebSocket query")
+                        current_state = repository.get(table_id)
+                        if current_state.conversation.closed:
+                            await _send_error(websocket, "table_closed", "table is already closed")
+                            continue
+                        if current_state.conversation.soft_expired:
+                            await _send_error(websocket, "table_soft_expired", "table is soft-expired")
+                            continue
+                        comment, created = repository.append_comment_once(PeripheralComment(
+                            comment_id=event.comment_id,
+                            table_id=table_id,
+                            author_id=event.author_id,
+                            display_name=event.display_name,
+                            text=event.text,
+                            state_version=current_state.version,
+                        ))
+                        if not created:
+                            await _send_error(
+                                websocket,
+                                "duplicate_comment",
+                                "comment_id is already committed for this table",
+                            )
+                            continue
+                        await broadcast(table_id, {
+                            "type": "peripheral_comment",
+                            "comment": comment.model_dump(mode="json"),
+                        })
                         continue
                     if payload["type"] == "human_message":
                         event = _HumanMessage.model_validate(payload)

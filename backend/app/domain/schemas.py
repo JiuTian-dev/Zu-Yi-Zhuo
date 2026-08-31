@@ -456,6 +456,17 @@ class FeedbackSummary(ContractModel):
     would_join_again_count: int = Field(ge=0)
 
 
+class PeripheralComment(ContractModel):
+    """A public comment that never enters the core conversation turn stream."""
+
+    comment_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    author_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1, max_length=120)
+    text: str = Field(min_length=1, max_length=500)
+    state_version: int = Field(ge=0)
+
+
 class ReflectionResult(ContractModel):
     """Effect log for an intervention after enough human turns have passed."""
 

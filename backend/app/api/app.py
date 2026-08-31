@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -131,6 +131,14 @@ class ValueFeedbackRequest(BaseModel):
     emotional_value: int = Field(ge=1, le=5)
     note: str | None = Field(default=None, min_length=1, max_length=240)
     would_join_again: bool
+
+
+class PeripheralCommentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    comment_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1, max_length=120)
+    text: str = Field(min_length=1, max_length=500)
 
 
 class SoftExpireRequest(BaseModel):
@@ -385,6 +393,36 @@ def create_app(
             role_gaps=infer_role_gaps(person.role for person in state.participants.values()),
             candidates=recommendations,
         )
+
+    @api.post("/tables/{table_id}/comments", response_model=PeripheralComment)
+    def add_peripheral_comment(
+        table_id: str,
+        payload: PeripheralCommentRequest,
+        author_id: str = Query(..., min_length=1),
+    ) -> PeripheralComment:
+        state = table_or_404(table_id)
+        if state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is closed")
+        if state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is soft-expired")
+        comment = PeripheralComment(
+            comment_id=payload.comment_id,
+            table_id=table_id,
+            author_id=author_id,
+            display_name=payload.display_name,
+            text=payload.text,
+            state_version=state.version,
+        )
+        try:
+            saved, _created = repo.append_comment_once(comment)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return saved
+
+    @api.get("/tables/{table_id}/comments", response_model=list[PeripheralComment])
+    def get_peripheral_comments(table_id: str) -> list[PeripheralComment]:
+        table_or_404(table_id)
+        return repo.comments(table_id)
 
     def invitation_view(invitation) -> InvitationView:
         candidate = invitation.candidate

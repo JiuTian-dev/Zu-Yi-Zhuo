@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, RelationshipMemory, SafetyLevel, TableState, ValueFeedback
+from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, ParticipantSeed, PeripheralComment, Phase, RelationshipMemory, SafetyLevel, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -39,6 +39,7 @@ class InMemoryTableRepository:
         self._invitations: dict[str, list[Invitation]] = {}
         self._follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         self._value_feedback: dict[str, dict[str, ValueFeedback]] = {}
+        self._comments: dict[str, list[PeripheralComment]] = {}
 
     @_synchronized
     def create(
@@ -55,6 +56,7 @@ class InMemoryTableRepository:
         self._invitations[table_id] = []
         self._follow_up_outcomes[table_id] = {}
         self._value_feedback[table_id] = {}
+        self._comments[table_id] = []
         return state.model_copy(deep=True)
 
     @_synchronized
@@ -177,6 +179,32 @@ class InMemoryTableRepository:
             self._value_feedback[table_id][participant_id].model_copy(deep=True)
             for participant_id in sorted(self._value_feedback[table_id])
         ]
+
+    @_synchronized
+    def append_comment_once(self, comment: PeripheralComment) -> tuple[PeripheralComment, bool]:
+        """Persist one public peripheral comment with table-scoped idempotency."""
+        state = self.get(comment.table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if comment.state_version != state.version:
+            raise ValueError("comment must reference the current table state")
+        existing = next(
+            (item for item in self._comments[comment.table_id] if item.comment_id == comment.comment_id),
+            None,
+        )
+        if existing is not None:
+            if existing.author_id != comment.author_id or existing.text != comment.text:
+                raise ValueError("comment_id already belongs to different comment")
+            return existing.model_copy(deep=True), False
+        self._comments[comment.table_id].append(comment.model_copy(deep=True))
+        return comment.model_copy(deep=True), True
+
+    @_synchronized
+    def comments(self, table_id: str) -> list[PeripheralComment]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._comments[table_id]]
 
     @_synchronized
     def relationship_memories(self, participant_id: str) -> list[RelationshipMemory]:
@@ -517,6 +545,7 @@ class JsonTableRepository(InMemoryTableRepository):
             self._invitations,
             self._follow_up_outcomes,
             self._value_feedback,
+            self._comments,
         ) = self._load()
 
     @_synchronized
@@ -534,8 +563,9 @@ class JsonTableRepository(InMemoryTableRepository):
         invitations = {**self._invitations, table_id: []}
         outcomes = {**self._follow_up_outcomes, table_id: {}}
         feedback = {**self._value_feedback, table_id: {}}
+        comments = {**self._comments, table_id: []}
         self._commit(
-            states, turns, self._trusted_grounding_cards, interventions, invitations, outcomes, feedback
+            states, turns, self._trusted_grounding_cards, interventions, invitations, outcomes, feedback, comments
         )
         return state.model_copy(deep=True)
 
@@ -695,6 +725,39 @@ class JsonTableRepository(InMemoryTableRepository):
             self._value_feedback[table_id][participant_id].model_copy(deep=True)
             for participant_id in sorted(self._value_feedback[table_id])
         ]
+
+    @_synchronized
+    def append_comment_once(self, comment: PeripheralComment) -> tuple[PeripheralComment, bool]:
+        state = self.get(comment.table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if comment.state_version != state.version:
+            raise ValueError("comment must reference the current table state")
+        existing = next(
+            (item for item in self._comments[comment.table_id] if item.comment_id == comment.comment_id),
+            None,
+        )
+        if existing is not None:
+            if existing.author_id != comment.author_id or existing.text != comment.text:
+                raise ValueError("comment_id already belongs to different comment")
+            return existing.model_copy(deep=True), False
+        rows = {
+            **self._comments,
+            comment.table_id: [*self._comments[comment.table_id], comment.model_copy(deep=True)],
+        }
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards,
+            self._interventions, self._invitations, self._follow_up_outcomes,
+            self._value_feedback, rows,
+        )
+        return comment.model_copy(deep=True), True
+
+    @_synchronized
+    def comments(self, table_id: str) -> list[PeripheralComment]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._comments[table_id]]
 
     @_synchronized
     def respond_invitation(
@@ -858,12 +921,14 @@ class JsonTableRepository(InMemoryTableRepository):
         invitations: dict[str, list[Invitation]] | None = None,
         follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] | None = None,
         value_feedback: dict[str, dict[str, ValueFeedback]] | None = None,
+        comments: dict[str, list[PeripheralComment]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
         invite_rows = invitations if invitations is not None else self._invitations
         outcome_rows = follow_up_outcomes if follow_up_outcomes is not None else self._follow_up_outcomes
         feedback_rows = value_feedback if value_feedback is not None else self._value_feedback
+        comment_rows = comments if comments is not None else self._comments
         payload = {
             "tables": {
                 table_id: {
@@ -878,6 +943,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "value_feedback": [
                         item.model_dump(mode="json")
                         for item in feedback_rows[table_id].values()
+                    ],
+                    "comments": [
+                        item.model_dump(mode="json")
+                        for item in comment_rows[table_id]
                     ],
                 }
                 for table_id, snapshots in states.items()
@@ -915,6 +984,10 @@ class JsonTableRepository(InMemoryTableRepository):
             }
             for table_id, rows in feedback_rows.items()
         }
+        self._comments = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in comment_rows.items()
+        }
         self._trusted_grounding_cards = {
             table_id: card.model_copy(deep=True) for table_id, card in cards.items()
         }
@@ -927,6 +1000,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[Invitation]],
         dict[str, dict[int, FollowUpOutcome]],
         dict[str, dict[str, ValueFeedback]],
+        dict[str, list[PeripheralComment]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -941,6 +1015,7 @@ class JsonTableRepository(InMemoryTableRepository):
         invitations: dict[str, list[Invitation]] = {}
         follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         value_feedback: dict[str, dict[str, ValueFeedback]] = {}
+        comments: dict[str, list[PeripheralComment]] = {}
         for table_id, table in payload["tables"].items():
             table_keys = set(table) if isinstance(table, dict) else set()
             if (not isinstance(table_id, str) or not table_id or not isinstance(table, dict)
@@ -948,7 +1023,7 @@ class JsonTableRepository(InMemoryTableRepository):
                     or not table_keys.issubset(
                         {
                             "states", "turns", "interventions", "invitations",
-                            "follow_up_outcomes", "value_feedback",
+                            "follow_up_outcomes", "value_feedback", "comments",
                         }
                     )):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
@@ -968,6 +1043,10 @@ class JsonTableRepository(InMemoryTableRepository):
                 if not isinstance(raw_feedback, list):
                     raise ValueError("value_feedback must be an array")
                 feedback = [ValueFeedback.model_validate(item) for item in raw_feedback]
+                raw_comments = table.get("comments", [])
+                if not isinstance(raw_comments, list):
+                    raise ValueError("comments must be an array")
+                comment_rows = [PeripheralComment.model_validate(item) for item in raw_comments]
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid data for table {table_id!r}") from error
             if not snapshots or any(state.table_id != table_id for state in snapshots):
@@ -1002,6 +1081,15 @@ class JsonTableRepository(InMemoryTableRepository):
             feedback_participants = [item.participant_id for item in feedback]
             if len(set(feedback_participants)) != len(feedback_participants):
                 raise ValueError(f"invalid persistence file: duplicate value feedback for table {table_id!r}")
+            if any(
+                item.table_id != table_id
+                or item.state_version < 0
+                for item in comment_rows
+            ):
+                raise ValueError(f"invalid persistence file: incompatible comments for table {table_id!r}")
+            comment_ids = [item.comment_id for item in comment_rows]
+            if len(set(comment_ids)) != len(comment_ids):
+                raise ValueError(f"invalid persistence file: duplicate comments for table {table_id!r}")
             states[table_id] = snapshots
             turns[table_id] = messages
             interventions[table_id] = audit
@@ -1010,6 +1098,7 @@ class JsonTableRepository(InMemoryTableRepository):
             value_feedback[table_id] = {
                 item.participant_id: item for item in feedback
             }
+            comments[table_id] = comment_rows
         raw_cards = payload.get("trusted_grounding_cards", {})
         if not isinstance(raw_cards, dict):
             raise ValueError("invalid persistence file: malformed trusted_grounding_cards")
@@ -1021,4 +1110,4 @@ class JsonTableRepository(InMemoryTableRepository):
                 cards[table_id] = GroundingCard.model_validate(raw_card)
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid grounding card for table {table_id!r}") from error
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments
