@@ -184,6 +184,13 @@
 - **替代方案**: 前端本地保存关系、把关系写成新的公共消息，或建立允许 Agent 自由编辑的长期画像。
 - **代价**: 只有已产生关系证据的已收桌才会出现记忆；未来接入好友/关注动作时需另设用户授权和关系状态，不把本接口当作社交关系写入口。
 
+### ADR-24: 离桌由本人发起并复用原子成员迁移
+
+- **决策**: 增加 `POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}`，要求 `viewer_id` 与路径参与者一致；接口复用仓储 `remove_participant`，与 WebSocket `participant_left` 共享同一版本化成员快照和写入锁。离桌不删除历史消息或旧快照；离桌后的连接在下一次真人消息前会重新校验席位并被拒绝。关闭或软过期桌不可再离桌。
+- **理由**: 产品要求成员可随时退出且不必解释，同时 stale socket 不能在退出后继续写入；把身份校验和迁移统一到服务端仓储可以避免 REST/WS 分叉。
+- **替代方案**: 只在前端隐藏成员、把离桌当作删除用户，或为 REST/WS 各维护一套成员状态。
+- **代价**: 离桌后桌内人数可能低于开桌门槛；补位必须重新走邀请/候选流程，不自动恢复离桌成员。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -196,6 +203,7 @@ POST /matches/confirm
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
 POST /tables/{id}/participants
+POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -226,6 +234,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 软过期边界：软过期桌默认从发现列表隐藏；桌内对话、成员、邀请、同步、主持/安全快照和来源卡片写入均返回冲突，历史回放、状态查询、收桌和收桌后行动回响仍可用；重复软过期不增加版本。
 关系记忆边界：只从已收桌的证据派生；`viewer_id` 必须等于路径参与者本人；只返回公开姓名、旧桌问题、关系理由和证据定位，不返回对方私有画像或个人卡全文；该接口只读。
+离桌边界：REST/WS 均要求本人身份；离桌产生一个成员快照版本，保留历史但拒绝该参与者后续真人消息；软过期或关闭后不再允许成员迁移。
 候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
@@ -286,6 +295,7 @@ master
                                                               ←── D11 runtime entrypoint + configurable persistence
                                                                     ←── D36 provider-backed Host wording boundary
                                                                           ←── D44 soft-expired table lifecycle
+                                                                                ←── D46 participant leave REST parity
 ```
 
 ## Progress Ledger
@@ -341,6 +351,7 @@ master
 | D43 follow-up outcome ledger | complete | close-card follow-ups expose a REST read/write contract with owner checks and JSON restart persistence | 214 tests + compileall + diff check | `aac94a0` |
 | D44 soft-expired table lifecycle | complete | explicit soft-expire state, discovery filtering, read-only conversation boundary, history-preserving close path, and reconnect-safe WebSocket error | 218 tests + compileall + diff check | `5aab4c8` |
 | D45 relationship memory view | complete | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | 221 tests + compileall + diff check | `c9334c4` |
+| D46 participant leave REST parity | complete | self-scoped REST leave endpoint sharing atomic repository membership migration with WebSocket | 222 tests + compileall + diff check | `58c0119` |
 
 ## 已知坑位（Running Gotchas）
 
