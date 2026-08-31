@@ -303,6 +303,13 @@
 - **替代方案**: 继续只返回状态快照、由前端并发请求多个账本，或把举报/个人数据一并暴露在回放中。
 - **代价**: V1 返回完整桌级公开账本，不提供事件分页或时间窗口；后续高流量部署需按版本/游标分页。
 
+### ADR-41: 产品行为层用本人可见的受限事件账本沉淀
+
+- **决策**: 增加 `BehaviorEvent` 账本与 self-scoped `POST/GET /participants/{id}/behavior-events`。事件类型只允许 `table_selected`、`human_message`、`relationship_saved`、`follow_up_outcome`；可选桌、状态版本、关联参与者和有界备注，不保存完整消息正文或 token。真人 turn 由仓储自动生成 `human_message` 事件，其他行为由客户端在本人身份下显式上报；`event_id` 桌/用户范围幂等，冲突重用拒绝。JSON 仓储原子持久化并兼容缺失账本的旧文件。
+- **理由**: 产品希望画像从真实选择、发言、关系和行动回响中逐渐长出来，但行为数据比公共桌状态更敏感；统一小账本既能支撑后续画像/推荐，又不会把个人轨迹广播给同桌或写进 Table State。
+- **替代方案**: 让前端本地维护行为、把所有行为拼进真人消息，或开放任意 JSON metadata 造成隐私和 schema 漂移。
+- **代价**: V1 只提供事件记录与本人回读，不自动推断画像、不跨用户公开关系；生产环境需把 `viewer_id` 接到真实会话身份并增加分页/保留策略。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -451,7 +458,8 @@ master
                                                                                                                                                                        ←── D59 explicit peripheral comment promotion with provenance
                                                                                                                                                                              ←── D60 explicit AgentPresence lifecycle contract
                                                                                                                                                                                    ←── D61 JSON close lifecycle persistence
-                                                                                                                                                                                          ←── D62 replay public narrative artifacts
+                                                                                                                                                                                         ←── D62 replay public narrative artifacts
+                                                                                                                                                                                                ←── D63 product behavior event ledger
 ```
 
 ## Progress Ledger
@@ -524,6 +532,7 @@ master
 | D60 explicit AgentPresence lifecycle contract | complete | stable public Agent identity outside human participants with safety/expiry/close status and legacy persistence defaults | 280 tests + compileall + diff check | `64b9463` |
 | D61 JSON close lifecycle persistence | complete | restart-safe idempotent close snapshot and legacy Agent lifecycle normalization | 281 tests + compileall + diff check | `7965cf1` |
 | D62 replay public narrative artifacts | complete | replay response includes interventions, comments, and comment promotion provenance | 281 tests + compileall + diff check | `96aa8c4` |
+| D63 product behavior event ledger | in progress | self-scoped bounded behavior events with automatic human-message capture and JSON persistence | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
