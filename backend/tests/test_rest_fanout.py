@@ -107,15 +107,39 @@ def test_rest_close_broadcasts_public_close_event_and_state() -> None:
     with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:
         response = client.post("/tables/table-rest/close?participant_id=p1")
         assert response.status_code == 200
+        started = websocket.receive_json()
         closed = websocket.receive_json()
         changed = websocket.receive_json()
 
+    assert started == {
+        "type": "close_started",
+        "table_id": "table-rest",
+        "state_version": 1,
+        "reason": "rest_requested_close",
+    }
     assert closed == {
         "type": "table_closed",
         "state_version": 2,
     }
     assert changed["type"] == "table_state_changed"
     assert changed["state"]["conversation"]["closed"] is True
+
+
+def test_rest_close_failure_broadcasts_start_without_mutating_state() -> None:
+    client, repository = _client_with_table()
+    with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:
+        response = client.post("/tables/table-rest/close?participant_id=p1")
+        assert response.status_code == 409
+        started = websocket.receive_json()
+        websocket.send_json({"type": "request_debug_state"})
+        current = websocket.receive_json()
+
+    assert started["type"] == "close_started"
+    assert started["state_version"] == 0
+    assert "evidence" in response.json()["detail"]
+    assert current["state"]["version"] == 0
+    assert current["state"]["conversation"]["closed"] is False
+    assert repository.get("table-rest").conversation.closed is False
 
 
 def test_rest_invitation_acceptance_broadcasts_invitation_and_membership() -> None:
