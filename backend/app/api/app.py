@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain import HumanTurn, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
+from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
 from app.matching import build_match_plan
 from app.orchestrator import build_shared_baseline
 
@@ -38,6 +38,26 @@ class ParticipantConsentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     profile_shared: bool
+
+
+class CreateInvitationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate: ParticipantSeed
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class RespondInvitationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accept: bool
+
+
+class InvitationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invitation: InvitationView
+    state: TableState | None = None
 
 
 class ConfirmMatchRequest(MatchRequest):
@@ -123,6 +143,71 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
             return projected(repo.add_participant(table_id, participant))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+
+    def invitation_view(invitation) -> InvitationView:
+        candidate = invitation.candidate
+        return InvitationView(
+            invitation_id=invitation.invitation_id,
+            table_id=invitation.table_id,
+            participant_id=candidate.participant_id,
+            display_name=candidate.display_name,
+            role=candidate.role,
+            reason=invitation.reason,
+            status=invitation.status,
+        )
+
+    @api.post("/tables/{table_id}/invitations", response_model=InvitationView, status_code=status.HTTP_201_CREATED)
+    def create_invitation(
+        table_id: str,
+        payload: CreateInvitationRequest,
+        inviter_id: str = Query(..., min_length=1),
+    ) -> InvitationView:
+        table_or_404(table_id)
+        try:
+            invitation = repo.create_invitation(
+                table_id, inviter_id, payload.candidate, payload.reason
+            )
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return invitation_view(invitation)
+
+    @api.get("/tables/{table_id}/invitations", response_model=list[InvitationView])
+    def get_invitations(
+        table_id: str,
+        participant_id: str = Query(..., min_length=1),
+    ) -> list[InvitationView]:
+        table_or_404(table_id)
+        return [
+            invitation_view(invitation)
+            for invitation in repo.invitations(table_id)
+            if invitation.candidate.participant_id == participant_id
+        ]
+
+    @api.post(
+        "/tables/{table_id}/invitations/{invitation_id}/respond",
+        response_model=InvitationResponse,
+    )
+    def respond_invitation(
+        table_id: str,
+        invitation_id: str,
+        payload: RespondInvitationRequest,
+        participant_id: str = Query(..., min_length=1),
+    ) -> InvitationResponse:
+        table_or_404(table_id)
+        try:
+            invitation, state = repo.respond_invitation(
+                table_id, invitation_id, participant_id, payload.accept
+            )
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        projected_state = project_state_for_viewer(state, participant_id) if state is not None else None
+        return InvitationResponse(
+            invitation=invitation_view(invitation), state=projected_state
+        )
 
     @api.post("/tables/{table_id}/participants/{participant_id}/consent", response_model=TableState)
     def set_participant_consent(

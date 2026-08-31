@@ -99,6 +99,27 @@ def test_json_repository_loads_legacy_snapshot_without_grounding_cards(tmp_path)
     assert restored.take_trusted_grounding_card("legacy") is None
 
 
+def test_json_repository_persists_invitation_state_and_acceptance(tmp_path) -> None:
+    path = tmp_path / "invitations.json"
+    repository = JsonTableRepository(path)
+    repository.create("invite", "Q", [flagship_participants[0]])
+    invitation = repository.create_invitation(
+        "invite", "architect", flagship_participants[1], "需要产品视角"
+    )
+
+    restored = JsonTableRepository(path)
+    assert restored.invitations("invite") == [invitation]
+    accepted, state = restored.respond_invitation(
+        "invite", invitation.invitation_id, "product", True
+    )
+    assert accepted.status.value == "accepted"
+    assert state is not None and state.version == 1
+
+    reloaded = JsonTableRepository(path)
+    assert reloaded.get("invite").participants["product"].display_name == "周宁"
+    assert reloaded.invitations("invite")[0].status.value == "accepted"
+
+
 def test_json_repository_persists_intervention_audit_records(tmp_path) -> None:
     path = tmp_path / "audit.json"
     repository = JsonTableRepository(path)

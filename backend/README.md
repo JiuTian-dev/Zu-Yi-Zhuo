@@ -15,11 +15,17 @@ python -m uvicorn app.main:app --reload
 - `GET /healthz`：进程存活探针。
 - `GET /readyz`：仓储就绪探针。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
+- `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
+- `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
+- `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：实时消息、主持动作、状态和关闭产物。
 
 WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相同 ID 和内容会返回
 `duplicate_message`，不会再次生成 turn、状态快照或主持动作；复用同一 ID 发送不同内容会被拒绝。
 安全检查仍在幂等提交前执行，因此未提交的危险消息不会占用消息 ID。
+
+邀请状态为 `pending`、`accepted` 或 `declined`。同一候选人一旦被处理，不能再次收到同桌邀请；
+拒绝不会改变桌状态，接受会把候选人和邀请状态作为一次持久化迁移写入 JSON 快照。
 
 默认使用内存仓储；设置 `TABLE_REPOSITORY_PATH` 后使用同目录原子 JSON 快照：
 

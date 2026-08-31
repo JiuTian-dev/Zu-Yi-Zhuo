@@ -60,6 +60,86 @@ def test_api_rejects_unknown_tables_duplicate_participants_and_empty_close() -> 
     assert client.post("/tables/empty/participants", json=participant()).status_code == 409
 
 
+def test_invitation_preview_is_redacted_and_acceptance_adds_the_candidate() -> None:
+    client, _ = client_and_repo()
+    assert client.post(
+        "/tables", json={"table_id": "invite", "core_question": "Q", "participants": [participant("p1")]}
+    ).status_code == 201
+    candidate = {
+        **participant("p2"),
+        "display_name": "乙",
+        "role": "采购负责人",
+        "declared_position": "只给本人看的立场",
+        "relevant_experience": [{"text": "私有采购经历", "source_ref": "private:invite"}],
+    }
+    created = client.post(
+        "/tables/invite/invitations?inviter_id=p1",
+        json={"candidate": candidate, "reason": "这桌还缺采购现场视角"},
+    )
+    assert created.status_code == 201
+    preview = created.json()
+    assert preview == {
+        "invitation_id": "invite:invite:1",
+        "table_id": "invite",
+        "participant_id": "p2",
+        "display_name": "乙",
+        "role": "采购负责人",
+        "reason": "这桌还缺采购现场视角",
+        "status": "pending",
+    }
+    assert "私有采购经历" not in created.text
+    assert client.get("/tables/invite/invitations?participant_id=p2").json() == [preview]
+
+    forbidden = client.post(
+        "/tables/invite/invitations/invite:invite:1/respond?participant_id=p1",
+        json={"accept": True},
+    )
+    assert forbidden.status_code == 403
+
+    accepted = client.post(
+        "/tables/invite/invitations/invite:invite:1/respond?participant_id=p2",
+        json={"accept": True},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["invitation"]["status"] == "accepted"
+    assert accepted.json()["state"]["version"] == 1
+    assert accepted.json()["state"]["participants"]["p2"]["declared_position"] == "只给本人看的立场"
+    assert client.post(
+        "/tables/invite/invitations/invite:invite:1/respond?participant_id=p2",
+        json={"accept": True},
+    ).json()["state"]["version"] == 1
+    assert client.post(
+        "/tables/invite/invitations?inviter_id=p1", json={"candidate": candidate, "reason": "重复邀请"}
+    ).status_code == 409
+
+
+def test_declined_invitation_is_not_reissued_to_the_same_candidate() -> None:
+    client, _ = client_and_repo()
+    client.post("/tables", json={"table_id": "decline", "core_question": "Q", "participants": [participant("p1")]})
+    candidate = {**participant("p3"), "display_name": "丙", "role": "研究员"}
+    invite = client.post(
+        "/tables/decline/invitations?inviter_id=p1",
+        json={"candidate": candidate, "reason": "想听听你的研究视角"},
+    )
+    invitation_id = invite.json()["invitation_id"]
+    declined = client.post(
+        f"/tables/decline/invitations/{invitation_id}/respond?participant_id=p3",
+        json={"accept": False},
+    )
+    assert declined.status_code == 200
+    assert declined.json()["invitation"]["status"] == "declined"
+    assert declined.json()["state"] is None
+    assert client.get("/tables/decline/invitations?participant_id=p3").json()[0]["status"] == "declined"
+    assert client.post(
+        "/tables/decline/invitations?inviter_id=p1",
+        json={"candidate": candidate, "reason": "再邀请不应发生"},
+    ).status_code == 409
+    assert client.post(
+        f"/tables/decline/invitations/{invitation_id}/respond?participant_id=p3",
+        json={"accept": False},
+    ).status_code == 200
+
+
 def test_repository_rejects_unknown_participants_and_invalid_turn_order() -> None:
     repository = InMemoryTableRepository()
     repository.create("turns", "Q", [])
