@@ -153,6 +153,25 @@ def test_relationship_memory_is_derived_from_closed_table_and_self_scoped() -> N
     assert client.get("/participants/p1/relationship-memory?viewer_id=p2").status_code == 403
 
 
+def test_participant_can_leave_via_self_scoped_rest_endpoint() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "leave-api", "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    assert client.post(
+        "/tables/leave-api/participants/p1/leave?viewer_id=p1"
+    ).status_code == 200
+    state = repository.get("leave-api")
+    assert state.version == 1 and set(state.participants) == {"p2"}
+    assert client.post(
+        "/tables/leave-api/participants/p2/leave?viewer_id=p1"
+    ).status_code == 403
+    assert client.post(
+        "/tables/leave-api/participants/p1/leave?viewer_id=p1"
+    ).status_code == 409
+
+
 def test_table_directory_defaults_to_open_public_projections() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={

@@ -255,6 +255,22 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
+    @api.post("/tables/{table_id}/participants/{participant_id}/leave", response_model=TableState)
+    def leave_table(
+        table_id: str,
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> TableState:
+        """Let a participant leave without deleting the table's prior history."""
+        table_or_404(table_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            state = repo.remove_participant(table_id, participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return projected(state)
+
     def invitation_view(invitation) -> InvitationView:
         candidate = invitation.candidate
         return InvitationView(
