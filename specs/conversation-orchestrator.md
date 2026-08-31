@@ -114,10 +114,11 @@ master
   ←── D01 domain contracts + validation
         ←── D02 demo seeds + deterministic Observer/CLI
               ←── D03 Gate + Router golden cases
-                    ←── D04 Host generator
-                          ←── D05 Reflection + Close
-                                ←── D06 FastAPI + WebSocket + replay
-                                      ←── D07 persistence + integration QA
+                    ←── D03.1 decision-loop integration + cooldown writeback
+                          ←── D04 Host generator
+                                ←── D05 Reflection + Close
+                                      ←── D06 FastAPI + WebSocket + replay
+                                            ←── D07 persistence + integration QA
 ```
 
 ## Progress Ledger
@@ -128,6 +129,7 @@ master
 | D01 domain contracts | complete | Pydantic enums, Table State, intervention/artifact contracts | 17 schema tests + compileall + JSON Schema audit | `ee5f045` |
 | D02 Observer/CLI | complete | 5 role seeds, 3 scripted dialogues, immutable state update and JSON replay | 34 tests + compileall + 3 CLI replays | `d5a59e6` |
 | D03 Gate/Router | complete | explainable silence-first Gate + independent six-action Router | 26 golden cases, 100% accuracy; 71 total tests | `90e3fce` |
+| D03.1 loop integration | complete | Gate→Router seam, intervention writeback/cooldown, routed CLI, reachable PASS | 80 tests + 4 CLI replays | `49663d8` |
 | D04 Host | pending | action-specific natural Chinese host text | naturalness review | pending |
 | D05 Reflection/Close | pending | effect log, Q0→Q1, shared/personal cards | flagship replay | pending |
 | D06 API/WS | pending | session APIs and structured realtime events | frontend integration tests | pending |
@@ -137,3 +139,4 @@ master
 
 - 当前前端展示题目是“为什么我们越来越不会休息？”，后端旗舰评测题目是“AI Agent 真正进入企业，卡住的是技术还是采购？”；在 API 联调前需明确采用双 demo table 还是统一题目。
 - 本机系统 Python 为 3.14；项目必须声明 3.11+ 兼容范围，避免无意使用 3.14 专属语法。
+- API 接入前必须增加独立的 pre-loop SafetyDecision/Enforcement；critical hard violation 不能只依赖主持 Router 的 REFRAME，需能表达暂停、拦截或移出。
