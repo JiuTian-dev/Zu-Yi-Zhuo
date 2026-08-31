@@ -637,7 +637,7 @@ master
 | D71 injectable authenticated identity boundary | complete | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | 298 tests + compileall + diff check | `0a262ea` |
 | D72 controlled safety resolution lifecycle | complete | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | 302 tests + compileall + diff check | `22ce4d8` + `8184d30` |
 | D73 production member boundary for privileged REST | complete | identity-resolver-backed member checks for close, direct seat addition, recomposition, and intervention audit reads while preserving development compatibility | 304 tests + compileall + diff check | `c705f5e` + `e27400c` |
-| D74 REST mutation realtime fanout parity | complete | REST seat/invitation/mode/consent/leave/expiry/close/comment writes emit versioned public events and projected state through the existing WebSocket broadcaster; idempotent no-op writes stay silent | 311 tests + compileall + diff check | `de21989` + `ed7da41` |
+| D74 REST mutation realtime fanout parity | complete | REST seat/invitation/mode/consent/leave/expiry/close/comment writes emit versioned public events and projected state through the existing WebSocket broadcaster; idempotent no-op writes stay silent | 311 tests + compileall + diff check | `de21989` + `ed7da41` + `cbedbb4` |
 
 ## 已知坑位（Running Gotchas）
 
