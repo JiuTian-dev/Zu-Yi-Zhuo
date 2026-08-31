@@ -450,7 +450,7 @@ WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={particip
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
 
-Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`。
+Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `participant_consent_changed`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`, `peripheral_comment`, `safety_enforced`, `safety_resolved`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
