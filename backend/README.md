@@ -28,7 +28,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
 - `POST /tables/{table_id}/participants/{participant_id}/leave?viewer_id=...`：参与者本人离桌；保留历史快照并立即停止该席位的后续写入。
-- `POST /tables/{table_id}/candidate-preview?participant_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和有理由的公开候选推荐；不修改桌状态、不创建邀请、不自动入席。
+- `POST /tables/{table_id}/candidate-preview?participant_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和带公开 `evidence_signal_ids` 的候选推荐；不修改桌状态、不创建邀请、不自动入席。
 - `GET /tables/{table_id}/close-artifacts?participant_id=...`：收桌后重新取得共享基线和当前参与者的个人回响卡。
 - `GET /tables/{table_id}/replay`：返回原始真人消息和状态快照，并附带公开的 `interventions`、`comments`、`comment_promotions` 账本，重连时可直接恢复整桌叙事。
 - `GET /tables/{table_id}/follow-ups?participant_id=...`：查询收桌底稿中的行动项及已回报结果。
@@ -139,7 +139,7 @@ python -m uvicorn app.main:app
 三类 source 入口（候选、公开内容、个人上下文）都会在服务端先限制结果消费数量，再进行逐条 schema 校验；不会先把适配器的完整返回值读入内存后再切片。
 
 动态补位预览会过滤现有参与者、已被邀请过的候选人以及明确选择 `none` 的候选人；返回的 `open_seats`、`role_gaps`
-和候选理由只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。
+和候选理由（含可选公开 `evidence_signal_ids`）只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。
 
 机会预览只接受公开 source signal（问题/回答/文章标题、摘要、公开作者角色和公开立场），信号数量最多 20、
 至少覆盖 2 位作者。输出的 `signal_ids` 和 `unfinishedness` 可回溯到原始来源；候选人仍需经过

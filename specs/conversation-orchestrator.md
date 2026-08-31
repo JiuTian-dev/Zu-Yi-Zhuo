@@ -541,6 +541,13 @@
 - **替代方案**: 让前端自行携带并拼接原始信号、把完整来源永久复制进桌状态、或只继续展示 ID；这些方案分别不可信/易丢失、扩大数据生命周期和响应面、或缺少可读解释。
 - **代价**: 预览返回的是当次 source 的公开快照，不承诺外部内容永久可用；若未来需要重启后展示摘要，仍应另建带保留策略的公开 source snapshot，而不是扩大 Table State。
 
+### ADR-75: 动态补位推荐保留公开来源归因
+
+- **决策**: `CandidateRecommendation` 增加可选 `evidence_signal_ids`（最多 5 个），由动态候选补位沿用候选 `ParticipantSeed.public_signal_ids` 的前五个 ID。字段为空时省略；推荐仍只返回公开席位字段和理由，不返回候选人的立场、经历或 source payload。
+- **理由**: 第 5 席不是机械替补，成员需要知道“为什么此刻推荐这个人”；初始匹配已有来源归因，动态补位也应保持同一解释契约，避免两条入口的信任标准不一致。
+- **替代方案**: 只返回角色文案、把候选完整资料塞进推荐、或让前端从 source 结果自行拼接 ID；这些方案分别不可核对、扩大隐私面、或绕过服务端候选过滤。
+- **代价**: 归因只保留公开 ID，不保证 source 内容永久可用；未来如需补位后的公开摘要，应复用公开 source snapshot，而不是放宽推荐的私有字段边界。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -656,6 +663,7 @@ BehaviorEvent(event_id, participant_id, event_type, table_id,
 ParticipantSeed(..., public_signal_ids?<=20)
 MatchReason(participant_id, reason, evidence_terms, evidence_signal_ids?<=5)
 OpportunityPreview(..., source_signals?<=20)
+CandidateRecommendation(..., evidence_signal_ids?<=5)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -855,6 +863,7 @@ master
 | D95 public match signal attribution | complete | Carry bounded public signal IDs from opportunity candidates into explainable match reasons without leaking private profile data or persisting source details in table state | 357 tests + compileall + diff check | `fa185bb` |
 | D96 persisted public source lineage | complete | Persist bounded origin signal IDs on table creation/match confirmation with candidate-source validation and JSON/replay recovery | 360 tests + compileall + diff check | `a5d75a0` |
 | D97 public opportunity evidence projection | complete | Return bounded public source signals in opportunity previews for immediate explanation without copying them into table state | 360 tests + compileall + diff check | `2ca1ad6` |
+| D98 dynamic candidate evidence attribution | complete | Carry bounded public source IDs into dynamic fifth-seat recommendations without leaking candidate profile fields | 360 tests + compileall + diff check | `0536645` |
 
 ## 已知坑位（Running Gotchas）
 
