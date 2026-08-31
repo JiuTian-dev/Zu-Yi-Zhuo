@@ -457,6 +457,13 @@
 - **替代方案**: 只限制 Pydantic 字段、只让反向代理截断、或把超长内容静默截断；这些方案分别仍会承担解析期资源风险、无法覆盖所有部署入口或破坏用户原文与 evidence 的一致性。
 - **代价**: 客户端需要处理 1009 并重新发送较小帧；需要更长正文时应使用独立上传/引用协议，而不是放宽实时对话帧。
 
+### ADR-63: 圆桌邀请偏好支持本人更新并与实时状态一致
+
+- **决策**: 增加 `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}`，请求体只允许 `many / few / none`。V1 的偏好作用域是当前桌席位：只有本人可以更新，状态版本在真实变更时递增，重复提交保持幂等；关闭或软过期桌拒绝写入。WebSocket 增加同名语义的 `participant_invitation_preference` 客户端事件，并广播 `participant_invitation_preference_changed` 与投影状态。候选人创建邀请时继续以其 `ParticipantSeed.roundtable_invite_preference` 作为 source-of-truth；账号级偏好待真实身份/资料源接入后再同步，不在当前单桌仓储中臆造全局用户表。
+- **理由**: 产品允许用户选择“多推 / 少推 / 不推”圆桌邀请，但此前该字段只能在候选 seed 创建时写入，已入席用户无法撤回或调整，前端设置页会出现无效控件。把更新绑定到当前席位可立即闭合联调链路，同时沿用现有身份 resolver、版本化快照、REST/WS 广播和隐私投影边界。
+- **替代方案**: 只让前端保存偏好、增加未接入身份系统的全局偏好表、或让邀请方覆盖用户选择；这些方案分别无法形成服务端约束、会产生跨桌一致性假设或违反候选人自决。
+- **代价**: 同一用户跨桌的偏好暂不自动同步；真实账号/资料源接入时需要增加全局偏好适配器，并将其映射到新候选 seed 和现有席位。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -473,6 +480,7 @@ POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
 POST /tables/{id}/nudge?participant_id={participant_id}
+PUT  /tables/{id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -647,7 +655,8 @@ master
                                                                                                                                                                                                                                                                                                         ←── D82 REST/WebSocket shared nudge service
                                                                                                                                                                                                                                                                                                              ←── D83 first-expression nudge evidence boundary
                                                                                                                                                                                                                                                                                                                   ←── D84 WebSocket Origin allowlist boundary
-                                                                                                                                                                                                                                                                                                                        ←── D85 WebSocket frame size boundary
+                                                                                                                                                                                                                                                                                                                       ←── D85 WebSocket frame size boundary
+                                                                                                                                                                                                                                                                                                                               ←── D86 self-scoped invitation preference update
 ```
 
 ## Progress Ledger
@@ -743,6 +752,7 @@ master
 | D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
 | D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
 | D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
+| D86 self-scoped invitation preference update | in_progress | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
