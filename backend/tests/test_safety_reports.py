@@ -125,6 +125,70 @@ def test_moderation_report_queue_is_unavailable_without_moderator_configuration(
     assert response.status_code == 503
 
 
+def test_moderator_can_advance_report_status_without_peer_visibility() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("status-api", "Q", [_seed("alice"), _seed("bob")])
+    repository.record_safety_report(SafetyReport(
+        report_id="report-1",
+        table_id="status-api",
+        reporter_id="alice",
+        target_participant_id="bob",
+        category="harassment",
+        description="需要审核的私密描述",
+        state_version=0,
+    ))
+    client = TestClient(create_app(repository, moderator_resolver=_moderator))
+    path = "/tables/status-api/safety-reports/report-1"
+
+    assert client.patch(path, json={"status": "acknowledged"}).status_code == 401
+    acknowledged = client.patch(
+        path,
+        json={"status": "acknowledged"},
+        headers={"X-Moderator-ID": "mod-1"},
+    )
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["status"] == "acknowledged"
+    assert client.patch(
+        path,
+        json={"status": "acknowledged"},
+        headers={"X-Moderator-ID": "mod-1"},
+    ).json() == acknowledged.json()
+    resolved = client.patch(
+        path,
+        json={"status": "resolved"},
+        headers={"X-Moderator-ID": "mod-1"},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+    assert client.patch(
+        path,
+        json={"status": "acknowledged"},
+        headers={"X-Moderator-ID": "mod-1"},
+    ).status_code == 409
+    assert client.get("/tables/status-api/safety-reports?reporter_id=alice").json()[0]["status"] == "resolved"
+
+
+def test_json_report_status_transition_survives_restart(tmp_path) -> None:
+    path = tmp_path / "status.json"
+    repository = JsonTableRepository(path)
+    repository.create("status-json", "Q", [_seed("alice"), _seed("bob")])
+    repository.record_safety_report(SafetyReport(
+        report_id="report-1",
+        table_id="status-json",
+        reporter_id="alice",
+        target_participant_id="bob",
+        category="spam",
+        description="审核状态需要恢复",
+        state_version=0,
+    ))
+    repository.update_safety_report_status("status-json", "report-1", "acknowledged")
+
+    restored = JsonTableRepository(path)
+    assert restored.safety_reports("status-json")[0].status == "acknowledged"
+    restored.update_safety_report_status("status-json", "report-1", "resolved")
+    assert JsonTableRepository(path).safety_reports("status-json")[0].status == "resolved"
+
+
 def test_json_repository_persists_reports_and_accepts_legacy_tables(tmp_path) -> None:
     path = tmp_path / "reports.json"
     repository = JsonTableRepository(path)
