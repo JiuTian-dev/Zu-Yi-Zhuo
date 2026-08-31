@@ -86,6 +86,13 @@
 - **替代方案**: 只返回一次性卡片，不写状态；或收到 close 请求立即锁桌。
 - **代价**: 客户端需要处理 `table_closed` 错误和关闭后的最终状态事件。
 
+### ADR-10: 主持动作独立审计日志
+
+- **决策**: 每个真实的非 `SILENCE` 主持动作写入 `InterventionRecord`；记录包含路由 action、evidence、confidence、模型/耗时/Token 元数据和可选 outcome/reflection。日志与状态快照分离，支持单独查询和重启恢复。
+- **理由**: Table State 只保留下一步黑板和最后动作，不能替代完整的可解释回放；`SILENCE` 没有可发送动作，也不生成伪审计记录。
+- **替代方案**: 只在状态里覆盖保存最后一次动作，或把审计字段塞进前端事件。
+- **代价**: JSON 快照格式增加可选 `interventions` 段；未来接数据库时需要独立事件表。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -98,6 +105,7 @@ GET  /tables/{id}
 POST /tables/{id}/participants
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
+GET  /tables/{id}/interventions
 POST /tables/{id}/close
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
