@@ -117,8 +117,9 @@ master
                     ←── D03.1 decision-loop integration + cooldown writeback
                           ←── D04 Host generator
                                 ←── D05 Reflection + Close
-                                      ←── D06 FastAPI + WebSocket + replay
-                                            ←── D07 persistence + integration QA
+                                            ←── D06 FastAPI + WebSocket + replay
+                                                  ←── D07 persistence + integration QA
+                                                        ←── D08 provider adapter + fail-closed calls
 ```
 
 ## Progress Ledger
@@ -136,6 +137,7 @@ master
 | D06c realtime artifacts | complete | WebSocket close lifecycle (`close_started`/`close_artifact_ready`) and server-only trusted grounding-card delivery | 147 tests + compileall + privacy/source-boundary review | `1d0e37e` |
 | D07a safety boundary | complete | pre-loop deterministic SafetyDecision/Enforcement; CRITICAL pause/intercept snapshot; Host/record hard stop | 138 tests + compileall + safety bypass review | `f6ead4d` |
 | D07b persistence/QA | complete | atomic JSON snapshot repository with strict load validation, restart recovery and safety-only snapshots; deterministic replay QA | 142 tests + compileall + 10 persisted flagship runs | `e0f554d` |
+| D08 provider adapter | complete | vendor-neutral `LLMProvider` protocol; Pydantic-validated structured calls with one repair retry; typed previous-state/fallback path; Host text never emits empty or half-built output | 152 tests + compileall + diff check | pending commit |
 
 ## 已知坑位（Running Gotchas）
 
