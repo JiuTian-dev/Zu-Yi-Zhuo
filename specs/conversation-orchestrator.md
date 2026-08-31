@@ -450,6 +450,13 @@
 - **替代方案**: 复用 CORS 配置但允许空 Origin、只在反向代理校验、或接受通配符；这些方案分别会误放行非浏览器/配置漂移、让应用边界失去可测试性或扩大跨站攻击面。
 - **代价**: 生产部署必须维护明确的前端来源列表；原生客户端若没有 Origin，需要使用专门的部署配置或改用带会话身份的受控入口。
 
+### ADR-62: WebSocket 帧与真人消息长度有界
+
+- **决策**: WebSocket 接收层默认把单个 JSON 文本帧限制为 64 KiB，可由 `WS_MAX_FRAME_BYTES` 或 `create_app(..., websocket_max_frame_bytes=...)` 调整为正整数；超过上限直接以 1009 关闭连接。`human_message.text` 另设 4000 字符上限，超限只返回 `invalid_payload`，不写入桌状态。
+- **理由**: WebSocket 消息不是普通 HTTP body，当前 `receive_json()` 会先完整接收并解析，再进入 Pydantic；应用必须在 JSON 解析前设置资源边界，并限制模型上下文与持久化文本的异常膨胀。
+- **替代方案**: 只限制 Pydantic 字段、只让反向代理截断、或把超长内容静默截断；这些方案分别仍会承担解析期资源风险、无法覆盖所有部署入口或破坏用户原文与 evidence 的一致性。
+- **代价**: 客户端需要处理 1009 并重新发送较小帧；需要更长正文时应使用独立上传/引用协议，而不是放宽实时对话帧。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -639,7 +646,8 @@ master
                                                                                                                                                                                                                                                                                                    ←── D81 cold-start nudge event
                                                                                                                                                                                                                                                                                                         ←── D82 REST/WebSocket shared nudge service
                                                                                                                                                                                                                                                                                                              ←── D83 first-expression nudge evidence boundary
-                                                                                                                                                                                                                                                                                                                   ←── D84 WebSocket Origin allowlist boundary
+                                                                                                                                                                                                                                                                                                                  ←── D84 WebSocket Origin allowlist boundary
+                                                                                                                                                                                                                                                                                                                        ←── D85 WebSocket frame size boundary
 ```
 
 ## Progress Ledger
@@ -734,6 +742,7 @@ master
 | D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 327 tests + compileall + diff check | `288dde4` + `af854ad` |
 | D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
 | D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
+| D85 WebSocket frame size boundary | in_progress | Bound JSON frame size before parsing and reject overlong human text without persistence | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
