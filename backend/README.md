@@ -34,15 +34,18 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/feedback?participant_id=...`：收桌后提交或更新认知、关系、行动、情绪四类 1–5 分价值反馈。
 - `GET /tables/{table_id}/feedback?participant_id=...`：桌内成员查看匿名价值聚合；不返回他人的评分明细或备注。
 - `POST /tables/{table_id}/comments?author_id=...` / `GET /tables/{table_id}/comments`：外围评论独立账本；评论不占席位、不进入核心 turn。
+- `POST /tables/{table_id}/comments/{comment_id}/promote?participant_id=...`：核心成员显式促成一条评论；服务端重新做安全检查，成功后以促成人身份写入主桌 turn，并保留 `source_comment_id` 和可回放的 `CommentPromotion`。
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
 - `POST /tables/{table_id}/recompose`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
+- `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=commenter`：外围评论连接；只接受 `peripheral_comment`，评论可由核心成员通过 REST 显式促成。
 
 WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相同 ID 和内容会返回
-`duplicate_message`，不会再次生成 turn、状态快照或主持动作；复用同一 ID 发送不同内容会被拒绝。
+`duplicate_message`，不会再次生成 turn、状态快照或主持动作；复用同一 ID 发送不同内容会被拒绝。评论促成同样按
+`(table_id, comment_id)` 幂等，重复请求不生成新 turn/state。
 安全检查仍在幂等提交前执行，因此未提交的危险消息不会占用消息 ID。
 
 邀请状态为 `pending`、`accepted` 或 `declined`。同一候选人一旦被处理，不能再次收到同桌邀请；
@@ -132,6 +135,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 参与者连接握手必须属于该桌；未知 `participant_id` 会收到 `unknown_participant` 并以 1008 关闭。
 - `viewer_mode=observer` 是只读旁听连接：`participant_id` 仅作为连接标识，不要求属于桌内；状态始终按无 viewer 投影，发言、入席/离席、同意和收桌事件统一返回 `observer_read_only`，不会产生任何持久化写入。
 - `viewer_mode=commenter` 是外围评论连接：`participant_id` 仅作为评论作者标识，不占席位；连接建立后收到公开状态，只接受 `peripheral_comment`，其他写事件返回 `commenter_read_only`。评论以 `comment_id` 做桌级幂等，单独持久化并广播，不会触发主持决策或改变 Table State。
+- 评论升级必须由当前核心成员显式触发；升级前重新执行 Safety，危险评论只产生安全暂停快照，不写入核心 turn。成功升级的 turn 由促成人负责并带 `source_comment_id`，`comment_promoted` 与状态事件会广播给同桌连接。
 - 举报接口只允许当前桌成员自证提交，目标必须是同桌另一名成员；`report_id` 桌级幂等。举报人只能读取自己的举报，完整账本不通过公共 API 暴露，避免被举报对象或旁听者反向读取。
 - 成员离席后，仍未关闭的旧连接也会在每条真人消息进入安全检查前重新校验席位；不会因为 stale socket 写入安全暂停或消息快照。
 - 成员也可通过自证的 REST leave 入口离桌；离桌会产生一个版本化成员快照，旧连接后续消息会返回 `unknown participant`。

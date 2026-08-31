@@ -495,7 +495,7 @@ master
 | D56 safety report ledger and privacy boundary | complete | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | 265 tests + compileall + diff check | `3f82db6` |
 | D57 authorized personal context source boundary | complete | server-side OAuth/CLI/MCP adapter seam with viewer-only ephemeral personal preview | 271 tests + compileall + diff check | `9d33685` |
 | D58 personal context consent and scope gate | complete | self-scoped persistent scope consent, revoke path, and preview enforcement | 273 tests + compileall + diff check | `4e5cc42` |
-| D59 explicit peripheral comment promotion | in progress | member-triggered safe comment-to-core turn with provenance and idempotent persistence | pending | — |
+| D59 explicit peripheral comment promotion | complete | member-triggered safe comment-to-core turn with provenance, privacy-aware fanout, and idempotent JSON persistence | 278 tests + compileall + diff check | `931783d` |
 
 ## 已知坑位（Running Gotchas）
 
