@@ -39,7 +39,8 @@ python -m uvicorn app.main:app --reload
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
 - `GET /tables/{table_id}/safety-reports/moderation`：仅注入 `moderator_resolver` 的审核器可读取该桌完整举报队列；未配置审核身份时返回 503，普通成员不能借此读取他人举报。
-- `PATCH /tables/{table_id}/safety-reports/{report_id}`：审核器将举报状态单向推进为 `acknowledged` 或 `resolved`；重复当前状态幂等，已解决举报不可回退，状态更新不广播给桌内连接。
+- `PATCH /tables/{table_id}/safety-reports/{report_id}`：审核器将举报状态单向推进为 `acknowledged` 或 `resolved`；可带 `reason`，重复当前状态幂等，已解决举报不可回退，状态更新不广播给桌内连接。
+- `GET /tables/{table_id}/safety-reports/{report_id}/history`：审核器读取该举报的受信状态迁移链（审核器身份、原/目标状态和可选理由）；普通成员不可见，旧 JSON 快照按空链兼容加载。
 - `POST /tables/{table_id}/safety/resolve` / `GET /tables/{table_id}/safety/resolutions`：仅对注入的 `moderator_resolver` 开放；可原子恢复 critical 暂停或移除一名成员，并读取不可变处置审计。未配置审核器时返回 503，不能用请求体自报 moderator。
 - `POST /tables/{table_id}/recompose?participant_id=...`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。生产注入 `identity_resolver` 后要求由当前桌成员发起。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
@@ -152,7 +153,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - `viewer_mode=observer` 是只读旁听连接：`participant_id` 仅作为连接标识，不要求属于桌内；状态始终按无 viewer 投影，发言、入席/离席、同意和收桌事件统一返回 `observer_read_only`，不会产生任何持久化写入。
 - `viewer_mode=commenter` 是外围评论连接：`participant_id` 仅作为评论作者标识，不占席位；连接建立后收到公开状态，只接受 `peripheral_comment`，其他写事件返回 `commenter_read_only`。评论以 `comment_id` 做桌级幂等，单独持久化并广播，不会触发主持决策或改变 Table State。
 - 评论升级必须由当前核心成员显式触发；升级前重新执行 Safety，危险评论只产生安全暂停快照，不写入核心 turn。成功升级的 turn 由促成人负责并带 `source_comment_id`，`comment_promoted` 与状态事件会广播给同桌连接。
-- 举报接口只允许当前桌成员自证提交，目标必须是同桌另一名成员；`report_id` 桌级幂等。举报人只能读取自己的举报，完整账本不通过公共 API 暴露，避免被举报对象或旁听者反向读取。
+- 举报接口只允许当前桌成员自证提交，目标必须是同桌另一名成员；`report_id` 桌级幂等。举报人只能读取自己的举报，完整账本不通过公共 API 暴露，避免被举报对象或旁听者反向读取。审核器状态迁移另存私有审计链，重复状态不生成伪事件。
 - 成员离席后，仍未关闭的旧连接也会在每条真人消息进入安全检查前重新校验席位；不会因为 stale socket 写入安全暂停或消息快照。
 - 成员也可通过自证的 REST leave 入口离桌；离桌会产生一个版本化成员快照，旧连接后续消息会返回 `unknown participant`。
 - REST consent 必须带 `viewer_id`，且必须等于路径中的参与者；未注入身份解析器时这是开发态身份声明。生产部署应注入 `identity_resolver`，让服务端把查询主体与真实会话主体交叉校验。

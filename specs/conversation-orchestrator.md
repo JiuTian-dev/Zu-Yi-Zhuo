@@ -460,6 +460,9 @@ DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_i
 GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
 POST /tables/{id}/safety-reports?reporter_id={reporter_id}
 GET  /tables/{id}/safety-reports?reporter_id={reporter_id}
+GET  /tables/{id}/safety-reports/moderation
+PATCH /tables/{id}/safety-reports/{report_id}
+GET  /tables/{id}/safety-reports/{report_id}/history
 POST /tables/{id}/safety/resolve
 GET  /tables/{id}/safety/resolutions
 POST /personal-context/source-preview?viewer_id={viewer_id}
@@ -677,7 +680,7 @@ master
 | D76 replay projection for late joiners | complete | Current member identity is validated once, then historical snapshots tolerate the viewer being absent before joining while retaining privacy projection | 314 tests + compileall + diff check | `b7bdc90` + `e39c138` |
 | D77 moderator-only safety report queue | complete | Trusted moderator identity can read a table's full private report queue; participant self-read remains unchanged and no report is broadcast | 316 tests + compileall + diff check | `de40b4d` + `7fda8d8` |
 | D78 moderator safety report status lifecycle | complete | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | 318 tests + compileall + diff check | `276b595` + `a115fef` |
-| D79 safety report transition audit | in_progress | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility | pending | — |
+| D79 safety report transition audit | complete | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility | 320 tests + compileall + diff check | `41653a9` |
 
 ## 已知坑位（Running Gotchas）
 
