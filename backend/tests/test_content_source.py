@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
@@ -119,6 +120,17 @@ def test_command_content_signal_source_fails_closed_on_bad_json_and_output_limit
         assert "too large" in str(error)
     else:
         raise AssertionError("oversized content source output must fail")
+
+
+def test_command_content_source_timeout_covers_process_start(monkeypatch) -> None:
+    async def blocked_start(*args, **kwargs):
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", blocked_start)
+    source = CommandContentSignalSource([sys.executable, "-c", "print('{}')"], timeout_seconds=0.01)
+
+    with pytest.raises(ContentSignalSourceError, match="timed out"):
+        asyncio.run(source.search(query="Q", limit=2))
 
 
 def test_runtime_content_source_command_is_configured_as_json_argv(monkeypatch) -> None:

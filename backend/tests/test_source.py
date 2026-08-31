@@ -139,6 +139,17 @@ def test_command_candidate_source_enforces_output_and_process_time_limits() -> N
         asyncio.run(hanging.search(query="Q", limit=2))
 
 
+def test_command_candidate_source_timeout_covers_process_start(monkeypatch) -> None:
+    async def blocked_start(*args, **kwargs):
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", blocked_start)
+    source = CommandCandidateSource([sys.executable, "-c", "print('{}')"], timeout_seconds=0.01)
+
+    with pytest.raises(CandidateSourceError, match="timed out"):
+        asyncio.run(source.search(query="Q", limit=2))
+
+
 def test_runtime_candidate_source_command_is_configured_as_json_argv(monkeypatch) -> None:
     command = [sys.executable, "-c", "import sys; sys.stdout.write('{\"candidates\":[]}')"]
     monkeypatch.setenv("CANDIDATE_SOURCE_COMMAND", json.dumps(command))

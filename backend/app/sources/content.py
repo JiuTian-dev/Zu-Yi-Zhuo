@@ -52,13 +52,16 @@ class CommandContentSignalSource:
             raise ContentSignalSourceError("content source query must be non-empty")
         if limit <= 0:
             raise ContentSignalSourceError("content source limit must be positive")
-        try:
+        process_state: dict[str, Any] = {}
+
+        async def run() -> tuple[bytes, bool, int]:
             process = await asyncio.create_subprocess_exec(
                 *self.command,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            process_state["process"] = process
             if process.stdin is None:
                 raise OSError("content source stdin unavailable")
             process.stdin.write(
@@ -68,24 +71,30 @@ class CommandContentSignalSource:
             process.stdin.close()
             stdout_task = asyncio.create_task(self._read_bounded(process.stdout))
             stderr_task = asyncio.create_task(self._drain(process.stderr))
-            await asyncio.wait_for(
-                asyncio.gather(process.wait(), stdout_task, stderr_task),
-                timeout=self.timeout_seconds,
-            )
+            process_state["stdout_task"] = stdout_task
+            process_state["stderr_task"] = stderr_task
+            await asyncio.gather(process.wait(), stdout_task, stderr_task)
             stdout, oversized = stdout_task.result()
+            return stdout, oversized, process.returncode
+
+        try:
+            stdout, oversized, returncode = await asyncio.wait_for(
+                run(), timeout=self.timeout_seconds
+            )
         except asyncio.TimeoutError as error:
-            if "process" in locals() and process.returncode is None:
+            process = process_state.get("process")
+            if process is not None and process.returncode is None:
                 process.kill()
                 await process.wait()
             for task_name in ("stdout_task", "stderr_task"):
-                task = locals().get(task_name)
+                task = process_state.get(task_name)
                 if task is not None and not task.done():
                     task.cancel()
             raise ContentSignalSourceError("content source timed out") from error
         except (BrokenPipeError, ConnectionResetError, OSError, ValueError) as error:
             raise ContentSignalSourceError("content source could not start") from error
 
-        if process.returncode != 0:
+        if returncode != 0:
             raise ContentSignalSourceError("content source exited unsuccessfully")
         if oversized:
             raise ContentSignalSourceError("content source output is too large")

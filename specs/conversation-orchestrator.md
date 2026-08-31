@@ -317,6 +317,13 @@
 - **替代方案**: 继续要求前端额外 POST 行为事件、把行动结果复制进 Table State，或只记录最后一次结果而丢失状态变化轨迹。
 - **代价**: V1 的事件摘要只表达状态，不保存备注全文；未来接入真实账号和分析管道时仍需分页、保留与删除策略。
 
+### ADR-43: 外部 source 超时覆盖完整子进程生命周期
+
+- **决策**: `CommandCandidateSource`、`CommandContentSignalSource` 和 `CommandPersonalContextSource` 的单次调用预算从创建子进程开始计时，覆盖 stdin 写入/关闭、stdout/stderr drain、进程退出和任务清理；任何阶段超时都杀掉子进程并返回各自的通用 source error。适配器仍使用无 shell 参数数组和既有输出上限。
+- **理由**: 只限制读取阶段无法保护 API worker：一个启动后不读取 stdin 的 wrapper 就能让 `drain()` 无限等待，绕过 D41 的 fail-closed 约束。统一全链路预算可以让 source 故障在确定时间内释放资源，也避免把凭据或底层异常暴露给客户端。
+- **替代方案**: 只继续限制 `process.wait()`、依赖操作系统 pipe 缓冲区，或为每类 source 单独实现不一致的超时逻辑。
+- **代价**: wrapper 必须在预算内消费请求并返回；超时包括进程启动开销，极慢但合法的 source 需要在适配器侧优化或由调用方显式提高注入预算。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -473,6 +480,7 @@ master
                                                                                                                                                                                          ←── D62 replay public narrative artifacts
                                                                                                                                                                                                 ←── D63 product behavior event ledger
                                                                                                                                                                                                       ←── D64 follow-up behavior event wiring
+                                                                                                                                                                                                            ←── D65 source full-lifecycle timeout
 ```
 
 ## Progress Ledger
@@ -547,6 +555,7 @@ master
 | D62 replay public narrative artifacts | complete | replay response includes interventions, comments, and comment promotion provenance | 281 tests + compileall + diff check | `96aa8c4` |
 | D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture, namespaced IDs, and JSON persistence | 284 tests + compileall + diff check | `766cb50` |
 | D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 287 tests + compileall + diff check | `70aaca1` |
+| D65 source full-lifecycle timeout | in progress | candidate/content/personal command bridges enforce one timeout across process startup, stdin, drain, exit, and cleanup | 290 tests + compileall + diff check pending | — |
 
 ## 已知坑位（Running Gotchas）
 

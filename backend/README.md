@@ -150,6 +150,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 可选 `CommandPersonalContextSource` 为用户授权个人层接入官方/获授权 wrapper；后端只接受 `visibility=private` 且 owner 与 viewer 一致的 `PersonalContextSignal`，预览响应只回给该 viewer，默认不持久化。
 - 接入正式知乎 CLI/MCP/OAuth 时，通过 `create_app(..., candidate_source=...)` 注入适配器，适配器只返回已授权、规范化候选资料，服务端不会接收或记录 access token。
 - 外部 source 调用默认有 5 秒超时；可在 `create_app(..., candidate_source_timeout_seconds=...)` 注入不同正数。超时统一返回通用 502，不会回退到未经授权的候选。
+- source 命令的超时从子进程启动开始，覆盖 stdin 写入/关闭、stdout/stderr drain、进程退出和清理；任一阶段超时都会杀掉子进程并 fail-closed，避免 wrapper 卡在输入阶段占住 worker。
 - 软过期桌不再出现在默认 `GET /tables`；使用 `include_closed=true` 可在历史/运营视图中看到它，且仍按 viewer 做隐私投影。
 - 关系记忆只从已收桌状态的 `worth_continuing_with` 证据派生；本人身份通过 `viewer_id` 自证，响应只含旧桌问题、对方公开姓名、理由和证据定位，不含私有画像或个人卡全文。
 - 行动回响只在收桌后开放，状态为 `completed`、`in_progress`、`blocked` 或 `dismissed`；原始收桌底稿保持不变，结果单独持久化并可在重启后恢复。

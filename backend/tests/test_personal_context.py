@@ -194,6 +194,17 @@ def test_command_personal_source_fails_closed_on_invalid_output() -> None:
         asyncio.run(source.search(viewer_id="alice", scopes=["favorites"], query="Q", limit=2))
 
 
+def test_command_personal_source_timeout_covers_process_start(monkeypatch) -> None:
+    async def blocked_start(*args, **kwargs):
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", blocked_start)
+    source = CommandPersonalContextSource([sys.executable, "-c", "print('{}')"], timeout_seconds=0.01)
+
+    with pytest.raises(PersonalContextSourceError, match="timed out"):
+        asyncio.run(source.search(viewer_id="alice", scopes=["favorites"], query="Q", limit=2))
+
+
 def test_personal_context_validates_positive_timeout() -> None:
     with pytest.raises(ValueError, match="positive"):
         create_app(personal_context_source_timeout_seconds=0)
