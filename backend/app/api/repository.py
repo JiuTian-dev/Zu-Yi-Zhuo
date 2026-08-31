@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
+from app.domain import Action, BehaviorEvent, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -44,6 +44,7 @@ class InMemoryTableRepository:
         self._no_match: dict[str, set[str]] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
+        self._behavior_events: dict[str, list[BehaviorEvent]] = {}
 
     @_synchronized
     def create(
@@ -375,12 +376,40 @@ class InMemoryTableRepository:
         )
         self._turns[table_id].append(turn)
         self._comment_promotions[table_id].append(promotion)
+        self._behavior_events.setdefault(promoter_id, []).append(BehaviorEvent(
+            event_id=message_id,
+            participant_id=promoter_id,
+            event_type="human_message",
+            table_id=table_id,
+            state_version=state.version,
+        ))
         return promotion.model_copy(deep=True), self._append(table_id, state), True
 
     @_synchronized
     def comment_promotions(self, table_id: str) -> list[CommentPromotion]:
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._comment_promotions[table_id]]
+
+    @_synchronized
+    def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
+        """Persist one bounded product behavior signal with user-scoped idempotency."""
+        self.get(event.table_id)
+        existing = next(
+            (item for item in self._behavior_events.get(event.participant_id, []) if item.event_id == event.event_id),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != event.model_dump(mode="json"):
+                raise ValueError("event_id already belongs to a different behavior event")
+            return existing.model_copy(deep=True), False
+        self._behavior_events.setdefault(event.participant_id, []).append(event.model_copy(deep=True))
+        return event.model_copy(deep=True), True
+
+    @_synchronized
+    def behavior_events(self, participant_id: str) -> list[BehaviorEvent]:
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        return [item.model_copy(deep=True) for item in self._behavior_events.get(participant_id, [])]
 
     @_synchronized
     def relationship_memories(self, participant_id: str) -> list[RelationshipMemory]:
@@ -521,6 +550,13 @@ class InMemoryTableRepository:
         committed = turn.model_copy(deep=True)
         state = observe_turn(current, committed)
         self._turns[table_id].append(committed)
+        self._behavior_events.setdefault(committed.participant_id, []).append(BehaviorEvent(
+            event_id=committed.message_id or f"{table_id}:turn:{committed.turn_id}",
+            participant_id=committed.participant_id,
+            event_type="human_message",
+            table_id=table_id,
+            state_version=state.version,
+        ))
         return self._append(table_id, state)
 
     @_synchronized
@@ -554,6 +590,13 @@ class InMemoryTableRepository:
         )
         state = observe_turn(current, turn)
         self._turns[table_id].append(turn)
+        self._behavior_events.setdefault(participant_id, []).append(BehaviorEvent(
+            event_id=message_id,
+            participant_id=participant_id,
+            event_type="human_message",
+            table_id=table_id,
+            state_version=state.version,
+        ))
         return self._append(table_id, state), True
 
     @_synchronized
@@ -733,6 +776,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._no_match,
                 self._safety_reports,
                 self._personal_context_consents,
+                self._behavior_events,
             ) = self._load()
 
     @_synchronized
@@ -869,7 +913,21 @@ class JsonTableRepository(InMemoryTableRepository):
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], committed]}
-        self._commit(states, turns, self._trusted_grounding_cards, self._interventions)
+        event = BehaviorEvent(
+            event_id=committed.message_id or f"{table_id}:turn:{committed.turn_id}",
+            participant_id=committed.participant_id,
+            event_type="human_message",
+            table_id=table_id,
+            state_version=snapshot.version,
+        )
+        behavior_events = {
+            **self._behavior_events,
+            committed.participant_id: [*self._behavior_events.get(committed.participant_id, []), event],
+        }
+        self._commit(
+            states, turns, self._trusted_grounding_cards, self._interventions,
+            behavior_events=behavior_events,
+        )
         return snapshot.model_copy(deep=True)
 
     @_synchronized
@@ -900,7 +958,21 @@ class JsonTableRepository(InMemoryTableRepository):
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], turn]}
-        self._commit(states, turns, self._trusted_grounding_cards, self._interventions)
+        event = BehaviorEvent(
+            event_id=message_id,
+            participant_id=participant_id,
+            event_type="human_message",
+            table_id=table_id,
+            state_version=snapshot.version,
+        )
+        behavior_events = {
+            **self._behavior_events,
+            participant_id: [*self._behavior_events.get(participant_id, []), event],
+        }
+        self._commit(
+            states, turns, self._trusted_grounding_cards, self._interventions,
+            behavior_events=behavior_events,
+        )
         return snapshot.model_copy(deep=True), True
 
     @_synchronized
@@ -1126,11 +1198,23 @@ class JsonTableRepository(InMemoryTableRepository):
             **self._comment_promotions,
             table_id: [*self._comment_promotions[table_id], promotion.model_copy(deep=True)],
         }
+        behavior_event = BehaviorEvent(
+            event_id=message_id,
+            participant_id=promoter_id,
+            event_type="human_message",
+            table_id=table_id,
+            state_version=state.version,
+        )
+        behavior_events = {
+            **self._behavior_events,
+            promoter_id: [*self._behavior_events.get(promoter_id, []), behavior_event],
+        }
         self._commit(
             states, turns, self._trusted_grounding_cards, self._interventions,
             self._invitations, self._follow_up_outcomes, self._value_feedback,
             self._comments, self._no_match, self._safety_reports,
             self._personal_context_consents, comment_promotions=promotions,
+            behavior_events=behavior_events,
         )
         return promotion.model_copy(deep=True), states[table_id][-1].model_copy(deep=True), True
 
@@ -1138,6 +1222,29 @@ class JsonTableRepository(InMemoryTableRepository):
     def comment_promotions(self, table_id: str) -> list[CommentPromotion]:
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._comment_promotions[table_id]]
+
+    @_synchronized
+    def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
+        self.get(event.table_id)
+        existing = next(
+            (item for item in self._behavior_events.get(event.participant_id, []) if item.event_id == event.event_id),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != event.model_dump(mode="json"):
+                raise ValueError("event_id already belongs to a different behavior event")
+            return existing.model_copy(deep=True), False
+        rows = {
+            **self._behavior_events,
+            event.participant_id: [*self._behavior_events.get(event.participant_id, []), event.model_copy(deep=True)],
+        }
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards, self._interventions,
+            self._invitations, self._follow_up_outcomes, self._value_feedback,
+            self._comments, self._no_match, self._safety_reports,
+            self._personal_context_consents, behavior_events=rows,
+        )
+        return event.model_copy(deep=True), True
 
     @_synchronized
     def respond_invitation(
@@ -1311,6 +1418,7 @@ class JsonTableRepository(InMemoryTableRepository):
         safety_reports: dict[str, list[SafetyReport]] | None = None,
         personal_context_consents: dict[str, PersonalContextConsent] | None = None,
         comment_promotions: dict[str, list[CommentPromotion]] | None = None,
+        behavior_events: dict[str, list[BehaviorEvent]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1329,6 +1437,11 @@ class JsonTableRepository(InMemoryTableRepository):
             comment_promotions
             if comment_promotions is not None
             else self._comment_promotions
+        )
+        behavior_rows = (
+            behavior_events
+            if behavior_events is not None
+            else self._behavior_events
         )
         payload = {
             "tables": {
@@ -1370,6 +1483,10 @@ class JsonTableRepository(InMemoryTableRepository):
             "personal_context_consents": {
                 viewer_id: consent.model_dump(mode="json")
                 for viewer_id, consent in consent_rows.items()
+            },
+            "behavior_events": {
+                participant_id: [item.model_dump(mode="json") for item in rows]
+                for participant_id, rows in behavior_rows.items()
             },
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1424,6 +1541,10 @@ class JsonTableRepository(InMemoryTableRepository):
             viewer_id: consent.model_copy(deep=True)
             for viewer_id, consent in consent_rows.items()
         }
+        self._behavior_events = {
+            participant_id: [item.model_copy(deep=True) for item in rows]
+            for participant_id, rows in behavior_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -1438,6 +1559,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, set[str]],
         dict[str, list[SafetyReport]],
         dict[str, PersonalContextConsent],
+        dict[str, list[BehaviorEvent]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -1446,7 +1568,7 @@ class JsonTableRepository(InMemoryTableRepository):
         if (not isinstance(payload, dict) or "tables" not in payload
                 or not set(payload).issubset({
                     "tables", "trusted_grounding_cards", "no_match",
-                    "personal_context_consents",
+                    "personal_context_consents", "behavior_events",
                 })
                 or not isinstance(payload["tables"], dict)):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
@@ -1642,4 +1764,26 @@ class JsonTableRepository(InMemoryTableRepository):
             if consent.viewer_id != viewer_id:
                 raise ValueError("invalid persistence file: personal context viewer mismatch")
             consents[viewer_id] = consent
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, consents
+        raw_behavior = payload.get("behavior_events", {})
+        if not isinstance(raw_behavior, dict):
+            raise ValueError("invalid persistence file: malformed behavior_events")
+        behavior_events: dict[str, list[BehaviorEvent]] = {}
+        for participant_id, raw_events in raw_behavior.items():
+            if not isinstance(participant_id, str) or not participant_id or not isinstance(raw_events, list):
+                raise ValueError("invalid persistence file: invalid behavior participant")
+            try:
+                events = [BehaviorEvent.model_validate(item) for item in raw_events]
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid persistence file: invalid behavior event") from error
+            if any(
+                item.participant_id != participant_id
+                or item.table_id not in states
+                or item.state_version is not None and item.state_version > states[item.table_id][-1].version
+                for item in events
+            ):
+                raise ValueError("invalid persistence file: incompatible behavior event")
+            event_ids = [item.event_id for item in events]
+            if len(set(event_ids)) != len(event_ids):
+                raise ValueError("invalid persistence file: duplicate behavior event")
+            behavior_events[participant_id] = events
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, consents, behavior_events
