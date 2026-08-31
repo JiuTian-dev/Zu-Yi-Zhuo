@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -128,6 +128,17 @@ class PersonalContextConsentRequest(BaseModel):
         if len(self.scopes) != len(set(self.scopes)):
             raise ValueError("personal context scopes must be unique")
         return self
+
+
+class BehaviorEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=1)
+    event_type: BehaviorEventType
+    table_id: str = Field(min_length=1)
+    state_version: int | None = Field(default=None, ge=0)
+    related_participant_id: str | None = Field(default=None, min_length=1)
+    detail: str | None = Field(default=None, min_length=1, max_length=240)
 
 
 class MatchedTableResponse(BaseModel):
@@ -304,6 +315,44 @@ def create_app(
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.relationship_memories(participant_id)
+
+    @api.post(
+        "/participants/{participant_id}/behavior-events",
+        response_model=BehaviorEvent,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def record_behavior_event(
+        participant_id: str,
+        payload: BehaviorEventRequest,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> BehaviorEvent:
+        """Record a bounded product behavior signal for the participant themself."""
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            event, _created = repo.record_behavior_event(
+                BehaviorEvent(participant_id=participant_id, **payload.model_dump())
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return event
+
+    @api.get(
+        "/participants/{participant_id}/behavior-events",
+        response_model=list[BehaviorEvent],
+    )
+    def get_behavior_events(
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> list[BehaviorEvent]:
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            return repo.behavior_events(participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @api.put(
         "/participants/{participant_id}/personal-context/consent",
