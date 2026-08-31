@@ -4,8 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import gsap from 'gsap'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { galleryTables, type TableSummary } from './domain'
-import type { AppPhase } from './domain'
+import { galleryTables, worldLabel, type AppPhase, type TableSummary } from './domain'
 import { type GalleryFlowTextureRef } from './GalleryFlow'
 import './gallery.css'
 
@@ -18,9 +17,6 @@ interface HallwayProps {
   phase: AppPhase
   returnFocusId: string | null
 }
-
-const worldLabel = (worldId: TableSummary['worldId']) =>
-  worldId === 'valley' ? '瑞士山谷' : worldId === 'campfire' ? '深夜篝火' : '午后 Workshop'
 
 const SWITCH_COOLDOWN_MS = 1050
 const WHEEL_STEP_THRESHOLD = 90
@@ -143,6 +139,7 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
   const cooldown = useRef(0)
   const wheelDelta = useRef(0)
   const galleryActive = phase === 'gallery'
+  const backdropActive = phase === 'gallery' || phase === 'lobby'
   const featured = galleryTables[index]
   const prev = index > 0 ? galleryTables[index - 1] : null
   const next = index < galleryTables.length - 1 ? galleryTables[index + 1] : null
@@ -218,7 +215,7 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
   return (
     <main className={`hallway-page is-${phase} ${enhanced ? 'is-enhanced' : ''}`} data-world={featured.worldId} inert={!galleryActive}>
       <div className="hallway-veil" aria-hidden="true" />
-      {enhanced && galleryActive && <UseCanvas><HallwayBackdrop tables={galleryTables} flowTexture={flowTexture} reducedMotion={reducedMotion} /></UseCanvas>}
+      {enhanced && backdropActive && <UseCanvas><HallwayBackdrop tables={galleryTables} flowTexture={flowTexture} reducedMotion={reducedMotion} /></UseCanvas>}
 
       <header className="hallway-header">
         <div className="hallway-brand"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span></div>

@@ -95,3 +95,41 @@ html.hallway-mode,body.hallway-mode{height:100%;overflow:hidden;background:#eef0
   .hallway-thumb{order:-1;aspect-ratio:1.3}
   .hallway-footer{left:20px;right:20px}
 }
+
+/* ---- Lobby: table preview before entering (D2) ---- */
+.lobby-root{position:fixed;inset:0;z-index:40}
+.lobby-backdrop{position:absolute;inset:0;background:rgba(14,26,24,.44);backdrop-filter:blur(6px);animation:lobby-fade .35s ease both}
+.lobby{position:absolute;left:50%;top:50%;display:grid;width:min(620px,calc(100vw - 48px));max-height:calc(100svh - 64px);overflow-y:auto;gap:0;padding:clamp(28px,4vh,44px) clamp(26px,3.4vw,48px);border:1px solid rgba(255,248,225,.16);border-radius:18px;background:linear-gradient(150deg,rgba(24,47,42,.96),rgba(16,34,32,.98));box-shadow:0 40px 120px rgba(8,18,16,.5);color:#fff6e3;transform:translate(-50%,-50%);animation:lobby-in .5s cubic-bezier(.16,1,.3,1) both;outline:none}
+@keyframes lobby-fade{from{opacity:0}}
+@keyframes lobby-in{from{opacity:0;transform:translate(-50%,-47%) scale(.97)}}
+.lobby-close{position:absolute;top:16px;right:20px;border:0;background:none;color:rgba(255,246,227,.7);font-size:26px;font-weight:200;cursor:pointer}
+.lobby-close:hover{color:#fff}
+.lobby-kicker{margin:0 0 12px;color:#ffd28d;font-size:9px;letter-spacing:.2em}
+.lobby-title{margin:0 0 24px;font-family:'Noto Serif SC',serif;font-size:clamp(22px,2.4vw,32px);font-weight:400;line-height:1.4}
+.lobby-members{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
+.lobby-member{display:flex;align-items:center;gap:9px;padding:8px 13px 8px 10px;border:1px solid rgba(255,248,225,.14);border-radius:11px;background:rgba(255,255,255,.045)}
+.lobby-member i{width:10px;height:10px;border-radius:50%;flex:none}
+.lobby-member.is-empty{border-style:dashed;border-color:rgba(255,210,141,.55);background:rgba(255,210,141,.06)}
+.lobby-member.is-empty i{background:transparent;border:1px solid #ffd28d;box-shadow:0 0 10px rgba(255,210,141,.5);animation:breathe 1.9s ease-in-out infinite}
+.lobby-member span{display:grid;gap:2px}
+.lobby-member b{font-size:12px;font-weight:400}
+.lobby-member small{font-size:9px;color:rgba(255,246,227,.6);letter-spacing:.04em}
+.lobby-preview{margin-bottom:18px;padding:14px 16px;border-left:2px solid rgba(255,210,141,.6);background:rgba(255,210,141,.05)}
+.lobby-preview small,.lobby-recommend small{display:block;margin-bottom:8px;color:#ffd28d;font-size:9px;letter-spacing:.18em}
+.lobby-preview p{margin:0 0 6px;font-size:11px;line-height:1.7;color:rgba(255,246,227,.82)}
+.lobby-preview p:last-child{margin-bottom:0}
+.lobby-recommend{margin-bottom:22px;padding:14px 16px;border-left:2px solid #7fd4a8;background:rgba(127,212,168,.06)}
+.lobby-recommend p{margin:0;font-size:12px;line-height:1.7;color:rgba(255,246,227,.9)}
+.lobby-actions{display:flex;gap:14px;align-items:stretch}
+.lobby-actions button{display:flex;align-items:center;justify-content:center;gap:10px;padding:13px 22px;border-radius:2px;font-size:12px;letter-spacing:.14em;cursor:pointer}
+.lobby-listen{flex:1;border:1px solid rgba(255,248,225,.3);background:none;color:rgba(255,246,227,.85)}
+.lobby-listen:hover{background:rgba(255,248,225,.08)}
+.lobby-join{flex:1.4;border:1px solid #ffd28d;background:#ffd28d;color:#1c352f;font-weight:500}
+.lobby-join:hover{background:#ffdda6}
+.lobby-join:focus-visible,.lobby-listen:focus-visible,.lobby-close:focus-visible{outline:1.5px solid #ffe19b;outline-offset:4px}
+.lobby-hint{margin:14px 0 0;font-size:10px;letter-spacing:.06em;color:rgba(255,246,227,.5);text-align:center}
+.valley-experience.is-listening .seat-marker small{color:#a8ce84}
+@media (max-width:760px){
+  .lobby{padding:24px 20px 22px}
+  .lobby-actions{flex-direction:column}
+}

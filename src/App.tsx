@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
 import Hallway, { type GalleryMediaRect } from './Hallway'
+import Lobby from './Lobby'
 import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
 
@@ -53,7 +54,7 @@ function ValleyCanvasPortal({ track, ...sceneProps }: ValleyCanvasPortalProps) {
   )
 }
 
-function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enhanced: boolean; appPhase: AppPhase }) {
+function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(): void; enhanced: boolean; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
@@ -146,6 +147,13 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
     if (appPhase === 'world') experienceRef.current.focus({ preventScroll: true })
   }, [appPhase])
 
+  useEffect(() => {
+    if (appPhase !== 'world' || entryIntent !== 'join') return
+    setJoinError(false)
+    setJoinOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appPhase])
+
   const approachTable = () => {
     if (phase !== 'discovering') return
     setMenuOpen(false)
@@ -157,11 +165,12 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
   }
 
   const seated = phase === 'seated'
+  const listening = entryIntent === 'listen' && !joined
   const currentTurn = turns[activeSpeaker]
   const sceneProps: ValleySceneProps = { phase, activeActorId: currentTurn.id, hoveredActorId, reducedMotion }
 
   return (
-    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''}`}>
+    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
       <div className="art-fallback" aria-hidden="true" />
       {enhanced && <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>}
       {!enhanced && seated && <img className="dom-host-fallback" src="/assets/actors/table-host-silence.png" alt="" aria-hidden="true" />}
@@ -226,7 +235,7 @@ function ValleyExperience({ onExit, enhanced, appPhase }: { onExit(): void; enha
           </button>
         </div>
         <div className="question-card"><small>此刻的问题</small><p>我们需要的是休息，<br />还是允许自己停下？</p></div>
-        <button className="seat-marker" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>第五席</small>{joined ? '你已在这一席' : '这是你的位置'}</span></button>
+        <button className="seat-marker" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{joined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
         <div className="conversation-dock" key={activeSpeaker}>
           <p>“{currentTurn.quote}”</p>
@@ -274,8 +283,11 @@ export default function App() {
   const [appPhase, setAppPhase] = useState<AppPhase>('gallery')
   const [enhanced, setEnhanced] = useState(false)
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
+  const [lobbyTable, setLobbyTable] = useState<TableSummary | null>(null)
+  const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(null)
   const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture) as GalleryFlowTextureRef
   const transitionTimer = useRef<number | null>(null)
+  const pendingRectRef = useRef<GalleryMediaRect | null>(null)
   const reducedMotion = useReducedMotion()
   useEffect(() => {
     setEnhanced(canEnhance())
@@ -291,25 +303,41 @@ export default function App() {
       transitionTimer.current = null
     }, delay)
   }
-  const enterTable = (table: TableSummary, rect: GalleryMediaRect) => {
+  const openLobby = (table: TableSummary, rect: GalleryMediaRect) => {
     if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
-    setTransition({ table, rect })
+    pendingRectRef.current = rect
+    setLobbyTable(table)
+    setAppPhase('lobby')
+  }
+  const closeLobby = () => {
+    if (appPhase !== 'lobby') return
+    setLobbyTable(null)
+    setAppPhase('gallery')
+  }
+  const startWorld = (intent: 'listen' | 'join') => {
+    if (appPhase !== 'lobby' || !lobbyTable) return
+    setEntryIntent(intent)
+    const viewportRect: GalleryMediaRect = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    setTransition({ table: lobbyTable, rect: pendingRectRef.current ?? viewportRect })
     setAppPhase('expanding')
     schedulePhase('world', reducedMotion ? 180 : 1100)
   }
   const exitTable = () => {
     if (appPhase !== 'world') return
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    setEntryIntent(null)
+    setLobbyTable(null)
     setAppPhase('collapsing')
     schedulePhase('gallery', reducedMotion ? 160 : 450)
   }
-  const showGallery = appPhase === 'gallery' || appPhase === 'expanding' || appPhase === 'collapsing'
-  const showWorld = appPhase !== 'gallery'
+  const showGallery = appPhase === 'gallery' || appPhase === 'lobby' || appPhase === 'expanding' || appPhase === 'collapsing'
+  const showWorld = appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing'
   return (
     <>
-      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{appPhase === 'gallery' && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
-      {showGallery && <Hallway phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />}
-      {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} onExit={exitTable} />}
+      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{(appPhase === 'gallery' || appPhase === 'lobby') && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
+      {showGallery && <Hallway phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} flowTexture={flowTexture} />}
+      {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} entryIntent={entryIntent} onExit={exitTable} />}
+      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>
   )
