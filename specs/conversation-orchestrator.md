@@ -72,6 +72,20 @@
 - **替代方案**: 创建桌时默认全部公开，或把完整内部状态交给前端自行过滤。
 - **代价**: API/WS 必须按请求者生成状态投影；跨进程部署需把同意状态放入共享仓储。
 
+### ADR-8: 匹配先预览再确认建桌
+
+- **决策**: `POST /matches/preview` 只返回公开席位和证据理由；`POST /matches/confirm` 在服务端重新计算同一候选池并把选中席位写入新桌。匹配核心保持有界、确定性和可替换，暂不依赖知乎非官方接口。
+- **理由**: 先让用户理解“为什么是这些人”，再进入对话；同时避免通过抓取或逆向 API 形成不可维护的外部依赖。
+- **替代方案**: 直接随机建桌，或把模型/平台搜索结果未经校验写入桌状态。
+- **代价**: 当前匹配使用候选池而不是全网召回；接入正式资料源时只需替换输入适配器。
+
+### ADR-9: Close 是幂等状态迁移
+
+- **决策**: 只有在能生成 evidence-backed close artifacts 后才把桌迁移为 `phase=close`/`conversation.closed=true`；重复 close 不增加版本；关闭后拒绝新的真人消息。
+- **理由**: 结束桌面必须可恢复、可回放且不能在“没有证据”的空桌上误关闭。
+- **替代方案**: 只返回一次性卡片，不写状态；或收到 close 请求立即锁桌。
+- **代价**: 客户端需要处理 `table_closed` 错误和关闭后的最终状态事件。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -173,6 +187,7 @@ master
 | D14 matching core | complete | bounded deterministic candidate selection with role diversity, question-term evidence, stable output, and public-only seat/reason contracts | 160 tests + compileall + diff check | `ad0de75` |
 | D15 matching REST preview | complete | `POST /matches/preview` exposes selected public seats and reasons without private profile fields | 161 tests + compileall + API contract check | `ad0de75` |
 | D16 matching confirmation | complete | `POST /matches/confirm` recomputes and commits the selected seats into a new table while returning the public match plan and redacted initial state | 162 tests + compileall + API contract check | `4d4e49a` |
+| D17 close state migration | pending | evidence-backed close marks table closed and rejects later human messages; repeated close is idempotent | pending | pending |
 
 ## 已知坑位（Running Gotchas）
 
