@@ -925,6 +925,25 @@ class JsonTableRepository(InMemoryTableRepository):
         return snapshot.model_copy(deep=True)
 
     @_synchronized
+    def close_table(self, table_id: str) -> TableState:
+        """Persist the close migration instead of falling back to in-memory append."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.phase = Phase.CLOSE
+        updated.close_readiness = Level.HIGH
+        updated.conversation.state = "closed"
+        updated.conversation.closed = True
+        updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "closed"
+        snapshot = TableState.model_validate(updated.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        self._commit(states, self._turns, self._trusted_grounding_cards, self._interventions)
+        return snapshot.model_copy(deep=True)
+
+    @_synchronized
     def create_invitation(
         self, table_id: str, inviter_id: str, candidate: ParticipantSeed, reason: str
     ) -> Invitation:
