@@ -122,6 +122,29 @@ def test_server_generated_table_selection_is_open_scoped_and_idempotent() -> Non
     assert client.post("/tables/selection-table/select?participant_id=viewer").status_code == 409
 
 
+def test_close_path_records_actor_scoped_table_closed_behavior() -> None:
+    repository = _repository("close-behavior")
+    client = TestClient(create_app(repository))
+    repository.append_message_once(
+        "close-behavior", "p1", "我愿意把这次讨论收束成下一步。", "close-1"
+    )
+
+    first = client.post("/tables/close-behavior/close?participant_id=p1")
+    retry = client.post("/tables/close-behavior/close?participant_id=p1")
+
+    assert first.status_code == retry.status_code == 200
+    assert first.json()["state_version"] == retry.json()["state_version"] == 2
+    assert client.get("/participants/p1/behavior-events?viewer_id=p1").json() == [{
+        "event_id": "p1:table-closed:close-behavior",
+        "participant_id": "p1",
+        "event_type": "table_closed",
+        "table_id": "close-behavior",
+        "state_version": 2,
+        "detail": "closed",
+    }]
+    assert client.get("/participants/p2/behavior-events?viewer_id=p2").json() == []
+
+
 def test_relationship_save_is_closed_member_scoped_and_idempotent() -> None:
     repository = _repository("relationship-save")
     client = TestClient(create_app(repository))

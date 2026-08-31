@@ -6,7 +6,7 @@ import pytest
 
 from app.api.repository import JsonTableRepository
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import Action, FollowUpOutcome, GroundingCard, HumanTurn, InvitationPreference, InterventionRecord, SafetyLevel
+from app.domain import Action, BehaviorEvent, FollowUpOutcome, GroundingCard, HumanTurn, InvitationPreference, InterventionRecord, SafetyLevel
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety
 
@@ -170,6 +170,26 @@ def test_json_repository_persists_participant_invitation_preference(tmp_path) ->
     assert restored.set_invitation_preference(
         "preference", "architect", InvitationPreference.NONE
     ).version == 1
+
+
+def test_json_repository_persists_table_closed_behavior_event(tmp_path) -> None:
+    path = tmp_path / "table-closed-behavior.json"
+    repository = JsonTableRepository(path)
+    repository.create("closed-behavior", "Q", [flagship_participants[0]])
+    repository.append_message_once("closed-behavior", "architect", "收束讨论。", "close-1")
+    closed = repository.close_table("closed-behavior")
+    event, created = repository.record_table_closed_behavior("closed-behavior", "architect")
+
+    assert created is True
+    assert event == BehaviorEvent(
+        event_id="architect:table-closed:closed-behavior",
+        participant_id="architect",
+        event_type="table_closed",
+        table_id="closed-behavior",
+        state_version=closed.version,
+        detail="closed",
+    )
+    assert JsonTableRepository(path).behavior_events("architect") == [event]
 
 
 def test_follow_up_outcome_is_persisted_and_upserted_after_close(tmp_path) -> None:

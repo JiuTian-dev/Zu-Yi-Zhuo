@@ -1649,6 +1649,8 @@ def create_app(
             build_shared_baseline(state, turns=repo.turns(table_id))
             closed = repo.close_table(table_id)
             baseline = build_shared_baseline(closed, turns=repo.turns(table_id))
+            if participant_id is not None:
+                repo.record_table_closed_behavior(table_id, participant_id)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         if closed.version != state.version:

@@ -52,8 +52,8 @@ def _validate_behavior_event_context(state: TableState, event: BehaviorEvent) ->
         return
     if event.participant_id not in state.participants:
         raise ValueError("behavior participant must be a table participant")
-    if event.event_type == "follow_up_outcome" and not state.conversation.closed:
-        raise ValueError("follow_up_outcome requires a closed table")
+    if event.event_type in {"follow_up_outcome", "table_closed"} and not state.conversation.closed:
+        raise ValueError("closed-table behavior events require a closed table")
     if event.event_type == "relationship_saved":
         if not state.conversation.closed:
             raise ValueError("relationship_saved requires a closed table")
@@ -568,6 +568,25 @@ class InMemoryTableRepository:
     def comment_promotions(self, table_id: str) -> list[CommentPromotion]:
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._comment_promotions[table_id]]
+
+    @_synchronized
+    def record_table_closed_behavior(
+        self, table_id: str, participant_id: str
+    ) -> tuple[BehaviorEvent, bool]:
+        """Record the actor's close action after an evidence-backed close."""
+        state = self.get(table_id)
+        if not state.conversation.closed:
+            raise ValueError("table_closed behavior requires a closed table")
+        if participant_id not in state.participants:
+            raise ValueError("close actor must be a table participant")
+        return self.record_behavior_event(BehaviorEvent(
+            event_id=f"{participant_id}:table-closed:{table_id}",
+            participant_id=participant_id,
+            event_type="table_closed",
+            table_id=table_id,
+            state_version=state.version,
+            detail="closed",
+        ))
 
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:

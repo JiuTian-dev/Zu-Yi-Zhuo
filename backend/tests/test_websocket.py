@@ -585,6 +585,9 @@ def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
     assert final_state["state"]["conversation"]["closed"] is True
     assert after_close == {"type": "error", "code": "table_closed", "detail": "table is already closed"}
     assert repository.get("table-ws").phase.value == "close"
+    close_events = repository.behavior_events("p1")
+    assert close_events[-1].event_type == "table_closed"
+    assert close_events[-1].state_version == 5
 
 
 def test_request_close_for_unknown_query_participant_does_not_leak_personal_card() -> None:
