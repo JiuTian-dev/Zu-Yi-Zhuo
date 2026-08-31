@@ -78,6 +78,7 @@
 
 ```text
 POST /tables
+POST /matches/preview
 GET  /tables/{id}
 POST /tables/{id}/participants
 GET  /tables/{id}/state
@@ -86,7 +87,7 @@ POST /tables/{id}/close
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
 
-Client events: `human_message`, `participant_joined`, `participant_left`, `request_debug_state`。
+Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
 
 Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`。
 
@@ -168,6 +169,8 @@ master
 | D11 runtime entrypoint | complete | `app.main:app` ASGI entrypoint; `TABLE_REPOSITORY_PATH` selects restart-safe JSON repository while default remains in-memory | 155 tests + compileall + import smoke check | `b0da261` |
 | D12 REST privacy projection | complete | participant profile fields default to redacted; owner view, explicit consent/revocation endpoint, and replay projections preserve public evidence while hiding private profile data | 156 tests + compileall + diff check | `195f4bc` |
 | D13 WebSocket consent projection | complete | connection-scoped viewer identity; consent event is self-scoped; public consent change broadcasts while each state event is independently redacted | 157 tests + compileall + privacy regression | `a52f228` |
+| D14 matching core | complete | bounded deterministic candidate selection with role diversity, question-term evidence, stable output, and public-only seat/reason contracts | 160 tests + compileall + diff check | `ad0de75` |
+| D15 matching REST preview | complete | `POST /matches/preview` exposes selected public seats and reasons without private profile fields | 161 tests + compileall + API contract check | `ad0de75` |
 
 ## 已知坑位（Running Gotchas）
 
