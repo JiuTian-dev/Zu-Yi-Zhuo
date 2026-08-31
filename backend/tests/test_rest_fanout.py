@@ -125,6 +125,26 @@ def test_rest_close_broadcasts_public_close_event_and_state() -> None:
     assert changed["state"]["conversation"]["closed"] is True
 
 
+def test_rest_nudge_broadcasts_same_action_and_state_contract_as_websocket() -> None:
+    client, repository = _client_with_table()
+    repository.append_message_once(
+        "table-rest", "p1", "我有一个初步感受，但还没想清楚。", "nudge-rest-1"
+    )
+    with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:
+        response = client.post("/tables/table-rest/nudge?participant_id=p1")
+        assert response.status_code == 200
+        action = websocket.receive_json()
+        changed = websocket.receive_json()
+
+    assert action["type"] == "agent_action"
+    assert action["action"] == "PROBE"
+    assert action["route"]["evidence_turns"] == [1]
+    assert action["gate"]["reasons_to_speak"] == ["首条表达暂未获得自然回应，主动递一句轻问"]
+    assert action["state_version"] == 2
+    assert changed["type"] == "table_state_changed"
+    assert changed["state"]["version"] == response.json()["state"]["version"] == 2
+
+
 def test_rest_close_failure_broadcasts_start_without_mutating_state() -> None:
     client, repository = _client_with_table()
     with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:
