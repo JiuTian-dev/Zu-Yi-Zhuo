@@ -22,6 +22,18 @@ class RelevantExperience(ContractModel):
     text: str = Field(min_length=1)
     source_ref: str = Field(min_length=1)
 
+class ParticipantSeed(ContractModel):
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    declared_position: str = Field(min_length=1)
+    relevant_experience: list[RelevantExperience] = Field(default_factory=list)
+
+class HumanTurn(ContractModel):
+    turn_id: PositiveInt
+    participant_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
 class OpenLoop(ContractModel):
     question: str = Field(min_length=1)
     priority: Level
@@ -31,6 +43,7 @@ class ParticipantState(ContractModel):
     participant_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
     role: str = Field(min_length=1)
+    declared_position: str | None = Field(default=None, min_length=1)
     current_position: EvidenceStatement | None = None
     key_contributions: list[EvidenceStatement] = Field(default_factory=list)
     unused_relevant_experience: list[RelevantExperience] = Field(default_factory=list)
