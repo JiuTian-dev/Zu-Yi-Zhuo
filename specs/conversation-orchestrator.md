@@ -605,7 +605,7 @@ master
 | D68 behavior event context validation | complete | behavior events enforce type-specific table membership/lifecycle rules in memory, API, and JSON reload | 294 tests + compileall + diff check | `0b87fcc` |
 | D69 self-scoped behavior ledger erasure | complete | authenticated-by-viewer delete clears only the caller's behavior events with atomic JSON persistence and no table-history deletion | 295 tests + compileall + diff check | `b72bf33` |
 | D70 frontend-compatible runtime contract smoke | complete | backend regression locks the actual valley demo flow: create table, add fifth viewer seat, exchange a human WebSocket turn, and recover a viewer-scoped close artifact | 296 tests + compileall + diff check + live ASGI smoke | `d831038` |
-| D71 injectable authenticated identity boundary | in progress | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | pending | — |
+| D71 injectable authenticated identity boundary | complete | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | 298 tests + compileall + diff check | `0a262ea` |
 
 ## 已知坑位（Running Gotchas）
 
