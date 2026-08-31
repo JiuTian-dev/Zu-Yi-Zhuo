@@ -202,6 +202,12 @@ class SafetyReportRequest(BaseModel):
     description: str = Field(min_length=1, max_length=500)
 
 
+class SafetyReportStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["acknowledged", "resolved"]
+
+
 class SafetyResolutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -284,7 +290,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=False,
-        allow_methods=["DELETE", "GET", "POST", "OPTIONS"],
+        allow_methods=["DELETE", "GET", "PATCH", "POST", "OPTIONS"],
         allow_headers=["Accept", "Authorization", "Content-Type"],
     )
     register_websocket_routes(api, repo, provider, identity_resolver)
@@ -1013,6 +1019,28 @@ def create_app(
         require_moderator_identity(moderator_resolver, request)
         table_or_404(table_id)
         return repo.safety_reports(table_id)
+
+    @api.patch(
+        "/tables/{table_id}/safety-reports/{report_id}",
+        response_model=SafetyReport,
+    )
+    def update_moderation_safety_report(
+        table_id: str,
+        report_id: str,
+        payload: SafetyReportStatusRequest,
+        request: Request,
+    ) -> SafetyReport:
+        """Advance a private report only through the trusted moderation boundary."""
+        if moderator_resolver is None:
+            raise HTTPException(status_code=503, detail="moderation is not configured")
+        require_moderator_identity(moderator_resolver, request)
+        table_or_404(table_id)
+        try:
+            return repo.update_safety_report_status(table_id, report_id, payload.status)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @api.post(
         "/tables/{table_id}/safety/resolve",

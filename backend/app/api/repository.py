@@ -273,6 +273,31 @@ class InMemoryTableRepository:
         return [item.model_copy(deep=True) for item in rows]
 
     @_synchronized
+    def update_safety_report_status(
+        self, table_id: str, report_id: str, status: str
+    ) -> SafetyReport:
+        """Advance one private report through the moderator status lifecycle."""
+        self.get(table_id)
+        if status not in {"acknowledged", "resolved"}:
+            raise ValueError("unsupported safety report status")
+        for index, report in enumerate(self._safety_reports[table_id]):
+            if report.report_id != report_id:
+                continue
+            if report.status == status:
+                return report.model_copy(deep=True)
+            allowed = {
+                "open": {"acknowledged", "resolved"},
+                "acknowledged": {"resolved"},
+                "resolved": set(),
+            }
+            if status not in allowed[report.status]:
+                raise ValueError("safety report status cannot move backwards")
+            updated = report.model_copy(update={"status": status})
+            self._safety_reports[table_id][index] = updated
+            return updated.model_copy(deep=True)
+        raise KeyError(f"unknown safety report: {report_id}")
+
+    @_synchronized
     def safety_resolutions(self, table_id: str) -> list[SafetyResolution]:
         """Return immutable moderator decisions for controlled review."""
         self.get(table_id)
@@ -957,6 +982,42 @@ class JsonTableRepository(InMemoryTableRepository):
             self._value_feedback, self._comments, self._no_match, reports,
         )
         return report.model_copy(deep=True), True
+
+    @_synchronized
+    def update_safety_report_status(
+        self, table_id: str, report_id: str, status: str
+    ) -> SafetyReport:
+        """Advance and atomically persist one private report status."""
+        self.get(table_id)
+        if status not in {"acknowledged", "resolved"}:
+            raise ValueError("unsupported safety report status")
+        for index, report in enumerate(self._safety_reports[table_id]):
+            if report.report_id != report_id:
+                continue
+            if report.status == status:
+                return report.model_copy(deep=True)
+            allowed = {
+                "open": {"acknowledged", "resolved"},
+                "acknowledged": {"resolved"},
+                "resolved": set(),
+            }
+            if status not in allowed[report.status]:
+                raise ValueError("safety report status cannot move backwards")
+            updated = report.model_copy(update={"status": status})
+            reports = {
+                **self._safety_reports,
+                table_id: [
+                    updated.model_copy(deep=True) if item.report_id == report_id else item
+                    for item in self._safety_reports[table_id]
+                ],
+            }
+            self._commit(
+                self._states, self._turns, self._trusted_grounding_cards,
+                self._interventions, self._invitations, self._follow_up_outcomes,
+                self._value_feedback, self._comments, self._no_match, reports,
+            )
+            return updated.model_copy(deep=True)
+        raise KeyError(f"unknown safety report: {report_id}")
 
     @_synchronized
     def resolve_safety(
