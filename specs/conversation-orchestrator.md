@@ -631,6 +631,7 @@ master
                                                                                                                                                                                                                                                                                               ←── D80 bounded moderator safety queue
                                                                                                                                                                                                                                                                                                    ←── D81 cold-start nudge event
                                                                                                                                                                                                                                                                                                         ←── D82 REST/WebSocket shared nudge service
+                                                                                                                                                                                                                                                                                                              ←── D83 first-expression nudge evidence boundary
 ```
 
 ## Progress Ledger
@@ -723,7 +724,7 @@ master
 | D80 bounded moderator safety queue | complete | Moderator report queue supports status filtering and stable bounded `offset`/`limit` pagination without changing private persistence or broadcast semantics | 322 tests + compileall + diff check | `d7472b1` |
 | D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response; audit retains the nudge rationale | 324 tests + compileall + diff check | `5f430a5` + `41b823b` |
 | D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 327 tests + compileall + diff check | `288dde4` + `af854ad` |
-| D83 first-expression nudge evidence boundary | in_progress | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | pending | — |
+| D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
 
 ## 已知坑位（Running Gotchas）
 
