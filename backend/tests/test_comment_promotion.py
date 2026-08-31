@@ -62,6 +62,10 @@ def test_member_can_promote_comment_with_provenance_and_idempotency() -> None:
     assert body["state"]["version"] == 1
     assert len(repository.turns("promotion-table")) == 1
     assert len(repository.comment_promotions("promotion-table")) == 1
+    replay = client.get("/tables/promotion-table/replay").json()
+    assert replay["comments"][0]["comment_id"] == "c1"
+    assert replay["comment_promotions"][0]["turn_id"] == 1
+    assert replay["messages"][0]["source_comment_id"] == "c1"
 
 
 def test_harmful_comment_is_safety_blocked_without_core_turn() -> None:
