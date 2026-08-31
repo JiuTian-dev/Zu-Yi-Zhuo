@@ -133,11 +133,23 @@ class AgentActionEvent(ContractModel):
 
     @model_validator(mode="after")
     def action_has_required_context(self) -> "AgentActionEvent":
+        if self.action == Action.SILENCE and self.text is not None:
+            raise ValueError("SILENCE events must not have text")
+        if self.action != Action.SILENCE and not self.text:
+            raise ValueError("non-SILENCE actions require text")
         if self.action != Action.SILENCE and not self.evidence_turns:
             raise ValueError("non-SILENCE actions require evidence_turns")
         if self.action == Action.PASS and self.target_participant_id is None:
             raise ValueError("PASS requires target_participant_id")
         return self
+
+
+class GroundingCard(ContractModel):
+    """A trusted source excerpt that Host may place on the table."""
+
+    title: str = Field(min_length=1)
+    excerpt: str = Field(min_length=1)
+    source_ref: str = Field(min_length=1)
 
 class TokenUsage(ContractModel):
     input_tokens: int = Field(ge=0)
