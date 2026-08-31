@@ -219,6 +219,13 @@
 - **替代方案**: 复用候选人 source 返回混合数据、在 API 内抓取网页、或让前端直接持有知乎 token。
 - **代价**: 接入者需要提供内容检索 wrapper，并保证只返回有授权的公开信号；source 未配置时机会预览保持 503。
 
+### ADR-29: 收桌价值反馈进入独立回响账本
+
+- **决策**: 增加 `ValueFeedback` 和 `FeedbackSummary`。已收桌参与者可通过 `POST /tables/{id}/feedback?participant_id=...` 提交或更新 1–5 分的认知、关系、行动、情绪四类价值，以及可选短备注和是否愿意再参加；`GET /tables/{id}/feedback?participant_id=...` 只返回桌内成员可见的匿名聚合，不返回他人的备注或单条评分。反馈记录写入内存/JSON 仓储，固定引用收桌状态版本，不改变 Table State 或收桌底稿。
+- **理由**: 产品成功标准不只是“生成了卡片”，还要验证参与者是否真的获得认知、关系、行动和情绪价值；独立账本让回响可量化、可重启恢复，同时不把主观评价混入 evidence-first 对话状态。
+- **替代方案**: 让前端本地保存评分、把反馈追加成真人消息，或直接公开每个人的分数与备注。
+- **代价**: V1 只提供自填量表与匿名均值，不能替代真实内测；后续若需要实验分组或时间序列，应在账本上增加显式 feedback ID/批次。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -247,6 +254,8 @@ GET  /tables/{id}/follow-ups?participant_id={participant_id}
 POST /tables/{id}/follow-ups/{index}/outcome?participant_id={participant_id}
 POST /tables/{id}/soft-expire?participant_id={participant_id}
 POST /tables/{id}/close
+POST /tables/{id}/feedback?participant_id={participant_id}
+GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
@@ -330,6 +339,7 @@ master
                                                                                               ←── D48 opportunity discovery preview
                                                                                                     ←── D49 dynamic candidate replenishment preview
                                                                                                            ←── D50 content signal source bridge
+                                                                                                                  ←── D51 post-close value feedback ledger
 ```
 
 ## Progress Ledger
@@ -390,6 +400,7 @@ master
 | D48 opportunity discovery preview | complete | public-signal opportunity detector with unfinishedness evidence, role gaps, and normalized candidate seeds | 231 tests + compileall + diff check | `9eda0ce` + `874fa68` |
 | D49 dynamic candidate replenishment preview | complete | member-scoped, source-backed recommendations for current role gaps without automatic seat or invitation writes | 236 tests + compileall + diff check | `9884bee` |
 | D50 content signal source bridge | complete | bounded authorized public-content source feeding the existing opportunity detector without table or invitation writes | 242 tests + compileall + diff check | `573d2cf` |
+| D51 post-close value feedback ledger | complete | self-scoped post-close four-dimension value feedback with JSON persistence and member-only aggregate summary | 247 tests + compileall + diff check | `72bfed9` |
 
 ## 已知坑位（Running Gotchas）
 

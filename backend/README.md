@@ -29,6 +29,8 @@ python -m uvicorn app.main:app --reload
 - `GET /tables/{table_id}/close-artifacts?participant_id=...`：收桌后重新取得共享基线和当前参与者的个人回响卡。
 - `GET /tables/{table_id}/follow-ups?participant_id=...`：查询收桌底稿中的行动项及已回报结果。
 - `POST /tables/{table_id}/follow-ups/{index}/outcome?participant_id=...`：回报行动结果；承诺只能由 owner 回报，结果会写入 JSON 快照。
+- `POST /tables/{table_id}/feedback?participant_id=...`：收桌后提交或更新认知、关系、行动、情绪四类 1–5 分价值反馈。
+- `GET /tables/{table_id}/feedback?participant_id=...`：桌内成员查看匿名价值聚合；不返回他人的评分明细或备注。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：实时消息、主持动作、状态和关闭产物。
 
@@ -119,6 +121,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 软过期桌不再出现在默认 `GET /tables`；使用 `include_closed=true` 可在历史/运营视图中看到它，且仍按 viewer 做隐私投影。
 - 关系记忆只从已收桌状态的 `worth_continuing_with` 证据派生；本人身份通过 `viewer_id` 自证，响应只含旧桌问题、对方公开姓名、理由和证据定位，不含私有画像或个人卡全文。
 - 行动回响只在收桌后开放，状态为 `completed`、`in_progress`、`blocked` 或 `dismissed`；原始收桌底稿保持不变，结果单独持久化并可在重启后恢复。
+- 价值反馈只在收桌后开放，参与者可更新自己的单条反馈；聚合返回响应人数、四类价值均值和愿意再次参加人数，且不改变 Table State 或收桌底稿。JSON 仓储会为旧数据缺省空反馈账本。
 
 ## 验证
 
