@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, model_validator
 
-from .enums import Action, DisagreementType, Level, Phase, SafetyLevel
+from .enums import Action, DisagreementType, InvitationStatus, Level, Phase, SafetyLevel
 
 Confidence = Annotated[float, Field(ge=0, le=1)]
 TurnEvidence = Annotated[list[PositiveInt], Field(min_length=1)]
@@ -29,6 +29,35 @@ class ParticipantSeed(ContractModel):
     role: str = Field(min_length=1)
     declared_position: str = Field(min_length=1)
     relevant_experience: list[RelevantExperience] = Field(default_factory=list)
+
+
+class Invitation(ContractModel):
+    """Private persisted invitation; public APIs must project it to InvitationView."""
+
+    invitation_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    inviter_id: str = Field(min_length=1)
+    candidate: ParticipantSeed
+    reason: str = Field(min_length=1, max_length=240)
+    status: InvitationStatus = InvitationStatus.PENDING
+
+    @model_validator(mode="after")
+    def candidate_is_not_inviter(self) -> "Invitation":
+        if self.candidate.participant_id == self.inviter_id:
+            raise ValueError("invitation candidate must differ from inviter")
+        return self
+
+
+class InvitationView(ContractModel):
+    """Redacted invitation projection safe for a candidate-facing response."""
+
+    invitation_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+    status: InvitationStatus
 
 
 class MatchRequest(ContractModel):

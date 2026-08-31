@@ -100,6 +100,13 @@
 - **替代方案**: 仅在 WebSocket 进程内缓存 ID，或继续依赖客户端去重。
 - **代价**: `HumanTurn` 增加可选 `message_id` 以兼容旧 JSON；未来数据库实现需把幂等键设为桌级唯一约束。
 
+### ADR-12: 邀请先于动态入席
+
+- **决策**: 桌成员由持有席位的参与者发起邀请；候选人通过自身 `participant_id` 接受或拒绝。邀请状态与候选人的完整 `ParticipantSeed` 独立持久化，公开响应只返回姓名、角色、理由和状态，不返回立场/经历。
+- **理由**: 产品要求 4 人即可开桌、5 人最佳，候补应由人决定是否入席；拒绝后不重复催，且候选人的私密画像不能在邀请预览中泄露。
+- **替代方案**: 直接把候选人写入 `TableState.participants`，或由前端本地维护 pending 状态。
+- **代价**: JSON 快照新增可选 `invitations` 段；未来数据库实现需把 `(table_id, candidate_id)` 设为唯一键，并把状态更新与接受入席放在同一事务。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -110,6 +117,9 @@ POST /matches/preview
 POST /matches/confirm
 GET  /tables/{id}
 POST /tables/{id}/participants
+POST /tables/{id}/invitations
+GET  /tables/{id}/invitations?participant_id={candidate_id}
+POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
 GET  /tables/{id}/interventions
@@ -124,6 +134,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
+邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
 
 ### 数据模型 / 类型定义
 
@@ -218,6 +229,7 @@ master
 | D29 SILENCE audit invariant | complete | all repository audit-write paths reject `SILENCE`, preserving the rule that silence produces no intervention record | 174 tests + compileall + diff check | `e00c379` |
 | D30 schema audit invariant | complete | `InterventionRecord` itself rejects `SILENCE`, so JSON reload and direct model construction cannot bypass the no-pseudo-audit rule | 175 tests + compileall + diff check | `34fe1ce` |
 | D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 178 tests + compileall + diff check | `eef2924` |
+| D32 invitation lifecycle | in progress | persistent pending/accepted/declined invitations with candidate-scoped response and redacted preview | pending | pending |
 
 ## 已知坑位（Running Gotchas）
 

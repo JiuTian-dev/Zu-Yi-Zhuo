@@ -32,3 +32,8 @@ class SafetyLevel(StrEnum):
     NORMAL = "normal"
     ELEVATED = "elevated"
     CRITICAL = "critical"
+
+class InvitationStatus(StrEnum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
