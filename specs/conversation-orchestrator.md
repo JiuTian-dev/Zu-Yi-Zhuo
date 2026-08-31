@@ -669,7 +669,7 @@ master
 | D75 REST close lifecycle parity | complete | REST close emits `close_started` before artifact generation, then `table_closed` and projected state only after an evidence-backed atomic close; insufficient evidence leaves the state open | 312 tests + compileall + diff check | `27c9531` + `53aec0b` |
 | D76 replay projection for late joiners | complete | Current member identity is validated once, then historical snapshots tolerate the viewer being absent before joining while retaining privacy projection | 314 tests + compileall + diff check | `b7bdc90` + `e39c138` |
 | D77 moderator-only safety report queue | complete | Trusted moderator identity can read a table's full private report queue; participant self-read remains unchanged and no report is broadcast | 316 tests + compileall + diff check | `de40b4d` + `7fda8d8` |
-| D78 moderator safety report status lifecycle | in progress | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | pending | — |
+| D78 moderator safety report status lifecycle | complete | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | 318 tests + compileall + diff check | `276b595` + `a115fef` |
 
 ## 已知坑位（Running Gotchas）
 
