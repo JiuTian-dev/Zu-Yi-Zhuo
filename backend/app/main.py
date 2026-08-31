@@ -13,7 +13,7 @@ import json
 from app.api.app import create_app
 from app.api.repository import JsonTableRepository
 from app.providers import OpenAIResponsesProvider, ProviderConfigurationError
-from app.sources import CommandCandidateSource, CommandContentSignalSource
+from app.sources import CommandCandidateSource, CommandContentSignalSource, CommandPersonalContextSource
 
 
 def _build_provider():
@@ -62,10 +62,32 @@ def _build_content_source():
         raise RuntimeError(f"invalid CONTENT_SIGNAL_SOURCE_COMMAND: {error}") from error
 
 
+def _build_personal_context_source():
+    raw = os.environ.get("PERSONAL_CONTEXT_SOURCE_COMMAND", "").strip()
+    if not raw:
+        return None
+    try:
+        command = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("PERSONAL_CONTEXT_SOURCE_COMMAND must be a JSON string array") from error
+    if not isinstance(command, list) or not command or any(not isinstance(item, str) for item in command):
+        raise RuntimeError("PERSONAL_CONTEXT_SOURCE_COMMAND must be a non-empty JSON string array")
+    try:
+        return CommandPersonalContextSource(command)
+    except ValueError as error:
+        raise RuntimeError(f"invalid PERSONAL_CONTEXT_SOURCE_COMMAND: {error}") from error
+
+
 def _build_app():
     path = os.environ.get("TABLE_REPOSITORY_PATH", "").strip()
     repository = JsonTableRepository(path) if path else None
-    return create_app(repository, _build_provider(), _build_candidate_source(), content_source=_build_content_source())
+    return create_app(
+        repository,
+        _build_provider(),
+        _build_candidate_source(),
+        content_source=_build_content_source(),
+        personal_context_source=_build_personal_context_source(),
+    )
 
 
 app = _build_app()

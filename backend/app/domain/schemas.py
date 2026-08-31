@@ -48,6 +48,37 @@ class ContentSignal(ContractModel):
     visibility: Literal["public"] = "public"
 
 
+class PersonalContextSignal(ContractModel):
+    """A private, viewer-owned signal returned by an authorized personal source."""
+
+    signal_id: str = Field(min_length=1)
+    owner_id: str = Field(min_length=1)
+    content_type: Literal["question", "answer", "article", "follow", "favorite"]
+    title: str = Field(min_length=1, max_length=240)
+    excerpt: str = Field(min_length=1, max_length=1000)
+    source_ref: str = Field(min_length=1)
+    private_stance: str | None = Field(default=None, min_length=1, max_length=240)
+    visibility: Literal["private"] = "private"
+
+
+class PersonalContextPreview(ContractModel):
+    """Ephemeral private themes derived from one viewer's authorized signals."""
+
+    viewer_id: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=120)
+    signals: list[PersonalContextSignal] = Field(default_factory=list, max_length=20)
+    themes: list[str] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def signals_belong_to_viewer(self) -> "PersonalContextPreview":
+        signal_ids = [signal.signal_id for signal in self.signals]
+        if len(signal_ids) != len(set(signal_ids)):
+            raise ValueError("personal signal_id values must be unique")
+        if any(signal.owner_id != self.viewer_id for signal in self.signals):
+            raise ValueError("personal signals must belong to viewer_id")
+        return self
+
+
 class OpportunityRequest(ContractModel):
     """Bounded public signals for the first-stage opportunity detector."""
 

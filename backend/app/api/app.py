@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextPreview, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -19,7 +19,8 @@ from app.domain.schemas import EvidenceStatement
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
-from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError
+from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
+from app.personal import build_personal_context_preview
 
 
 class CreateTableRequest(BaseModel):
@@ -98,6 +99,13 @@ class OpportunitySourceRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=120)
     limit: int = Field(default=20, ge=2, le=20)
+
+
+class PersonalContextSourceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=120)
+    limit: int = Field(default=20, ge=1, le=20)
 
 
 class MatchedTableResponse(BaseModel):
@@ -189,18 +197,23 @@ def create_app(
     candidate_source_timeout_seconds: float = 5.0,
     content_source: ContentSignalSource | None = None,
     content_source_timeout_seconds: float = 5.0,
+    personal_context_source: PersonalContextSource | None = None,
+    personal_context_source_timeout_seconds: float = 5.0,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
         raise ValueError("candidate_source_timeout_seconds must be positive")
     if content_source_timeout_seconds <= 0:
         raise ValueError("content_source_timeout_seconds must be positive")
+    if personal_context_source_timeout_seconds <= 0:
+        raise ValueError("personal_context_source_timeout_seconds must be positive")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
     api.state.candidate_source = candidate_source
     api.state.content_source = content_source
+    api.state.personal_context_source = personal_context_source
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -338,6 +351,38 @@ def create_app(
         except Exception as error:
             raise HTTPException(status_code=502, detail="content source unavailable") from error
         return build_opportunity_preview(request)
+
+    @api.post("/personal-context/source-preview", response_model=PersonalContextPreview)
+    async def preview_personal_context(
+        payload: PersonalContextSourceRequest,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> PersonalContextPreview:
+        """Preview viewer-owned context without persisting or broadcasting it."""
+        if personal_context_source is None:
+            raise HTTPException(status_code=503, detail="personal context source is not configured")
+        try:
+            raw_signals = await asyncio.wait_for(
+                personal_context_source.search(
+                    viewer_id=viewer_id,
+                    query=payload.query,
+                    limit=payload.limit,
+                ),
+                timeout=personal_context_source_timeout_seconds,
+            )
+            signals = [
+                item if isinstance(item, PersonalContextSignal)
+                else PersonalContextSignal.model_validate(item)
+                for item in raw_signals
+            ][:payload.limit]
+            return build_personal_context_preview(viewer_id, payload.query, signals)
+        except PersonalContextSourceError as error:
+            raise HTTPException(status_code=502, detail="personal context source unavailable") from error
+        except TimeoutError as error:
+            raise HTTPException(status_code=502, detail="personal context source timed out") from error
+        except (TypeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=502, detail="personal context source returned invalid signals") from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="personal context source unavailable") from error
 
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:
