@@ -464,6 +464,13 @@
 - **替代方案**: 只让前端保存偏好、增加未接入身份系统的全局偏好表、或让邀请方覆盖用户选择；这些方案分别无法形成服务端约束、会产生跨桌一致性假设或违反候选人自决。
 - **代价**: 同一用户跨桌的偏好暂不自动同步；真实账号/资料源接入时需要增加全局偏好适配器，并将其映射到新候选 seed 和现有席位。
 
+### ADR-64: WebSocket 入站事件按连接限速
+
+- **决策**: `create_app` 增加可选 `websocket_max_events_per_minute`，部署入口读取 `WS_MAX_EVENTS_PER_MINUTE`，默认每个连接每 60 秒最多 120 个入站 JSON 事件。超出窗口的事件不进入 Pydantic/仓储/桌锁，直接返回 `error.code=rate_limited` 和 `retry_after_seconds`；连接保持可用，窗口自然恢复后可继续操作。配置必须为正整数，限速器按单个连接隔离，不跨桌共享状态。
+- **理由**: 帧大小上限只能阻止大包，不能阻止客户端用大量合法小帧占用解析、锁竞争和广播资源。连接级滑动窗口可以在单进程部署中低成本保护多人实时桌，同时不给正常用户增加额外协议握手。
+- **替代方案**: 只依赖反向代理、超限直接关闭连接、或按桌全局限速；这些方案分别无法覆盖测试/内嵌部署、会让短暂抖动导致用户掉线、或让一名参与者影响同桌其他人的实时体验。
+- **代价**: 限速器是进程内的，跨实例部署仍需在网关或共享消息层补充全局配额；客户端需要在收到 `rate_limited` 时等待 `retry_after_seconds`，不能忙循环重发。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -657,7 +664,8 @@ master
                                                                                                                                                                                                                                                                                                              ←── D83 first-expression nudge evidence boundary
                                                                                                                                                                                                                                                                                                                   ←── D84 WebSocket Origin allowlist boundary
                                                                                                                                                                                                                                                                                                                        ←── D85 WebSocket frame size boundary
-                                                                                                                                                                                                                                                                                                                               ←── D86 self-scoped invitation preference update
+                                                                                                                                                                                                                                                                                                                              ←── D86 self-scoped invitation preference update
+                                                                                                                                                                                                                                                                                                                                    ←── D87 WebSocket inbound event rate limit
 ```
 
 ## Progress Ledger
@@ -754,6 +762,7 @@ master
 | D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
 | D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
 | D86 self-scoped invitation preference update | complete | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | 341 tests + compileall + diff check | `72655e5` |
+| D87 WebSocket inbound event rate limit | in_progress | Add per-connection sliding-window event limit with structured retry response and runtime configuration | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
