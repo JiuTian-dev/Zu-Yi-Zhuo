@@ -1,5 +1,6 @@
 """Minimal REST API for one explainable conversation table."""
 
+import asyncio
 import os
 from uuid import uuid4
 
@@ -102,8 +103,11 @@ def create_app(
     repository: InMemoryTableRepository | None = None,
     provider: LLMProvider | None = None,
     candidate_source: CandidateSource | None = None,
+    candidate_source_timeout_seconds: float = 5.0,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
+    if candidate_source_timeout_seconds <= 0:
+        raise ValueError("candidate_source_timeout_seconds must be positive")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
@@ -169,9 +173,12 @@ def create_app(
         if candidate_source is None:
             raise HTTPException(status_code=503, detail="candidate source is not configured")
         try:
-            raw_candidates = await candidate_source.search(
-                query=payload.query or payload.core_question,
-                limit=payload.limit,
+            raw_candidates = await asyncio.wait_for(
+                candidate_source.search(
+                    query=payload.query or payload.core_question,
+                    limit=payload.limit,
+                ),
+                timeout=candidate_source_timeout_seconds,
             )
             candidates = [
                 item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
@@ -184,6 +191,8 @@ def create_app(
             )
         except CandidateSourceError as error:
             raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        except TimeoutError as error:
+            raise HTTPException(status_code=502, detail="candidate source timed out") from error
         except (TypeError, ValueError, ValidationError) as error:
             raise HTTPException(status_code=502, detail="candidate source returned invalid candidates") from error
         except Exception as error:

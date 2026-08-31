@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,6 +20,12 @@ class _Source:
 class _FailingSource:
     async def search(self, *, query, limit):
         raise RuntimeError("upstream unavailable")
+
+
+class _HangingSource:
+    async def search(self, *, query, limit):
+        await asyncio.sleep(0.2)
+        return []
 
 
 def _candidate(participant_id: str, role: str) -> dict:
@@ -68,3 +76,16 @@ def test_source_preview_hides_upstream_failure_details() -> None:
     )
     assert response.status_code == 502
     assert response.json() == {"detail": "candidate source unavailable"}
+
+
+def test_source_preview_times_out_without_leaking_adapter_details() -> None:
+    response = TestClient(create_app(
+        candidate_source=_HangingSource(), candidate_source_timeout_seconds=0.01,
+    )).post("/matches/source-preview", json={"core_question": "Q", "table_size": 2})
+    assert response.status_code == 502
+    assert response.json() == {"detail": "candidate source timed out"}
+
+
+def test_source_preview_rejects_non_positive_timeout() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        create_app(candidate_source_timeout_seconds=0)
