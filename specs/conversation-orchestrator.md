@@ -373,6 +373,13 @@
 - **替代方案**: 保持完全公开、再造一套 token 解析逻辑、或让前端决定成员资格；这些方案分别留下越权、重复认证和客户端可伪造的问题。
 - **代价**: 部署时需要把真实会话主体映射到已有桌成员；开发态仍是显式 query 自证，不提供内置 RBAC。
 
+### ADR-51: REST 状态迁移复用桌级实时广播
+
+- **决策**: 参与者通过 REST 完成补位、接受邀请、同步升级、离桌、软过期或收桌后，服务端复用 WebSocket 注册的桌级 broadcaster，先发语义事件再发按 viewer 投影的 `table_state_changed`；没有在线连接时安全忽略广播钩子。事件只携带公开 ID、动作和版本，不携带个人卡或未同意资料。
+- **理由**: 产品的核心体验是“桌正在形成/进行/回响”，REST 与 WebSocket 分叉会让在线参与者看到旧席位或旧阶段，迫使前端轮询；集中复用已有投影器可以保持隐私边界和版本可回放。
+- **替代方案**: 前端定时轮询、让每个 REST 路由各自维护推送逻辑、或把完整 Table State 广播后由客户端过滤；这些方案分别增加延迟、产生事件漂移或有隐私泄露风险。
+- **代价**: REST 路由改为异步并依赖可选的进程内广播钩子；跨进程部署仍需替换为共享消息总线，但事件契约保持不变。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -429,7 +436,7 @@ WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={particip
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
 
-Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`。
+Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
@@ -449,6 +456,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
 安全处置边界：critical 安全暂停只能由服务端注入的 `moderator_resolver` 认证后恢复或移除成员；处置记录和状态迁移原子落账，普通参与者/前端传入的 moderator 字段不具备权限；恢复保留原风险证据，移除不删除历史 turn。
 桌级权限边界：生产注入 `identity_resolver` 后，close、直接加席位、recompose 和 interventions 查询都必须由当前桌成员声明并通过服务端交叉校验；未注入时保留开发态兼容调用。
+实时同步边界：REST 补位、邀请接受、同步升级、离桌、软过期、收桌和外围评论写入会通过桌级 broadcaster 发出公开事件及投影状态；没有 WebSocket 客户端时不影响 REST 成功。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
@@ -544,7 +552,8 @@ master
                                                                                                                                                                                                                                          ←── D70 frontend-compatible runtime contract smoke
                                                                                                                                                                                                                                         ←── D71 injectable authenticated identity boundary
                                                                                                                                                                                                                                                ←── D72 controlled safety resolution lifecycle
-                                                                                                                                                                                                                                                       ←── D73 production member boundary for privileged REST
+                                                                                                                                                                                                                                                      ←── D73 production member boundary for privileged REST
+                                                                                                                                                                                                                                                              ←── D74 REST mutation realtime fanout parity
 ```
 
 ## Progress Ledger
@@ -628,6 +637,7 @@ master
 | D71 injectable authenticated identity boundary | complete | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | 298 tests + compileall + diff check | `0a262ea` |
 | D72 controlled safety resolution lifecycle | complete | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | 302 tests + compileall + diff check | `22ce4d8` + `8184d30` |
 | D73 production member boundary for privileged REST | complete | identity-resolver-backed member checks for close, direct seat addition, recomposition, and intervention audit reads while preserving development compatibility | 304 tests + compileall + diff check | `c705f5e` + `e27400c` |
+| D74 REST mutation realtime fanout parity | in progress | REST seat/invitation/mode/leave/expiry/close/comment writes emit public events and projected state through the existing WebSocket broadcaster | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
