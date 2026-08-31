@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import ContentSignal, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState
+from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -120,6 +120,17 @@ class FollowUpOutcomeRequest(BaseModel):
 
     status: Literal["completed", "in_progress", "blocked", "dismissed"]
     note: str | None = Field(default=None, min_length=1, max_length=240)
+
+
+class ValueFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cognitive_value: int = Field(ge=1, le=5)
+    relationship_value: int = Field(ge=1, le=5)
+    action_value: int = Field(ge=1, le=5)
+    emotional_value: int = Field(ge=1, le=5)
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+    would_join_again: bool
 
 
 class SoftExpireRequest(BaseModel):
@@ -570,6 +581,60 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return FollowUpStatusResponse(follow_up_index=follow_up_index, item=item, outcome=saved)
+
+    def feedback_summary(table_id: str, participant_id: str) -> FeedbackSummary:
+        state = table_or_404(table_id)
+        if not state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is not closed")
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        rows = repo.value_feedback(table_id)
+
+        def average(field: str) -> float | None:
+            if not rows:
+                return None
+            return round(sum(getattr(item, field) for item in rows) / len(rows), 2)
+
+        return FeedbackSummary(
+            table_id=table_id,
+            state_version=state.version,
+            eligible_participant_count=len(state.participants),
+            response_count=len(rows),
+            cognitive_average=average("cognitive_value"),
+            relationship_average=average("relationship_value"),
+            action_average=average("action_value"),
+            emotional_average=average("emotional_value"),
+            would_join_again_count=sum(item.would_join_again for item in rows),
+        )
+
+    @api.post("/tables/{table_id}/feedback", response_model=ValueFeedback)
+    def submit_value_feedback(
+        table_id: str,
+        payload: ValueFeedbackRequest,
+        participant_id: str = Query(..., min_length=1),
+    ) -> ValueFeedback:
+        state = table_or_404(table_id)
+        if not state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is not closed")
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        feedback = ValueFeedback(
+            table_id=table_id,
+            participant_id=participant_id,
+            state_version=state.version,
+            **payload.model_dump(),
+        )
+        try:
+            return repo.record_value_feedback(feedback)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.get("/tables/{table_id}/feedback", response_model=FeedbackSummary)
+    def get_value_feedback(
+        table_id: str,
+        participant_id: str = Query(..., min_length=1),
+    ) -> FeedbackSummary:
+        return feedback_summary(table_id, participant_id)
 
     @api.post("/tables/{table_id}/soft-expire", response_model=TableState)
     def soft_expire_table(

@@ -428,6 +428,34 @@ class FollowUpOutcome(ContractModel):
     note: str | None = Field(default=None, min_length=1, max_length=240)
 
 
+class ValueFeedback(ContractModel):
+    """One participant's post-close four-dimension value reflection."""
+
+    table_id: str = Field(min_length=1)
+    participant_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    cognitive_value: int = Field(ge=1, le=5)
+    relationship_value: int = Field(ge=1, le=5)
+    action_value: int = Field(ge=1, le=5)
+    emotional_value: int = Field(ge=1, le=5)
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+    would_join_again: bool
+
+
+class FeedbackSummary(ContractModel):
+    """Member-only aggregate of post-close value feedback."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    eligible_participant_count: int = Field(ge=0)
+    response_count: int = Field(ge=0)
+    cognitive_average: float | None = Field(default=None, ge=1, le=5)
+    relationship_average: float | None = Field(default=None, ge=1, le=5)
+    action_average: float | None = Field(default=None, ge=1, le=5)
+    emotional_average: float | None = Field(default=None, ge=1, le=5)
+    would_join_again_count: int = Field(ge=0)
+
+
 class ReflectionResult(ContractModel):
     """Effect log for an intervention after enough human turns have passed."""
 
