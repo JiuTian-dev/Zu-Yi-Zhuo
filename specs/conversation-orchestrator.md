@@ -342,6 +342,8 @@ POST /tables/{id}/recompose
 POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
+POST /participants/{participant_id}/behavior-events?viewer_id={participant_id}
+GET  /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 POST /tables/{id}/comments?author_id={author_id}
 GET  /tables/{id}/comments
 POST /tables/{id}/comments/{comment_id}/promote?participant_id={member_id}
@@ -380,6 +382,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
+行为层边界：行为事件只能由本人 `viewer_id` 写入或读取；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言由服务端自动记录；事件不广播给同桌、不进入 Table State，也不保存完整消息正文。
 
 ### 数据模型 / 类型定义
 
@@ -403,6 +406,8 @@ HumanTurn(..., message_id?, source_comment_id?)
 CommentPromotion(promotion_id, table_id, comment_id, promoter_id,
                  turn_id, state_version, message_id)
 AgentPresence(agent_id, display_name, role, status=active|paused|closed)
+BehaviorEvent(event_id, participant_id, event_type, table_id,
+              state_version?, related_participant_id?, detail?)
 ```
 
 ### LLM provider
