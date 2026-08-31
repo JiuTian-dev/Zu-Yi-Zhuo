@@ -168,6 +168,9 @@ def test_match_preview_returns_public_seats_and_explainable_reasons() -> None:
     assert {seat["participant_id"] for seat in payload["selected"]} == {"tech", "buyer", "product"}
     assert {reason["participant_id"] for reason in payload["reasons"]} == {"tech", "buyer", "product"}
     assert all("declared_position" not in seat and "relevant_experience" not in seat for seat in payload["selected"])
+    serialized = response.text
+    assert "模型精度是关键" not in serialized
+    assert "private:tech" not in serialized
 
 
 def test_match_confirm_creates_a_table_from_the_same_public_match_plan() -> None:

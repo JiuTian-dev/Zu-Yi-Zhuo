@@ -59,7 +59,9 @@ def build_match_plan(request: MatchRequest) -> MatchPlan:
     ) for candidate in selected]
     reasons = []
     for candidate in selected:
-        overlap = sorted(_profile_terms(candidate) & question_terms)[:5]
+        # Private position/experience may influence selection, but never leaves
+        # the service in a public match explanation before consent.
+        overlap = sorted(_terms(candidate.role) & question_terms)[:5]
         if overlap:
             reason = f"带来{candidate.role}视角，和问题有直接交集"
         else:
