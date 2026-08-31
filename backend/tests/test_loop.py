@@ -2,7 +2,7 @@ import pytest
 
 from app.demo import SCENARIOS, flagship_participants
 from app.domain import Action, HumanTurn, RouteDecision
-from app.orchestrator import build_initial_state, decide_intervention, observe_turn, record_intervention
+from app.orchestrator import build_initial_state, decide_intervention, enforce_safety, evaluate_safety, observe_turn, record_intervention
 
 QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
 
@@ -35,6 +35,13 @@ def test_record_intervention_is_immutable_and_writes_cooldown_fields() -> None:
 def test_fake_interventions_are_rejected(decision, turn_id: str, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         record_intervention(replay("natural"), decision, turn_id)
+
+
+def test_critical_safety_rejects_host_intervention_writeback() -> None:
+    state = enforce_safety(replay("natural"), evaluate_safety("我会威胁你。", 4))
+    decision = RouteDecision(action=Action.REFRAME, evidence_turns=[4])
+    with pytest.raises(ValueError, match="critical safety blocks host"):
+        record_intervention(state, decision, "agent-safety")
 
 
 def test_record_then_one_and_two_human_turns_respect_cooldown() -> None:

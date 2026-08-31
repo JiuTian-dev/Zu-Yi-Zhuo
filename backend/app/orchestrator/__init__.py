@@ -5,5 +5,6 @@ from .loop import decide_intervention, record_intervention
 from .observer import build_initial_state, observe_turn
 from .reflection import evaluate_reflection
 from .router import route
+from .safety import enforce_safety, evaluate_safety
 
-__all__ = ("build_initial_state", "build_personal_card", "build_shared_baseline", "compute_close_readiness", "decide_intervention", "evaluate_gate", "evaluate_reflection", "extract_follow_ups", "generate_host_event", "observe_turn", "record_intervention", "refresh_close_readiness", "route")
+__all__ = ("build_initial_state", "build_personal_card", "build_shared_baseline", "compute_close_readiness", "decide_intervention", "enforce_safety", "evaluate_gate", "evaluate_reflection", "evaluate_safety", "extract_follow_ups", "generate_host_event", "observe_turn", "record_intervention", "refresh_close_readiness", "route")

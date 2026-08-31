@@ -70,6 +70,13 @@ class InMemoryTableRepository:
             raise ValueError("intervention state must be the next snapshot for its table")
         return self._append(table_id, state)
 
+    def append_safety_state(self, table_id: str, state: TableState) -> TableState:
+        """Commit a safety-only snapshot without recording the intercepted human turn."""
+        latest = self.get(table_id)
+        if state.table_id != table_id or state.version != latest.version + 1:
+            raise ValueError("safety state must be the next snapshot for its table")
+        return self._append(table_id, state)
+
     def replay(self, table_id: str, from_version: int | None = None) -> list[TableState]:
         snapshots = sorted(self._states[table_id], key=lambda state: state.version)
         if from_version is not None:

@@ -4,7 +4,7 @@ from pydantic import ValidationError
 from app.demo import SCENARIOS, flagship_participants
 from app.domain import Action, DisagreementType, GroundingCard, RouteDecision
 from app.domain.schemas import Disagreement
-from app.orchestrator import build_initial_state, generate_host_event, observe_turn
+from app.orchestrator import build_initial_state, enforce_safety, evaluate_safety, generate_host_event, observe_turn
 
 
 QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
@@ -99,6 +99,13 @@ def test_silence_does_not_force_host_text() -> None:
     event = generate_host_event(state_after("natural"), RouteDecision())
     assert event.action is Action.SILENCE and event.text is None
     assert event.visual_hint["kind"] == "silence"
+
+
+def test_critical_safety_stops_host_before_reframe_wording() -> None:
+    state = enforce_safety(state_after("natural"), evaluate_safety("我会威胁你。", 4))
+    event = generate_host_event(state, decision(Action.REFRAME, [4]))
+    assert (event.action, event.text, event.target_participant_id) == (Action.SILENCE, None, None)
+    assert event.visual_hint == {"kind": "silence", "focus": []}
 
 
 def test_host_text_is_bounded_and_has_no_system_jargon() -> None:

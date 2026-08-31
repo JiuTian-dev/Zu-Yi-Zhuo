@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import re
-from app.domain import Action, AgentActionEvent, DisagreementType, GroundingCard, RouteDecision, TableState
+from app.domain import Action, AgentActionEvent, DisagreementType, GroundingCard, RouteDecision, SafetyLevel, TableState
 _BANNED = ("检测到", "根据分析", "作为AI")
 def _compact(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
@@ -100,6 +100,12 @@ def generate_host_event(
     This is intentionally deterministic. A future LLM Host can replace the
     wording helpers while retaining this event contract and its fallbacks.
     """
+    if state.conversation.safety_level is SafetyLevel.CRITICAL:
+        return AgentActionEvent(
+            action=Action.SILENCE, text=None, visual_hint=_hint(Action.SILENCE),
+            evidence_turns=list(route.evidence_turns), state_version=state.version,
+            confidence=route.confidence,
+        )
     action = route.action
     if route.target_participant_id and route.target_participant_id not in state.participants:
         return AgentActionEvent(action=Action.SILENCE, visual_hint={"kind": "silence", "focus": []},

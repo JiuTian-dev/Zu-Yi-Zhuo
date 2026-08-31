@@ -1,6 +1,6 @@
 """Small integration seam for one intervention decision cycle."""
 
-from app.domain import Action, GateDecision, RouteDecision, TableState
+from app.domain import Action, GateDecision, RouteDecision, SafetyLevel, TableState
 
 from .gate import evaluate_gate
 from .close import refresh_close_readiness
@@ -18,6 +18,8 @@ def record_intervention(previous: TableState, decision: RouteDecision, agent_tur
     """Atomically return a new snapshot after a real non-silence intervention."""
     if decision.action is Action.SILENCE:
         raise ValueError("cannot record a SILENCE route as an intervention")
+    if previous.conversation.safety_level is SafetyLevel.CRITICAL:
+        raise ValueError("critical safety blocks host intervention")
     if not agent_turn_id.strip():
         raise ValueError("agent_turn_id must not be empty")
     if decision.target_participant_id is not None and decision.target_participant_id not in previous.participants:

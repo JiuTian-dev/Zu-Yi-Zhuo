@@ -5,8 +5,8 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, HumanTurn, TableState
-from app.orchestrator import decide_intervention, generate_host_event, record_intervention
+from app.domain import Action, HumanTurn, SafetyLevel, TableState
+from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety, generate_host_event, record_intervention
 
 from .repository import InMemoryTableRepository
 
@@ -88,8 +88,23 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                     event = _HumanMessage.model_validate(payload)
                     if event.participant_id != participant_id:
                         raise ValueError("participant_id must match the WebSocket query")
+                    if repository.get(table_id).conversation.safety_level is SafetyLevel.CRITICAL:
+                        await _send_error(websocket, "table_paused", "table is paused for safety review")
+                        continue
+                    turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
+                    safety = evaluate_safety(event.text, turn_id)
+                    if safety.blocked:
+                        state = repository.append_safety_state(
+                            table_id, enforce_safety(repository.get(table_id), safety)
+                        )
+                        await websocket.send_json({
+                            "type": "safety_enforced",
+                            "decision": safety.model_dump(mode="json"),
+                            "state": state.model_dump(mode="json"),
+                        })
+                        continue
                     turn = HumanTurn(
-                        turn_id=max((item.turn_id for item in repository.turns(table_id)), default=0) + 1,
+                        turn_id=turn_id,
                         participant_id=participant_id,
                         text=event.text,
                     )

@@ -6,6 +6,7 @@ from .enums import Action, DisagreementType, Level, Phase, SafetyLevel
 
 Confidence = Annotated[float, Field(ge=0, le=1)]
 TurnEvidence = Annotated[list[PositiveInt], Field(min_length=1)]
+SafetyAction = Literal["allow", "pause", "intercept", "remove"]
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -33,6 +34,24 @@ class HumanTurn(ContractModel):
     turn_id: PositiveInt
     participant_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
+
+
+class SafetyDecision(ContractModel):
+    """Deterministic pre-loop outcome for one untrusted human message."""
+
+    blocked: bool
+    action: SafetyAction
+    level: SafetyLevel
+    reason: str = Field(min_length=1)
+    evidence_turns: list[PositiveInt] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def action_matches_blocking_status(self) -> "SafetyDecision":
+        if self.blocked and (self.action == "allow" or not self.evidence_turns):
+            raise ValueError("blocked safety decisions require enforcement and turn evidence")
+        if not self.blocked and self.action != "allow":
+            raise ValueError("allowed safety decisions must use allow")
+        return self
 
 class OpenLoop(ContractModel):
     question: str = Field(min_length=1)
