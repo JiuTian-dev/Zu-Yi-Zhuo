@@ -203,6 +203,7 @@ master
 | D22 runtime integration probes | complete | configurable Vite-friendly CORS plus `/healthz` and `/readyz` probes without exposing table data | 169 tests + compileall + diff check | `cf67435` |
 | D23 REST consent identity boundary | complete | REST profile consent now requires explicit `viewer_id` matching the participant path, aligned with WebSocket self-scoping | 170 tests + privacy regression | `27342f9` |
 | D24 repository write serialization | complete | re-entrant process lock covers in-memory and JSON compound reads/writes; competing consent updates retain both changes and ordered versions | 171 tests + compileall + diff check | `6794029` |
+| D25 atomic intervention audit | complete | WebSocket host state and its non-SILENCE audit record commit as one repository bundle; invalid audit leaves the prior snapshot untouched | 173 tests + compileall + diff check | `16a03a0` |
 
 ## 已知坑位（Running Gotchas）
 
