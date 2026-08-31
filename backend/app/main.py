@@ -8,10 +8,12 @@ the optional OpenAI Responses adapter.
 """
 
 import os
+import json
 
 from app.api.app import create_app
 from app.api.repository import JsonTableRepository
 from app.providers import OpenAIResponsesProvider, ProviderConfigurationError
+from app.sources import CommandCandidateSource
 
 
 def _build_provider():
@@ -28,10 +30,26 @@ def _build_provider():
     )
 
 
+def _build_candidate_source():
+    raw = os.environ.get("CANDIDATE_SOURCE_COMMAND", "").strip()
+    if not raw:
+        return None
+    try:
+        command = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("CANDIDATE_SOURCE_COMMAND must be a JSON string array") from error
+    if not isinstance(command, list) or not command or any(not isinstance(item, str) for item in command):
+        raise RuntimeError("CANDIDATE_SOURCE_COMMAND must be a non-empty JSON string array")
+    try:
+        return CommandCandidateSource(command)
+    except ValueError as error:
+        raise RuntimeError(f"invalid CANDIDATE_SOURCE_COMMAND: {error}") from error
+
+
 def _build_app():
     path = os.environ.get("TABLE_REPOSITORY_PATH", "").strip()
     repository = JsonTableRepository(path) if path else None
-    return create_app(repository, _build_provider())
+    return create_app(repository, _build_provider(), _build_candidate_source())
 
 
 app = _build_app()
