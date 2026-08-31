@@ -58,6 +58,7 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 软过期是可回放的幂等状态迁移：请求需要桌内成员身份和非空原因，状态会记录 `soft_expiry_reason`。
 软过期后拒绝新消息、成员变更、邀请、同步升级、主持/安全快照和来源卡片写入，WebSocket 返回
 `table_soft_expired`；`GET /tables/{id}`、回放、行动回响和收桌仍可用，收桌后仍保留软过期标记。
+收桌迁移在内存和 JSON 仓储中都原子持久化；重启后仍可读取关闭状态、收桌卡和行动回响，重复收桌不增加版本。
 
 候选资料可设置 `roundtable_invite_preference`：`many`、`few`（默认）或 `none`。选择 `none` 的候选人会
 在匹配和邀请边界被跳过。
