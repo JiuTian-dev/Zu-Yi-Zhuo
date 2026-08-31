@@ -9,6 +9,7 @@ import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
 import { useLive } from './live/store'
 import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from './live/backend'
+import ClosingCard from './live/ClosingCard'
 
 const turns = [...humanActors, tableHost]
 
@@ -101,6 +102,8 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   const livePhase = useLive((state) => state.phase)
   const liveSubQuestion = useLive((state) => state.subQuestion)
   const closeState = useLive((state) => state.closeState)
+  const liveBaseline = useLive((state) => state.baseline)
+  const livePersonalCard = useLive((state) => state.personalCard)
 
   useEffect(() => {
     void startLive()
@@ -317,6 +320,8 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           )}
         </div>
         {liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
+        {closeState === 'started' && <div className="closing-progress" role="status">正在收桌 · 沉淀共识与分歧…</div>}
+        {closeState === 'ready' && liveBaseline && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onReturn={onExit} />}
         <button className="join-table-button" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i />{joined ? '已坐到第五席' : '坐到空席'} <span>{joined ? '✓' : '→'}</span></button>
         {joined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
           <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
