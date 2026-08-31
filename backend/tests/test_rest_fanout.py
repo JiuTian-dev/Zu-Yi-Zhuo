@@ -95,6 +95,7 @@ def test_rest_comment_broadcasts_only_after_idempotent_commit() -> None:
             "text": "我也遇到过类似的预算约束。",
             "state_version": 0,
         },
+        "state_version": 0,
     }
 
 

@@ -852,6 +852,7 @@ def create_app(
             await broadcast_table_event(table_id, {
                 "type": "comment_added",
                 "comment": saved.model_dump(mode="json"),
+                "state_version": saved.state_version,
             })
         return saved
 
