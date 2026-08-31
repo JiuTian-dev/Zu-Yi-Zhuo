@@ -331,7 +331,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=False,
-        allow_methods=["DELETE", "GET", "PATCH", "POST", "OPTIONS"],
+        allow_methods=["DELETE", "GET", "PATCH", "POST", "PUT", "OPTIONS"],
         allow_headers=["Accept", "Authorization", "Content-Type"],
     )
     register_websocket_routes(

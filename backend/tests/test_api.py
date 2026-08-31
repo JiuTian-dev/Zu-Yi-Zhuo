@@ -753,3 +753,19 @@ def test_default_cors_allows_vite_dev_origin() -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_default_cors_preflight_allows_invitation_preference_put() -> None:
+    client = TestClient(create_app())
+
+    response = client.options(
+        "/tables/demo/participants/p1/invitation-preference",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "PUT" in response.headers["access-control-allow-methods"]
