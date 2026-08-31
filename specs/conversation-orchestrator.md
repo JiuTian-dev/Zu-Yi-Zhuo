@@ -422,6 +422,13 @@
 - **替代方案**: 继续无界返回、把分页交给前端、或按状态重排结果；这些方案分别会放大资源风险、泄露无界数据责任或破坏审核顺序。
 - **代价**: 审核器需要根据 `offset/limit` 翻页；默认最多返回 100 条，完整历史仍可通过多页读取。
 
+### ADR-58: 冷启动递话由成员显式触发且仍需真人证据
+
+- **决策**: WebSocket 新增 `request_nudge` 客户端事件。当前桌成员可在首条真人消息没有自然回应时请求一次轻量 `PROBE`；服务端以最近真人 turn 作为 evidence，复用 Host、干预审计、隐私投影和两轮冷却。空桌无真人证据、critical 暂停、软过期、收桌或冷却期内均拒绝递话。
+- **理由**: 异步桌不能依赖后台定时任务（V1 反目标是不做复杂 workflow），但首条表达也不能沉底；显式递话入口能由前端根据等待/无回应状态触发，同时不把种子资料伪装成现场证据。
+- **替代方案**: 创建桌时直接发送无证据 Agent 话、绕过 Gate 强行主持、或引入后台 scheduler；这些方案分别破坏 evidence-first、冷却/安全边界或 V1 单体约束。
+- **代价**: 客户端需要在合适的等待时机发送 `request_nudge`；递话和普通主持一样会推进一个状态版本并计入干预审计。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -479,7 +486,7 @@ GET  /participants/{participant_id}/personal-context/consent?viewer_id={particip
 WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
-Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
+Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`, `request_nudge`。
 
 Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `participant_consent_changed`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`, `peripheral_comment`, `safety_enforced`, `safety_resolved`。
 
@@ -691,6 +698,7 @@ master
 | D78 moderator safety report status lifecycle | complete | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | 318 tests + compileall + diff check | `276b595` + `a115fef` |
 | D79 safety report transition audit | complete | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility and tamper-evident chain validation | 321 tests + compileall + diff check | `41653a9` + `e2ebdb1` |
 | D80 bounded moderator safety queue | complete | Moderator report queue supports status filtering and stable bounded `offset`/`limit` pagination without changing private persistence or broadcast semantics | 322 tests + compileall + diff check | `d7472b1` |
+| D81 cold-start nudge event | in_progress | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
