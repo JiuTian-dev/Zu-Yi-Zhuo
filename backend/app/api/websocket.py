@@ -1,6 +1,7 @@
 """Structured WebSocket stream for a conversation table."""
 
 import asyncio
+import json
 from collections.abc import Callable, Sequence
 from typing import Literal
 
@@ -27,6 +28,25 @@ from .privacy import project_state_for_viewer
 from .repository import InMemoryTableRepository
 from .identity import IdentityResolver, websocket_identity_error
 
+DEFAULT_MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024
+
+
+class _FrameTooLarge(ValueError):
+    """Raised before JSON parsing when a client frame exceeds the protocol bound."""
+
+
+async def _receive_json_bounded(websocket: WebSocket, max_frame_bytes: int) -> object:
+    """Receive one text JSON frame without parsing an oversized payload."""
+    message = await websocket.receive()
+    if message["type"] == "websocket.disconnect":
+        raise WebSocketDisconnect(message.get("code", 1000), message.get("reason"))
+    text = message.get("text")
+    if text is None:
+        raise ValueError("event must be a text JSON frame")
+    if len(text.encode("utf-8")) > max_frame_bytes:
+        raise _FrameTooLarge
+    return json.loads(text)
+
 
 class _ClientEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -38,7 +58,7 @@ class _HumanMessage(_ClientEvent):
     type: Literal["human_message"]
     message_id: str = Field(min_length=1)
     participant_id: str = Field(min_length=1)
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=4000)
     client_ts: JsonValue
     turn_id: PositiveInt | None = None
 
@@ -134,8 +154,11 @@ def register_websocket_routes(
     provider: LLMProvider | None = None,
     identity_resolver: IdentityResolver | None = None,
     websocket_allowed_origins: Sequence[str] | None = None,
+    max_frame_bytes: int = DEFAULT_MAX_WEBSOCKET_FRAME_BYTES,
 ) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
+    if max_frame_bytes <= 0:
+        raise ValueError("max_frame_bytes must be a positive integer")
 
     connections: dict[str, dict[WebSocket, str]] = {}
     table_locks: dict[str, asyncio.Lock] = {}
@@ -230,8 +253,11 @@ def register_websocket_routes(
         try:
             while True:
                 try:
-                    payload = await websocket.receive_json()
+                    payload = await _receive_json_bounded(websocket, max_frame_bytes)
                 except WebSocketDisconnect:
+                    return
+                except _FrameTooLarge:
+                    await websocket.close(code=1009)
                     return
                 except (TypeError, ValueError):
                     await _send_error(websocket, "invalid_event", "event must be a JSON object")

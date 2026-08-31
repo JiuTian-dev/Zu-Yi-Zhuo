@@ -1,5 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
+from starlette.websockets import WebSocketDisconnect
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
@@ -38,6 +40,41 @@ def _participant(participant_id: str, role: str = "产品") -> dict:
             {"text": "采购试点的现场经验", "source_ref": "本人经历"}
         ],
     }
+
+
+def test_oversized_websocket_frame_closes_with_message_too_big() -> None:
+    client, _repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({"type": "request_debug_state", "padding": "x" * (64 * 1024)})
+        with pytest.raises(WebSocketDisconnect) as disconnected:
+            websocket.receive_json()
+
+    assert disconnected.value.code == 1009
+
+
+def test_overlong_human_text_is_rejected_without_persistence() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message",
+            "message_id": "too-long",
+            "participant_id": "p1",
+            "text": "x" * 4001,
+            "client_ts": 1,
+        })
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "invalid_payload",
+            "detail": "event payload does not match its contract",
+        }
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["state"]["version"] == 1
+
+    assert repository.turns("table-ws") == []
 
 
 def test_injected_provider_rewrites_host_text_but_keeps_action_and_audit() -> None:

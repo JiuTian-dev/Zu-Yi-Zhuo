@@ -19,7 +19,7 @@ from app.domain.schemas import EvidenceStatement
 
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
-from .websocket import register_websocket_routes
+from .websocket import DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
@@ -278,6 +278,7 @@ def create_app(
     identity_resolver: IdentityResolver | None = None,
     moderator_resolver: ModeratorResolver | None = None,
     websocket_allowed_origins: Sequence[str] | None = None,
+    websocket_max_frame_bytes: int | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -296,6 +297,17 @@ def create_app(
     )
     if any(origin == "*" or "*" in origin for origin in allowed_websocket_origins):
         raise ValueError("websocket_allowed_origins must not contain wildcards")
+    raw_frame_bytes = (
+        os.getenv("WS_MAX_FRAME_BYTES", str(DEFAULT_MAX_WEBSOCKET_FRAME_BYTES))
+        if websocket_max_frame_bytes is None
+        else str(websocket_max_frame_bytes)
+    )
+    try:
+        max_websocket_frame_bytes = int(raw_frame_bytes)
+    except ValueError as error:
+        raise ValueError("websocket_max_frame_bytes must be a positive integer") from error
+    if max_websocket_frame_bytes <= 0:
+        raise ValueError("websocket_max_frame_bytes must be a positive integer")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
@@ -317,7 +329,12 @@ def create_app(
         allow_headers=["Accept", "Authorization", "Content-Type"],
     )
     register_websocket_routes(
-        api, repo, provider, identity_resolver, allowed_websocket_origins or None
+        api,
+        repo,
+        provider,
+        identity_resolver,
+        allowed_websocket_origins or None,
+        max_websocket_frame_bytes,
     )
 
     @api.get("/healthz")
