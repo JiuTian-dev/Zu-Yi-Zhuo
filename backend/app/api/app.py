@@ -1,8 +1,10 @@
 """Minimal REST API for one explainable conversation table."""
 
+import os
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain import HumanTurn, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
@@ -54,7 +56,26 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
+    raw_origins = os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    )
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    api.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept"],
+    )
     register_websocket_routes(api, repo)
+
+    @api.get("/healthz")
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @api.get("/readyz")
+    def readyz() -> dict[str, str]:
+        return {"status": "ready", "repository": type(repo).__name__}
 
     def table_or_404(table_id: str) -> TableState:
         try:

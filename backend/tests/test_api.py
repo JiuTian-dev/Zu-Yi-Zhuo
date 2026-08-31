@@ -193,3 +193,28 @@ def test_match_confirm_creates_a_table_from_the_same_public_match_plan() -> None
     assert client.post("/matches/confirm", json={
         "table_id": "matched-table", "core_question": "Q", "candidates": candidates, "table_size": 3,
     }).status_code == 409
+
+
+def test_health_and_readiness_probes_are_available() -> None:
+    client = TestClient(create_app())
+
+    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/readyz").json() == {
+        "status": "ready",
+        "repository": "InMemoryTableRepository",
+    }
+
+
+def test_default_cors_allows_vite_dev_origin() -> None:
+    client = TestClient(create_app())
+
+    response = client.options(
+        "/healthz",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
