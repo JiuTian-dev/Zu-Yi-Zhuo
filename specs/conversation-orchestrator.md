@@ -51,6 +51,13 @@
 - **替代方案**: 第一批即接 PostgreSQL/Supabase。
 - **代价**: API 联调前要补持久化实现。
 
+### ADR-5: 桌级 WebSocket 广播，个人产物定向发送
+
+- **决策**: 同一桌的已连接客户端共同接收 `message_committed`、`agent_action`、`table_state_changed` 与安全事件；`request_debug_state` 和包含个人卡的 `close_artifact_ready` 只返回请求者。
+- **理由**: 多人对话必须共享现场状态，同时不能把某个参与者的个人卡泄露给其他人。
+- **替代方案**: 只回传发送者，或把所有事件广播后由前端过滤。
+- **代价**: 连接生命周期和断线清理需要由进程内路由管理；跨进程部署时需替换为共享消息总线。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -68,6 +75,8 @@ WS   /ws/tables/{table_id}?participant_id={participant_id}
 Client events: `human_message`, `participant_joined`, `participant_left`, `request_debug_state`。
 
 Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`。
+
+广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 
 ### 数据模型 / 类型定义
 
