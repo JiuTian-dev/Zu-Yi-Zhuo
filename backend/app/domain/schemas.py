@@ -167,6 +167,26 @@ class MatchReason(ContractModel):
     evidence_terms: list[str] = Field(default_factory=list, max_length=5)
 
 
+class CandidateRecommendation(ContractModel):
+    """Public, non-binding recommendation for a missing table seat."""
+
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+    evidence_terms: list[str] = Field(default_factory=list, max_length=5)
+
+
+class TableCandidatePreview(ContractModel):
+    """Current table gap plus source-backed candidate recommendations."""
+
+    table_id: str = Field(min_length=1)
+    core_question: str = Field(min_length=1)
+    open_seats: int = Field(ge=1, le=5)
+    role_gaps: list[str] = Field(default_factory=list, max_length=5)
+    candidates: list[CandidateRecommendation] = Field(default_factory=list, max_length=20)
+
+
 class MatchPlan(ContractModel):
     core_question: str = Field(min_length=1)
     selected: list[MatchSeat] = Field(min_length=2, max_length=5)

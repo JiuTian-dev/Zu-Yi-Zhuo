@@ -9,13 +9,13 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
-from app.matching import build_match_plan
+from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState
+from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
 from app.providers import LLMProvider
 
-from .repository import InMemoryTableRepository
+from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
 from app.sources import CandidateSource, CandidateSourceError
@@ -83,6 +83,13 @@ class SourceMatchRequest(BaseModel):
     query: str | None = Field(default=None, min_length=1)
     table_size: int = Field(default=4, ge=2, le=5)
     limit: int = Field(default=20, ge=2, le=20)
+
+
+class CandidatePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str | None = Field(default=None, min_length=1, max_length=120)
+    limit: int = Field(default=10, ge=1, le=20)
 
 
 class MatchedTableResponse(BaseModel):
@@ -275,6 +282,61 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return projected(state)
+
+    @api.post("/tables/{table_id}/candidate-preview", response_model=TableCandidatePreview)
+    async def preview_table_candidates(
+        table_id: str,
+        payload: CandidatePreviewRequest,
+        participant_id: str = Query(..., min_length=1),
+    ) -> TableCandidatePreview:
+        """Recommend candidates for an open seat without mutating membership or invitations."""
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is closed")
+        if state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is soft-expired")
+        open_seats = MAX_TABLE_PARTICIPANTS - len(state.participants)
+        if open_seats <= 0:
+            raise HTTPException(status_code=409, detail="table has no open seats")
+        if candidate_source is None:
+            raise HTTPException(status_code=503, detail="candidate source is not configured")
+        try:
+            raw_candidates = await asyncio.wait_for(
+                candidate_source.search(
+                    query=payload.query or state.core_question,
+                    limit=payload.limit,
+                ),
+                timeout=candidate_source_timeout_seconds,
+            )
+            candidates = [
+                item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
+                for item in raw_candidates
+            ][:payload.limit]
+            existing_invited = {
+                item.candidate.participant_id for item in repo.invitations(table_id)
+            }
+            candidates = [
+                item for item in candidates
+                if item.participant_id not in existing_invited
+            ]
+            recommendations = recommend_candidates(state, candidates, payload.limit)
+        except CandidateSourceError as error:
+            raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        except TimeoutError as error:
+            raise HTTPException(status_code=502, detail="candidate source timed out") from error
+        except (TypeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=502, detail="candidate source returned invalid candidates") from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        return TableCandidatePreview(
+            table_id=table_id,
+            core_question=state.core_question,
+            open_seats=open_seats,
+            role_gaps=infer_role_gaps(person.role for person in state.participants.values()),
+            candidates=recommendations,
+        )
 
     def invitation_view(invitation) -> InvitationView:
         candidate = invitation.candidate
