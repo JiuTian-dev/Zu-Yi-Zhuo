@@ -149,6 +149,13 @@
 - **替代方案**: 只在关闭瞬间推送一次，或把全体个人卡写进公共快照。
 - **代价**: 重建逻辑必须保持确定性；未来若允许人工编辑收桌卡，需要另设版本化 artifact 存储。
 
+### ADR-19: 外部候选源调用必须有界
+
+- **决策**: `create_app` 为注入的 `CandidateSource.search` 提供正数超时（默认 5 秒）；超时与上游故障一样返回通用 502，不把适配器异常或凭据细节暴露给客户端。
+- **理由**: CLI/MCP/OAuth 适配器属于外部系统，不能让一次卡住的检索请求占住 API worker；匹配预览应 fail-closed，而不是无限等待或降级成未经授权的候选。
+- **替代方案**: 不设超时，或超时后回退到本地/网页抓取候选。
+- **代价**: 慢 source 需要在适配器侧分页、缓存或提高注入超时；调用方要把 502 视为可重试的上游失败。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -291,6 +298,7 @@ master
 | D38 candidate source adapter boundary | complete | injectable CLI/MCP/OAuth-compatible candidate source, normalized source-preview endpoint, and privacy-safe failure responses | 203 tests + compileall + diff check | `e9bfcdf` |
 | D39 reconnectable close artifacts | complete | evidence-backed close-artifacts REST recovery with participant-scoped personal card | 205 tests + compileall + diff check | `cffe3a8` |
 | D40 stale WebSocket membership guard | complete | re-check participant membership after handshake and before safety/turn handling, preventing a departed socket from writing snapshots | 206 tests + compileall + diff check | `f8b2d79` |
+| D41 bounded candidate-source calls | complete | injected candidate source calls have a positive timeout and fail closed with a generic 502 on timeout | 209 tests + compileall + diff check | `e95f4a5` |
 
 ## 已知坑位（Running Gotchas）
 

@@ -71,6 +71,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 未同意时，状态投影隐藏 `declared_position`/`unused_relevant_experience`，PASS 主持话也不会广播经历原文。
 - 当前默认没有候选 source，候选人仍可由显式 `ParticipantSeed` 候选池提供；没有依赖知乎非官方抓取。
 - 接入正式知乎 CLI/MCP/OAuth 时，通过 `create_app(..., candidate_source=...)` 注入适配器，适配器只返回已授权、规范化候选资料，服务端不会接收或记录 access token。
+- 外部 source 调用默认有 5 秒超时；可在 `create_app(..., candidate_source_timeout_seconds=...)` 注入不同正数。超时统一返回通用 502，不会回退到未经授权的候选。
 
 ## 验证
 
