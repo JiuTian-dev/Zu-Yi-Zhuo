@@ -131,6 +131,13 @@ class OpportunityPreview(ContractModel):
 
     core_question: str = Field(min_length=1, max_length=120)
     signal_ids: list[str] = Field(min_length=2, max_length=20)
+    # Public-only source projection for immediate explanation. This is a
+    # preview artifact, not part of persisted TableState.
+    source_signals: list[ContentSignal] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
     unfinishedness: list[SourceEvidence] = Field(min_length=1, max_length=3)
     role_gaps: list[str] = Field(default_factory=list, max_length=5)
     candidates: list[ParticipantSeed] = Field(min_length=2, max_length=20)

@@ -34,6 +34,8 @@ def test_opportunity_preview_exposes_unfinishedness_roles_and_candidates() -> No
 
     assert preview.core_question == "企业 Agent 如何落地？"
     assert preview.signal_ids == ["s1", "s2"]
+    assert [signal.signal_id for signal in preview.source_signals] == ["s1", "s2"]
+    assert preview.source_signals[0].title == "企业 Agent 如何落地？"
     assert {candidate.participant_id for candidate in preview.candidates} == {"u1", "u2"}
     assert {
         candidate.participant_id: candidate.public_signal_ids
@@ -55,6 +57,10 @@ def test_opportunity_preview_can_feed_existing_match_preview() -> None:
     })
     assert response.status_code == 200
     preview = response.json()
+    assert [signal["signal_id"] for signal in preview["source_signals"]] == ["s1", "s2"]
+    assert preview["source_signals"][0]["source_ref"] == "zhihu:public:s1"
+    assert all("relevant_experience" not in signal for signal in preview["source_signals"])
+    assert all("private_stance" not in signal for signal in preview["source_signals"])
     matched = client.post("/matches/preview", json={
         "core_question": preview["core_question"],
         "candidates": preview["candidates"],

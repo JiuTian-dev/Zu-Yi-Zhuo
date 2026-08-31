@@ -89,6 +89,7 @@ def build_opportunity_preview(request: OpportunityRequest) -> OpportunityPreview
     return OpportunityPreview(
         core_question=request.query.strip(),
         signal_ids=signal_ids,
+        source_signals=signals,
         unfinishedness=unfinishedness[:3],
         role_gaps=_role_gaps(signals),
         candidates=_candidate_seeds(signals),
