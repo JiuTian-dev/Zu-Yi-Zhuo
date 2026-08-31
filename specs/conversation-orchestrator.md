@@ -524,6 +524,8 @@ CommentPromotion(promotion_id, table_id, comment_id, promoter_id,
 AgentPresence(agent_id, display_name, role, status=active|paused|closed)
 BehaviorEvent(event_id, participant_id, event_type, table_id,
               state_version?, related_participant_id?, detail?)
+SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
+                        from_status, to_status, reason?)
 ```
 
 ### LLM provider
