@@ -366,6 +366,13 @@
 - **替代方案**: 让任何参与者恢复、把恢复做成前端本地状态、或直接删除整桌；这些方案都会绕过运营审计或破坏可回放历史。
 - **代价**: V1 不内置具体后台账号和 RBAC；部署者需提供同步 moderator resolver，运营 UI 需消费新的处置事件。
 
+### ADR-50: 桌级高权限 REST 在生产模式绑定成员身份
+
+- **决策**: `close`、直接追加席位、从已收桌重组下一桌，以及敏感的 `interventions` 审计查询继续保留开发态兼容，但当 `identity_resolver` 被注入时必须带 `participant_id`/`inviter_id`/`viewer_id` 并与服务端主体一致；除审计查询外还要求主体是当前桌成员。未配置 resolver 的本地 Demo 不改变现有调用。
+- **理由**: 这些入口会改变桌生命周期、成员构成或暴露主持推理。把它们纳入同一身份适配器，能防止生产环境只靠 URL 猜主体，同时避免为比赛前端强制一次性迁移所有请求。
+- **替代方案**: 保持完全公开、再造一套 token 解析逻辑、或让前端决定成员资格；这些方案分别留下越权、重复认证和客户端可伪造的问题。
+- **代价**: 部署时需要把真实会话主体映射到已有桌成员；开发态仍是显式 query 自证，不提供内置 RBAC。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -388,13 +395,13 @@ POST /tables/{id}/sync/preview?participant_id={participant_id}
 POST /tables/{id}/sync/upgrade?participant_id={participant_id}
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
-GET  /tables/{id}/interventions
+GET  /tables/{id}/interventions?participant_id={member_id}
 GET  /tables/{id}/close-artifacts?participant_id={participant_id}
 GET  /tables/{id}/follow-ups?participant_id={participant_id}
 POST /tables/{id}/follow-ups/{index}/outcome?participant_id={participant_id}
 POST /tables/{id}/soft-expire?participant_id={participant_id}
-POST /tables/{id}/close
-POST /tables/{id}/recompose
+POST /tables/{id}/close?participant_id={member_id}
+POST /tables/{id}/recompose?participant_id={member_id}
 POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
@@ -441,6 +448,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
 安全处置边界：critical 安全暂停只能由服务端注入的 `moderator_resolver` 认证后恢复或移除成员；处置记录和状态迁移原子落账，普通参与者/前端传入的 moderator 字段不具备权限；恢复保留原风险证据，移除不删除历史 turn。
+桌级权限边界：生产注入 `identity_resolver` 后，close、直接加席位、recompose 和 interventions 查询都必须由当前桌成员声明并通过服务端交叉校验；未注入时保留开发态兼容调用。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
@@ -535,7 +543,8 @@ master
                                                                                                                                                                                                                                    ←── D69 self-scoped behavior ledger erasure
                                                                                                                                                                                                                                          ←── D70 frontend-compatible runtime contract smoke
                                                                                                                                                                                                                                         ←── D71 injectable authenticated identity boundary
-                                                                                                                                                                                                                                                ←── D72 controlled safety resolution lifecycle
+                                                                                                                                                                                                                                               ←── D72 controlled safety resolution lifecycle
+                                                                                                                                                                                                                                                       ←── D73 production member boundary for privileged REST
 ```
 
 ## Progress Ledger
@@ -618,6 +627,7 @@ master
 | D70 frontend-compatible runtime contract smoke | complete | backend regression locks the actual valley demo flow: create table, add fifth viewer seat, exchange a human WebSocket turn, and recover a viewer-scoped close artifact | 296 tests + compileall + diff check + live ASGI smoke | `d831038` |
 | D71 injectable authenticated identity boundary | complete | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | 298 tests + compileall + diff check | `0a262ea` |
 | D72 controlled safety resolution lifecycle | complete | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | 302 tests + compileall + diff check | `22ce4d8` + `8184d30` |
+| D73 production member boundary for privileged REST | in progress | identity-resolver-backed member checks for close, direct seat addition, recomposition, and intervention audit reads while preserving development compatibility | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
