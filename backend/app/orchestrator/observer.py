@@ -28,6 +28,11 @@ def _layer(text: str) -> str | None:
     if any(word in text for word in BUYING): return "buying"
     return None
 
+def _procurement_expert(state: TableState) -> ParticipantState | None:
+    return next((p for p in state.participants.values()
+                 if p.last_spoke_turn is None and p.unused_relevant_experience and
+                 ("采购" in p.role or any("采购" in item.text for item in p.unused_relevant_experience))), None)
+
 def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
     """Return a fresh snapshot after one committed human turn."""
     if turn.participant_id not in previous.participants:
@@ -70,13 +75,21 @@ def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
         state.open_loops = [OpenLoop(question=state.current_subquestion, priority=Level.HIGH, evidence_turns=evidence)]
         state.conversation.state = "layer_mismatch surfaced"
         state.conversation.most_promising_thread = EvidenceStatement(text="采购决策链", evidence_turns=evidence)
-        target = next((p for p in state.participants.values()
-                       if p.last_spoke_turn is None and p.unused_relevant_experience and
-                       ("采购" in p.role or any("采购" in item.text for item in p.unused_relevant_experience))), None)
+        target = _procurement_expert(state)
         if target:
             target.good_pass_opportunity = True
             state.intervention = InterventionState(reasons_to_speak=[disagreement], recommended_action=Action.PASS,
                 confidence=.85, last_action=previous.intervention.last_action,
+                last_agent_turn_id=previous.intervention.last_agent_turn_id,
+                human_turns_since_last_intervention=previous.intervention.human_turns_since_last_intervention + 1)
+    elif target := _procurement_expert(state):
+        topic = next((item for _, item in reversed(positions)
+                      if _layer(item.text) == "buying" and any(word in item.text for word in CONTRIBUTION)), None)
+        if topic:
+            target.good_pass_opportunity = True
+            reason = EvidenceStatement(text="采购亲历话题中有尚未发言的相关角色", evidence_turns=topic.evidence_turns)
+            state.intervention = InterventionState(reasons_to_speak=[reason], recommended_action=Action.PASS,
+                confidence=.82, last_action=previous.intervention.last_action,
                 last_agent_turn_id=previous.intervention.last_agent_turn_id,
                 human_turns_since_last_intervention=previous.intervention.human_turns_since_last_intervention + 1)
     return TableState.model_validate(state.model_dump())

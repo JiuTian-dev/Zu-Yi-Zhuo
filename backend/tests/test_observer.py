@@ -103,9 +103,19 @@ def test_all_scenarios_replay_to_valid_snapshots(scenario: str) -> None:
     assert state.version == len(SCENARIOS[scenario])
     assert state.model_validate(state.model_dump()) == state
 
-def test_cli_outputs_parseable_json_snapshots() -> None:
-    result = subprocess.run([sys.executable, "-m", "app.cli.replay", "--scenario", "flagship"],
+@pytest.mark.parametrize(("scenario", "action", "target"), [
+    ("flagship", "REFRAME", "buyer"),
+    ("natural", "SILENCE", None),
+    ("experience", "REFRAME", None),
+    ("pass", "PASS", "buyer"),
+])
+def test_cli_outputs_gate_and_route_for_every_scenario(scenario: str, action: str, target: str | None) -> None:
+    result = subprocess.run([sys.executable, "-m", "app.cli.replay", "--scenario", scenario],
                             check=True, capture_output=True, text=True)
     snapshots = json.loads(result.stdout); final = snapshots[-1]
-    assert len(snapshots) == 4
-    assert (final["version"], final["phase"], final["recommended_action"]) == (3, "tension", "PASS")
+    assert len(snapshots) == len(SCENARIOS[scenario]) + 1
+    assert all({"observer_recommended_action", "gate", "route"} <= snapshot.keys() for snapshot in snapshots)
+    assert {"action", "target_participant_id", "evidence_turns", "confidence"} <= final["route"].keys()
+    assert (final["route"]["action"], final["route"]["target_participant_id"]) == (action, target)
+    if scenario == "flagship":
+        assert (final["version"], final["phase"], final["observer_recommended_action"]) == (3, "tension", "PASS")

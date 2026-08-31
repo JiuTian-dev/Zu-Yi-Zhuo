@@ -24,4 +24,7 @@ SCENARIOS = {
         HumanTurn(turn_id=1, participant_id="buyer", text="我亲历过采购，试点预算和正式预算是两套流程。"),
         HumanTurn(turn_id=2, participant_id="architect", text="这个经验能帮助我们重新定义技术验收。"),
     ],
+    "pass": [
+        HumanTurn(turn_id=1, participant_id="founder", text="现在这些都还是推测，我们缺少一段真实的采购经验来验证责任链。"),
+    ],
 }
