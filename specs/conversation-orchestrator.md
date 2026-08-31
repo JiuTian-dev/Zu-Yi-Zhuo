@@ -58,6 +58,13 @@
 - **替代方案**: 只回传发送者，或把所有事件广播后由前端过滤。
 - **代价**: 连接生命周期和断线清理需要由进程内路由管理；跨进程部署时需替换为共享消息总线。
 
+### ADR-6: 显式 ASGI 入口与可选 JSON 持久化
+
+- **决策**: `app.main:app` 作为部署入口；设置 `TABLE_REPOSITORY_PATH` 时使用原子 JSON 仓储，未设置时继续使用内存仓储，方便本地 Demo 与测试。
+- **理由**: 开发者可以用同一入口启动后端，并能明确选择重启后是否保留桌状态。
+- **替代方案**: 让部署命令直接导入内部 `app.api.app:app`，或默认写入工作目录。
+- **代价**: JSON 仓储仍是单进程方案，生产多实例需要替换 repository 实现。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -129,6 +136,7 @@ master
                                             ←── D06 FastAPI + WebSocket + replay
                                                   ←── D07 persistence + integration QA
                                                         ←── D08 provider adapter + fail-closed calls
+                                                              ←── D11 runtime entrypoint + configurable persistence
 ```
 
 ## Progress Ledger
@@ -149,6 +157,7 @@ master
 | D08 provider adapter | complete | vendor-neutral `LLMProvider` protocol; Pydantic-validated structured calls with one repair retry; typed previous-state/fallback path; Host text never emits empty or half-built output | 152 tests + compileall + diff check | `7f52a6a` |
 | D09 grounding persistence | complete | JSON snapshots persist trusted grounding cards, consume them atomically, and load legacy files without the optional card section | 154 tests + compileall + diff check | `c4e66db` |
 | D10 table WebSocket fanout | complete | table-scoped connection registry; public message/action/state/safety/close-start events fan out to peers; debug state and personal close cards remain requester-only; disconnect cleanup | 155 tests + compileall + diff check | `99d8bcc` |
+| D11 runtime entrypoint | complete | `app.main:app` ASGI entrypoint; `TABLE_REPOSITORY_PATH` selects restart-safe JSON repository while default remains in-memory | 155 tests + compileall + import smoke check | pending commit |
 
 ## 已知坑位（Running Gotchas）
 
