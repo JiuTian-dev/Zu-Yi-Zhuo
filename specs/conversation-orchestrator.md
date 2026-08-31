@@ -201,6 +201,7 @@ master
 | D20 match explanation privacy | complete | private position/experience may influence selection internally but public match reasons expose only role-derived terms; regression checks no private text leaks | 164 tests + compileall + redaction regression | `81e6539` |
 | D21 optional OpenAI provider | complete | lazy-loaded `AsyncOpenAI.responses` adapter for structured/text calls, environment configuration, explicit missing-key failure, and optional dependency isolation | 167 tests + compileall + diff check | `fc3e326` |
 | D22 runtime integration probes | complete | configurable Vite-friendly CORS plus `/healthz` and `/readyz` probes without exposing table data | 169 tests + compileall + diff check | `cf67435` |
+| D23 REST consent identity boundary | complete | REST profile consent now requires explicit `viewer_id` matching the participant path, aligned with WebSocket self-scoping | 170 tests + privacy regression | `27342f9` |
 
 ## 已知坑位（Running Gotchas）
 
