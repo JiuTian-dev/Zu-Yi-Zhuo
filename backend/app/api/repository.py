@@ -22,9 +22,17 @@ def _follow_up_behavior_event(
     previous: FollowUpOutcome | None,
 ) -> BehaviorEvent | None:
     """Build one transition-scoped behavior signal for a follow-up update."""
-    if previous is not None and previous.status == outcome.status:
+    if (
+        previous is not None
+        and previous.participant_id == outcome.participant_id
+        and previous.status == outcome.status
+    ):
         return None
-    transition = "initial" if previous is None else f"{previous.status}-to-{outcome.status}"
+    transition = (
+        "initial"
+        if previous is None or previous.participant_id != outcome.participant_id
+        else f"{previous.status}-to-{outcome.status}"
+    )
     return BehaviorEvent(
         event_id=(
             f"{outcome.table_id}:follow-up:{outcome.follow_up_index}:"

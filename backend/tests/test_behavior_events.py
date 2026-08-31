@@ -120,6 +120,31 @@ def test_follow_up_outcome_emits_only_status_transitions() -> None:
     assert all(item.state_version == closed.version for item in events)
 
 
+def test_follow_up_behavior_deduplication_is_reporter_scoped() -> None:
+    repository = _repository("behavior-follow-up-reporters")
+    repository.append_turn(
+        "behavior-follow-up-reporters",
+        HumanTurn(turn_id=1, participant_id="p1", text="我会先做一次小范围试点。"),
+    )
+    repository.close_table("behavior-follow-up-reporters")
+    repository.record_follow_up_outcome(FollowUpOutcome(
+        table_id="behavior-follow-up-reporters",
+        follow_up_index=0,
+        participant_id="p1",
+        status="completed",
+    ))
+    repository.record_follow_up_outcome(FollowUpOutcome(
+        table_id="behavior-follow-up-reporters",
+        follow_up_index=0,
+        participant_id="p2",
+        status="completed",
+    ))
+
+    assert [item.event_id for item in repository.behavior_events("p2")] == [
+        "behavior-follow-up-reporters:follow-up:0:p2:initial"
+    ]
+
+
 def test_json_behavior_events_persist_and_legacy_files_default_empty(tmp_path) -> None:
     path = tmp_path / "behavior.json"
     repository = JsonTableRepository(path)
