@@ -340,7 +340,7 @@ master
 | D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | 209 tests + compileall + diff check | `9076fca` |
 | D43 follow-up outcome ledger | complete | close-card follow-ups expose a REST read/write contract with owner checks and JSON restart persistence | 214 tests + compileall + diff check | `aac94a0` |
 | D44 soft-expired table lifecycle | in progress | explicit soft-expire state, discovery filtering, read-only conversation boundary, history-preserving close path, and reconnect-safe WebSocket error | 218 tests + compileall + diff check | pending |
-| D45 relationship memory view | planned | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | pending | pending |
+| D45 relationship memory view | complete | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | 221 tests + compileall + diff check | pending |
 
 ## 已知坑位（Running Gotchas）
 
