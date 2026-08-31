@@ -523,9 +523,9 @@ GET  /participants/{participant_id}/personal-context/consent?viewer_id={particip
 WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
-Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`, `request_nudge`。
+Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `participant_invitation_preference`, `request_debug_state`, `request_nudge`。
 
-Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `participant_consent_changed`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`, `peripheral_comment`, `safety_enforced`, `safety_resolved`。
+Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `participant_consent_changed`, `participant_invitation_preference_changed`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`, `peripheral_comment`, `safety_enforced`, `safety_resolved`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
@@ -533,6 +533,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
 邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
+席位偏好更新：REST 与参与者 WebSocket 只允许本人修改当前桌席位的 `many/few/none`；真实变更递增状态版本并广播投影状态，重复值幂等，关闭/软过期桌拒绝写入，不会移除现有席位或撤回已发邀请。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 软过期边界：软过期桌默认从发现列表隐藏；桌内对话、成员、邀请、同步、主持/安全快照和来源卡片写入均返回冲突，历史回放、状态查询、收桌和收桌后行动回响仍可用；重复软过期不增加版本。
 关系记忆边界：只从已收桌的证据派生；`viewer_id` 必须等于路径参与者本人；只返回公开姓名、旧桌问题、关系理由和证据定位，不返回对方私有画像或个人卡全文；该接口只读。
@@ -752,7 +753,7 @@ master
 | D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
 | D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
 | D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
-| D86 self-scoped invitation preference update | in_progress | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | pending | — |
+| D86 self-scoped invitation preference update | complete | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | 341 tests + compileall + diff check | `72655e5` |
 
 ## 已知坑位（Running Gotchas）
 

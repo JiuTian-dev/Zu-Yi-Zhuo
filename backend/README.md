@@ -24,6 +24,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
+- `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id=...`：本人更新当前桌席位的圆桌邀请偏好（`many`、`few`、`none`）；重复提交幂等，关闭/软过期桌拒绝写入。
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
 - `POST /tables/{table_id}/participants/{participant_id}/leave?viewer_id=...`：参与者本人离桌；保留历史快照并立即停止该席位的后续写入。
@@ -50,7 +51,7 @@ python -m uvicorn app.main:app --reload
 - `DELETE /participants/{participant_id}/behavior-events?viewer_id=...`：本人清除自己的行为账本；不删除消息、桌状态、收桌产物或安全审计。
 
 生产注入 `identity_resolver` 后，`POST /tables/{table_id}/participants?inviter_id=...`、`POST /tables/{table_id}/close?participant_id=...` 和 `GET /tables/{table_id}/interventions?participant_id=...` 也必须通过当前桌成员身份校验；未注入时保留本地 Demo 的无 query 调用。
-- `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
+- `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物；客户端可发送 `participant_invitation_preference` 更新本人当前席位偏好，服务端广播 `participant_invitation_preference_changed` 和最新投影状态。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=commenter`：外围评论连接；只接受 `peripheral_comment`，评论可由核心成员通过 REST 显式促成。
 - 参与者 WebSocket 可发送 `request_nudge`：当首条真人表达暂未获得自然回应时，请求一次基于最近真人 turn 的轻量 `PROBE`；空桌、critical 暂停、软过期、收桌或两轮冷却内会返回结构化错误，递话会像普通主持动作一样广播并写入审计。
@@ -60,7 +61,7 @@ python -m uvicorn app.main:app --reload
 
 WebSocket 单个 JSON 文本帧默认最多 64 KiB，可用 `WS_MAX_FRAME_BYTES` 调整；超限连接以 1009 关闭。`human_message.text` 另限制为 4000 字符，超限只返回 `invalid_payload`，不会写入消息、状态或主持审计。
 
-通过 REST 完成补位、邀请接受、同步升级、同意变更、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`table_closed`），再发送按 viewer 隐私投影的 `table_state_changed`。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
+通过 REST 完成补位、邀请接受、同步升级、同意变更、邀请偏好更新、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`participant_invitation_preference_changed`、`table_closed`），再发送按 viewer 隐私投影的 `table_state_changed`。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
 REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
 
 默认开发态继续使用显式 `viewer_id`/`participant_id` 自证，方便本地 Demo。生产部署可在 `create_app(..., identity_resolver=...)` 注入同步身份解析器：解析器接收 FastAPI `Request` 或 WebSocket，返回已认证的内部主体 ID；所有自作用域 REST 写入/读取和参与者 WebSocket 握手都会校验主体一致性，缺失身份返回 401，不一致返回 403。解析器负责 JWT、会话、反向代理或 OAuth 校验，后端不保存知乎 token。
@@ -84,6 +85,8 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 
 候选资料可设置 `roundtable_invite_preference`：`many`、`few`（默认）或 `none`。选择 `none` 的候选人会
 在匹配和邀请边界被跳过。
+
+已入席成员可以通过 REST 或 WebSocket 调整当前桌席位的邀请偏好；这会版本化写入 `TableState`，但不会移除现有席位或撤回已发邀请。V1 尚未接入全局账号偏好表，跨桌同步需由后续身份/资料源适配器完成。
 
 不再匹配偏好是参与者本人可写的全局关系账本，关系对两端对称生效；命中后服务端拒绝新邀请、过滤
 动态候选预览，但不删除已有桌成员、历史消息或旧邀请。删除操作幂等，JSON 仓储会在重启后恢复。
@@ -163,6 +166,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 成员离席后，仍未关闭的旧连接也会在每条真人消息进入安全检查前重新校验席位；不会因为 stale socket 写入安全暂停或消息快照。
 - 成员也可通过自证的 REST leave 入口离桌；离桌会产生一个版本化成员快照，旧连接后续消息会返回 `unknown participant`。
 - REST consent 必须带 `viewer_id`，且必须等于路径中的参与者；未注入身份解析器时这是开发态身份声明。生产部署应注入 `identity_resolver`，让服务端把查询主体与真实会话主体交叉校验。
+- 邀请偏好更新同样必须由本人 `viewer_id` 自证；WebSocket 的 `participant_invitation_preference` 事件必须把 `participant_id` 与连接身份保持一致，旁观者和评论连接不能写入。
 - 未同意时，状态投影隐藏 `declared_position`/`unused_relevant_experience`，PASS 主持话也不会广播经历原文。
 - 当前默认没有候选 source，候选人仍可由显式 `ParticipantSeed` 候选池提供；没有依赖知乎非官方抓取。
 - 可选 `CommandCandidateSource` 为官方/获授权的 CLI、MCP 或 OAuth wrapper 提供 stdin/stdout 接入；命令不经 shell，默认 5 秒超时和 1 MB 输出上限，后端只接收规范化 `ParticipantSeed`。
