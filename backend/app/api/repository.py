@@ -572,6 +572,7 @@ class InMemoryTableRepository:
         updated.conversation.state = "soft_expired"
         updated.conversation.soft_expiry_reason = reason.strip()
         updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "paused"
         return self._append(table_id, updated)
 
     @_synchronized
@@ -587,6 +588,7 @@ class InMemoryTableRepository:
         updated.conversation.state = "closed"
         updated.conversation.closed = True
         updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "closed"
         return self._append(table_id, updated)
 
     @_synchronized
@@ -916,6 +918,7 @@ class JsonTableRepository(InMemoryTableRepository):
         updated.conversation.state = "soft_expired"
         updated.conversation.soft_expiry_reason = reason.strip()
         updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "paused"
         snapshot = TableState.model_validate(updated.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         self._commit(states, self._turns, self._trusted_grounding_cards, self._interventions)
