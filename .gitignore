@@ -6,3 +6,4 @@ dist/
 .playwright-cli/
 output/
 visual-rolls/
+.codex-doc-review/
