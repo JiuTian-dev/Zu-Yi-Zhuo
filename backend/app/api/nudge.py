@@ -47,13 +47,21 @@ async def run_nudge(
     turns = repository.turns(table_id)
     if not turns:
         raise NudgeUnavailable("a cold-start nudge requires a committed human turn")
+    latest_turn = turns[-1]
+    speaker_turn_count = sum(
+        turn.participant_id == latest_turn.participant_id for turn in turns
+    )
+    if speaker_turn_count != 1:
+        raise NudgeUnavailable(
+            "a cold-start nudge requires the latest speaker's first human turn"
+        )
     if (
         state.intervention.last_action.value != "SILENCE"
         and state.intervention.human_turns_since_last_intervention < 2
     ):
         raise NudgeCooldown("two human turns are required between Agent interventions")
 
-    evidence_turn = turns[-1].turn_id
+    evidence_turn = latest_turn.turn_id
     gate, route = build_nudge_decision(state, evidence_turn)
     action = await generate_host_event_with_provider(state, route, None, provider)
     final_state = record_intervention(state, route, f"{table_id}:agent:{state.version + 1}")

@@ -317,6 +317,28 @@ def test_request_nudge_requires_evidence_and_respects_intervention_cooldown() ->
         assert websocket.receive_json()["type"] == "table_state_changed"
 
 
+def test_request_nudge_rejects_a_repeat_speaker_as_cold_start_evidence() -> None:
+    client, _repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "研究")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        for message_id, text in [("repeat-1", "第一句现场经验。"), ("repeat-2", "我再补充一个约束。")]:
+            websocket.send_json({
+                "type": "human_message", "message_id": message_id, "participant_id": "p1",
+                "text": text, "client_ts": message_id,
+            })
+            assert websocket.receive_json()["type"] == "message_committed"
+            assert websocket.receive_json()["type"] == "table_state_changed"
+
+        websocket.send_json({"type": "request_nudge"})
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "nudge_unavailable",
+            "detail": "a cold-start nudge requires the latest speaker's first human turn",
+        }
+
+
 def test_participant_events_only_accept_the_query_participant_id() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

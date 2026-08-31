@@ -107,6 +107,28 @@ def test_rest_nudge_rejects_missing_evidence_and_respects_cooldown() -> None:
     }
 
 
+def test_rest_nudge_rejects_a_repeat_speaker_as_cold_start_evidence() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "rest-nudge-repeat",
+        "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn(
+        "rest-nudge-repeat", HumanTurn(turn_id=1, participant_id="p1", text="第一句现场经验。")
+    )
+    repository.append_turn(
+        "rest-nudge-repeat", HumanTurn(turn_id=2, participant_id="p1", text="我再补充一个约束。")
+    )
+
+    response = client.post("/tables/rest-nudge-repeat/nudge?participant_id=p1")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "a cold-start nudge requires the latest speaker's first human turn",
+    }
+
+
 def test_close_artifacts_can_be_retrieved_after_close() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={"table_id": "artifact-api", "core_question": "如何开始？"})
