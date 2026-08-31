@@ -275,6 +275,13 @@
 - **替代方案**: 只让前端勾选但服务端不校验、每次请求携带布尔 `consented`，或把 OAuth token 存进桌仓储。
 - **代价**: V1 仍使用开发态 `viewer_id` 自证，生产环境需替换为真正会话身份；撤回只删除本服务授权状态，平台侧撤权由 adapter 完成。
 
+### ADR-37: 外围评论只能经核心成员明确促成后进入主桌
+
+- **决策**: 增加 `POST /tables/{id}/comments/{comment_id}/promote?participant_id={member_id}`。只有当前核心成员可以显式选择一条外围评论升级；服务端重新执行安全检查后，以核心成员为负责人的 `HumanTurn` 写入主桌，并在 turn 上保留 `source_comment_id`。评论原文和升级记录分别保留在 `PeripheralComment` 与 `CommentPromotion` 账本中，使用 `(table_id, comment_id)` 幂等。升级和主桌状态、turn 必须作为一个仓储事务提交；评论内容命中安全策略时只写安全暂停快照，不写入核心 turn。
+- **理由**: 产品需要让外围高价值补充可以反哺主桌，但不能让旁听者绕过席位、身份和安全边界直接注入核心讨论。显式成员选择与可回放来源链同时保留责任归属、审核证据和问题上下文。
+- **替代方案**: 自动按点赞/排序升级、把评论直接伪装成匿名真人 turn，或只在前端复制文本而不进入服务端证据链。
+- **代价**: V1 只提供成员触发的单条文本升级，不做自动排序、投票或批量推广；生产环境应把 `participant_id` 替换为真实会话身份，并可由 Agent/主持策略调用同一显式接口。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -309,6 +316,7 @@ GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 POST /tables/{id}/comments?author_id={author_id}
 GET  /tables/{id}/comments
+POST /tables/{id}/comments/{comment_id}/promote?participant_id={member_id}
 POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
 DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
 GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
@@ -323,7 +331,7 @@ WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={particip
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
 
-Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`。
+Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
@@ -343,6 +351,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
+评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
 
 ### 数据模型 / 类型定义
 
@@ -361,6 +370,10 @@ ConversationState(..., soft_expired, soft_expiry_reason?)
 
 AgentActionEvent(action, target_participant_id?, text?, visual_hint,
                  evidence_turns, state_version, confidence)
+
+HumanTurn(..., message_id?, source_comment_id?)
+CommentPromotion(promotion_id, table_id, comment_id, promoter_id,
+                 turn_id, state_version, message_id)
 ```
 
 ### LLM provider
@@ -413,6 +426,7 @@ master
                                                                                                                                                 ←── D56 safety report ledger and privacy boundary
                                                                                                                                                        ←── D57 authorized personal context source boundary
                                                                                                                                                                ←── D58 personal context consent and scope gate
+                                                                                                                                                                        ←── D59 explicit peripheral comment promotion with provenance
 ```
 
 ## Progress Ledger
@@ -481,6 +495,7 @@ master
 | D56 safety report ledger and privacy boundary | complete | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | 265 tests + compileall + diff check | `3f82db6` |
 | D57 authorized personal context source boundary | complete | server-side OAuth/CLI/MCP adapter seam with viewer-only ephemeral personal preview | 271 tests + compileall + diff check | `9d33685` |
 | D58 personal context consent and scope gate | complete | self-scoped persistent scope consent, revoke path, and preview enforcement | 273 tests + compileall + diff check | `4e5cc42` |
+| D59 explicit peripheral comment promotion | in progress | member-triggered safe comment-to-core turn with provenance and idempotent persistence | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
