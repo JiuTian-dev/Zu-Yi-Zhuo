@@ -48,6 +48,65 @@ def test_table_lifecycle_returns_serializable_snapshots_and_close_artifact() -> 
         repository.append_turn("t-api", HumanTurn(turn_id=2, participant_id="p1", text="不应再写入"))
 
 
+def test_rest_nudge_shares_evidence_and_audit_contract_with_websocket() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "rest-nudge",
+        "core_question": "如何让第一句话被接住？",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn(
+        "rest-nudge", HumanTurn(turn_id=1, participant_id="p1", text="我有一个初步感受，但还没想清楚。")
+    )
+
+    response = client.post("/tables/rest-nudge/nudge?participant_id=p1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["gate"]["should_speak"] is True
+    assert payload["gate"]["evidence_turns"] == [1]
+    assert payload["route"] == {
+        "action": "PROBE",
+        "target_participant_id": None,
+        "evidence_turns": [1],
+        "confidence": 0.72,
+    }
+    assert payload["action"]["action"] == "PROBE"
+    assert payload["action"]["state_version"] == 2
+    assert payload["state"]["version"] == 2
+    audit = repository.interventions("rest-nudge")[0]
+    assert audit.state_version == 2
+    assert audit.reasons_to_speak[0].evidence_turns == [1]
+    assert audit.reasons_to_speak[0].text == "首条表达暂未获得自然回应，主动递一句轻问"
+
+
+def test_rest_nudge_rejects_missing_evidence_and_respects_cooldown() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "rest-nudge-gate",
+        "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    missing = client.post("/tables/rest-nudge-gate/nudge?participant_id=p1")
+    assert missing.status_code == 409
+    assert missing.json() == {
+        "detail": "a cold-start nudge requires a committed human turn",
+    }
+
+    repository.append_turn(
+        "rest-nudge-gate", HumanTurn(turn_id=1, participant_id="p1", text="我亲历过一次试点。")
+    )
+    assert client.post("/tables/rest-nudge-gate/nudge?participant_id=p1").status_code == 200
+    repository.append_turn(
+        "rest-nudge-gate", HumanTurn(turn_id=2, participant_id="p2", text="我也补充一条现场经验。")
+    )
+    cooldown = client.post("/tables/rest-nudge-gate/nudge?participant_id=p1")
+    assert cooldown.status_code == 409
+    assert cooldown.json() == {
+        "detail": "two human turns are required between Agent interventions",
+    }
+
+
 def test_close_artifacts_can_be_retrieved_after_close() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={"table_id": "artifact-api", "core_question": "如何开始？"})

@@ -7,8 +7,8 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, AgentActionEvent, GateDecision, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
-from app.domain.schemas import EvidenceStatement, TokenUsage
+from app.domain import Action, AgentActionEvent, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
+from app.domain.schemas import EvidenceStatement
 from app.orchestrator import (
     build_personal_card,
     build_shared_baseline,
@@ -21,6 +21,8 @@ from app.orchestrator import (
 )
 from app.providers import LLMProvider
 
+from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
+from .intervention import build_intervention_record
 from .privacy import project_state_for_viewer
 from .repository import InMemoryTableRepository
 from .identity import IdentityResolver, websocket_identity_error
@@ -85,30 +87,6 @@ def _state_event(state: TableState) -> dict:
         "close_readiness": state.close_readiness.value,
         "state": state.model_dump(mode="json"),
     }
-
-
-def _build_intervention_record(
-    table_id: str,
-    state: TableState,
-    route,
-    action: AgentActionEvent,
-    model: str = "deterministic-demo",
-) -> InterventionRecord:
-    """Create an audit entry from the committed, validated Host event."""
-    evidence = list(action.evidence_turns or route.evidence_turns)
-    reasons = list(state.intervention.reasons_to_speak)
-    if not reasons:
-        reasons = [EvidenceStatement(text="主持动作有现场证据支持", evidence_turns=evidence)]
-    return InterventionRecord(
-        **action.model_dump(),
-        intervention_id=f"{table_id}:intervention:{state.version}",
-        table_id=table_id,
-        reasons_to_speak=reasons,
-        reasons_to_stay_silent=list(state.intervention.reasons_to_stay_silent),
-        latency_ms=0,
-        model=model,
-        token_usage=TokenUsage(input_tokens=0, output_tokens=0),
-    )
 
 
 def _reflect_latest_intervention(repository, table_id: str, state: TableState) -> InterventionRecord | None:
@@ -391,7 +369,7 @@ def register_websocket_routes(
                                 getattr(provider, "model", None)
                                 or (type(provider).__name__ if provider is not None else "deterministic-demo")
                             )
-                            record = _build_intervention_record(
+                            record = build_intervention_record(
                                 table_id, final_state, route, action, model=model_name
                             )
                             state = repository.append_intervention_bundle(
@@ -429,70 +407,26 @@ def register_websocket_routes(
                             })
                     elif payload["type"] == "request_nudge":
                         _RequestNudge.model_validate(payload)
-                        state = repository.get(table_id)
-                        if participant_id not in state.participants:
-                            raise ValueError(f"unknown participant: {participant_id}")
-                        if state.conversation.closed:
-                            await _send_error(websocket, "table_closed", "table is already closed")
-                            continue
-                        if state.conversation.soft_expired:
-                            await _send_error(websocket, "table_soft_expired", "table is soft-expired")
-                            continue
-                        if state.conversation.safety_level is SafetyLevel.CRITICAL:
-                            await _send_error(websocket, "table_paused", "table is paused for safety review")
-                            continue
-                        turns = repository.turns(table_id)
-                        if not turns:
-                            await _send_error(
-                                websocket,
-                                "nudge_unavailable",
-                                "a cold-start nudge requires a committed human turn",
+                        try:
+                            result: NudgeResult = await run_nudge(
+                                repository, table_id, participant_id, provider
                             )
-                            continue
-                        if (
-                            state.intervention.last_action is not Action.SILENCE
-                            and state.intervention.human_turns_since_last_intervention < 2
-                        ):
-                            await _send_error(
-                                websocket,
-                                "intervention_cooldown",
-                                "two human turns are required between Agent interventions",
+                        except PermissionError as error:
+                            raise ValueError(str(error)) from error
+                        except NudgeUnavailable as error:
+                            code = (
+                                "table_closed" if str(error) == "table is already closed"
+                                else "table_soft_expired" if str(error) == "table is soft-expired"
+                                else "table_paused" if str(error) == "table is paused for safety review"
+                                else "nudge_unavailable"
                             )
+                            await _send_error(websocket, code, str(error))
                             continue
-                        evidence_turn = turns[-1].turn_id
-                        gate = GateDecision(
-                            should_speak=True,
-                            evidence_turns=[evidence_turn],
-                            reasons_to_speak=["首条表达暂未获得自然回应，主动递一句轻问"],
-                            reasons_to_stay_silent=[],
-                            confidence=.72,
-                        )
-                        route = RouteDecision(
-                            action=Action.PROBE,
-                            evidence_turns=[evidence_turn],
-                            confidence=.72,
-                        )
-                        action = await generate_host_event_with_provider(
-                            state, route, None, provider
-                        )
-                        agent_turn_id = f"{table_id}:agent:{state.version + 1}"
-                        final_state = record_intervention(state, route, agent_turn_id)
-                        final_state.intervention.reasons_to_speak = [
-                            EvidenceStatement(
-                                text="首条表达暂未获得自然回应，主动递一句轻问",
-                                evidence_turns=[evidence_turn],
-                            )
-                        ]
-                        action = action.model_copy(update={"state_version": final_state.version})
-                        model_name = str(
-                            getattr(provider, "model", None)
-                            or (type(provider).__name__ if provider is not None else "deterministic-demo")
-                        )
-                        record = _build_intervention_record(
-                            table_id, final_state, route, action, model=model_name
-                        )
-                        state = repository.append_intervention_bundle(
-                            table_id, final_state, record
+                        except NudgeCooldown as error:
+                            await _send_error(websocket, "intervention_cooldown", str(error))
+                            continue
+                        gate, route, action, state = (
+                            result.gate, result.route, result.action, result.state
                         )
                         await broadcast(table_id, {
                             "type": "agent_action",

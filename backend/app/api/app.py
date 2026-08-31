@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -19,6 +19,7 @@ from app.domain.schemas import EvidenceStatement
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
+from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
@@ -75,6 +76,15 @@ class SyncUpgradeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: SyncUpgradeDecision
+    state: TableState
+
+
+class NudgeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gate: GateDecision
+    route: RouteDecision
+    action: AgentActionEvent
     state: TableState
 
 
@@ -721,6 +731,41 @@ def create_app(
         if participant_id is not None:
             require_request_identity(identity_resolver, request, participant_id)
         return projected(table_or_404(table_id), participant_id)
+
+    @api.post("/tables/{table_id}/nudge", response_model=NudgeResponse)
+    async def request_table_nudge(
+        table_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> NudgeResponse:
+        """Run the same evidence-backed cold-start nudge as WebSocket clients."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        try:
+            result: NudgeResult = await run_nudge(repo, table_id, participant_id, provider)
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except NudgeCooldown as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except NudgeUnavailable as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        await broadcast_table_event(table_id, {
+            "type": "agent_action",
+            **result.action.model_dump(mode="json"),
+            "gate": result.gate.model_dump(mode="json"),
+            "route": result.route.model_dump(mode="json"),
+        })
+        await broadcast_table_state(table_id, result.state)
+        return NudgeResponse(
+            gate=result.gate,
+            route=result.route,
+            action=result.action,
+            state=projected(result.state, participant_id),
+        )
 
     @api.post("/tables/{table_id}/participants", response_model=TableState)
     async def add_participant(
