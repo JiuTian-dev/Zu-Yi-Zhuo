@@ -65,6 +65,33 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
     assert [state.version for state in repository.replay("table-ws")] == [0, 1, 2, 3, 4]
 
 
+def test_public_table_events_are_broadcast_to_other_connections() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as sender:
+        with client.websocket_connect("/ws/tables/table-ws?participant_id=p2") as observer:
+            sender.send_json({
+                "type": "human_message", "message_id": "broadcast-1", "participant_id": "p1",
+                "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
+            })
+            sender_message = sender.receive_json()
+            observer_message = observer.receive_json()
+            sender_action = sender.receive_json()
+            observer_action = observer.receive_json()
+            sender_state = sender.receive_json()
+            observer_state = observer.receive_json()
+
+    assert sender_message == observer_message
+    assert sender_action == observer_action
+    assert sender_state == observer_state
+    assert observer_message["type"] == "message_committed"
+    assert observer_message["message"]["participant_id"] == "p1"
+    assert observer_action["type"] == "agent_action"
+    assert observer_state["type"] == "table_state_changed"
+
+
 def test_debug_join_unknown_event_and_silence_are_structured() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

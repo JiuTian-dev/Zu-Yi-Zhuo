@@ -1,4 +1,4 @@
-"""Minimal structured WebSocket stream for a single conversation table."""
+"""Structured WebSocket stream for a conversation table."""
 
 from typing import Literal
 
@@ -17,6 +17,7 @@ from app.orchestrator import (
 )
 
 from .repository import InMemoryTableRepository
+
 
 class _ClientEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -68,6 +69,25 @@ async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
 def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
 
+    connections: dict[str, set[WebSocket]] = {}
+
+    async def broadcast(table_id: str, payload: dict) -> None:
+        """Fan out public table events and discard peers that already closed."""
+        peers = tuple(connections.get(table_id, ()))
+        stale: list[WebSocket] = []
+        for peer in peers:
+            try:
+                await peer.send_json(payload)
+            except (OSError, RuntimeError, WebSocketDisconnect):
+                stale.append(peer)
+        if stale:
+            current = connections.get(table_id)
+            if current is not None:
+                for peer in stale:
+                    current.discard(peer)
+                if not current:
+                    connections.pop(table_id, None)
+
     @api.websocket("/ws/tables/{table_id}")
     async def table_events(websocket: WebSocket, table_id: str, participant_id: str = "") -> None:
         await websocket.accept()
@@ -82,49 +102,48 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
             await websocket.close(code=1008)
             return
 
-        while True:
-            try:
-                payload = await websocket.receive_json()
-            except WebSocketDisconnect:
-                return
-            except (TypeError, ValueError):
-                await _send_error(websocket, "invalid_event", "event must be a JSON object")
-                continue
+        connections.setdefault(table_id, set()).add(websocket)
+        try:
+            while True:
+                try:
+                    payload = await websocket.receive_json()
+                except WebSocketDisconnect:
+                    return
+                except (TypeError, ValueError):
+                    await _send_error(websocket, "invalid_event", "event must be a JSON object")
+                    continue
 
-            if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
-                await _send_error(websocket, "invalid_event", "event must include a string type")
-                continue
+                if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
+                    await _send_error(websocket, "invalid_event", "event must include a string type")
+                    continue
 
-            try:
-                if payload["type"] == "human_message":
-                    event = _HumanMessage.model_validate(payload)
-                    if event.participant_id != participant_id:
-                        raise ValueError("participant_id must match the WebSocket query")
-                    if repository.get(table_id).conversation.safety_level is SafetyLevel.CRITICAL:
-                        await _send_error(websocket, "table_paused", "table is paused for safety review")
-                        continue
-                    turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
-                    safety = evaluate_safety(event.text, turn_id)
-                    if safety.blocked:
-                        state = repository.append_safety_state(
-                            table_id, enforce_safety(repository.get(table_id), safety)
-                        )
-                        await websocket.send_json({
-                            "type": "safety_enforced",
-                            "decision": safety.model_dump(mode="json"),
-                            "state": state.model_dump(mode="json"),
-                        })
-                        continue
-                    turn = HumanTurn(
-                        turn_id=turn_id,
-                        participant_id=participant_id,
-                        text=event.text,
-                    )
-                    state = repository.append_turn(table_id, turn)
-                    action = None
-                    gate, route = decide_intervention(state)
-                    if gate.should_speak:
-                        if route.action is not Action.SILENCE:
+                try:
+                    if payload["type"] == "human_message":
+                        event = _HumanMessage.model_validate(payload)
+                        if event.participant_id != participant_id:
+                            raise ValueError("participant_id must match the WebSocket query")
+                        if repository.get(table_id).conversation.safety_level is SafetyLevel.CRITICAL:
+                            await _send_error(websocket, "table_paused", "table is paused for safety review")
+                            continue
+                        turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
+                        safety = evaluate_safety(event.text, turn_id)
+                        if safety.blocked:
+                            state = repository.append_safety_state(
+                                table_id, enforce_safety(repository.get(table_id), safety)
+                            )
+                            await broadcast(table_id, {
+                                "type": "safety_enforced",
+                                "decision": safety.model_dump(mode="json"),
+                                "state": state.model_dump(mode="json"),
+                            })
+                            continue
+
+                        turn = HumanTurn(turn_id=turn_id, participant_id=participant_id, text=event.text)
+                        state = repository.append_turn(table_id, turn)
+                        action = None
+                        grounding_card = None
+                        gate, route = decide_intervention(state)
+                        if gate.should_speak and route.action is not Action.SILENCE:
                             grounding_card = (
                                 repository.take_trusted_grounding_card(table_id)
                                 if route.action is Action.GROUND else None
@@ -134,8 +153,8 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             final_state = record_intervention(state, route, agent_turn_id)
                             state = repository.append_intervention_state(table_id, final_state)
                             action = action.model_copy(update={"state_version": state.version})
-                    await websocket.send_json(
-                        {
+
+                        await broadcast(table_id, {
                             "type": "message_committed",
                             "message": {
                                 "message_id": event.message_id,
@@ -143,71 +162,75 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                                 "text": event.text,
                                 "client_ts": event.client_ts,
                             },
-                        }
-                    )
-                    if action is not None:
-                        await websocket.send_json(
-                            {
+                        })
+                        if action is not None:
+                            await broadcast(table_id, {
                                 "type": "agent_action",
                                 **action.model_dump(mode="json"),
                                 "gate": gate.model_dump(mode="json"),
                                 "route": route.model_dump(mode="json"),
-                            }
-                        )
-                    if action is not None and action.action is Action.GROUND and grounding_card is not None:
-                        await websocket.send_json({
-                            "type": "grounding_card",
+                            })
+                        if action is not None and action.action is Action.GROUND and grounding_card is not None:
+                            await broadcast(table_id, {
+                                "type": "grounding_card",
+                                "table_id": table_id,
+                                "state_version": state.version,
+                                **grounding_card.model_dump(mode="json"),
+                            })
+                        await broadcast(table_id, _state_event(state))
+                    elif payload["type"] == "participant_joined":
+                        event = _ParticipantJoined.model_validate(payload)
+                        if event.participant_id != participant_id:
+                            raise ValueError("participant_id must match the WebSocket query")
+                        state = repository.get(table_id)
+                        if event.participant_id not in state.participants:
+                            raise ValueError(f"unknown participant: {event.participant_id}")
+                        await broadcast(table_id, _state_event(state))
+                    elif payload["type"] == "participant_left":
+                        event = _ParticipantLeft.model_validate(payload)
+                        if event.participant_id != participant_id:
+                            raise ValueError("participant_id must match the WebSocket query")
+                        state = repository.remove_participant(table_id, event.participant_id)
+                        await broadcast(table_id, _state_event(state))
+                    elif payload["type"] == "request_debug_state":
+                        _RequestDebugState.model_validate(payload)
+                        await websocket.send_json(_state_event(repository.get(table_id)))
+                    elif payload["type"] == "request_close":
+                        _RequestClose.model_validate(payload)
+                        state = repository.get(table_id)
+                        if participant_id not in state.participants:
+                            raise ValueError(f"unknown participant: {participant_id}")
+                        await broadcast(table_id, {
+                            "type": "close_started",
                             "table_id": table_id,
                             "state_version": state.version,
-                            **grounding_card.model_dump(mode="json"),
+                            "reason": "participant_requested_close",
                         })
-                    await websocket.send_json(_state_event(state))
-                elif payload["type"] == "participant_joined":
-                    event = _ParticipantJoined.model_validate(payload)
-                    if event.participant_id != participant_id:
-                        raise ValueError("participant_id must match the WebSocket query")
-                    state = repository.get(table_id)
-                    if event.participant_id not in state.participants:
-                        raise ValueError(f"unknown participant: {event.participant_id}")
-                    await websocket.send_json(_state_event(state))
-                elif payload["type"] == "participant_left":
-                    event = _ParticipantLeft.model_validate(payload)
-                    if event.participant_id != participant_id:
-                        raise ValueError("participant_id must match the WebSocket query")
-                    await websocket.send_json(_state_event(repository.remove_participant(table_id, event.participant_id)))
-                elif payload["type"] == "request_debug_state":
-                    _RequestDebugState.model_validate(payload)
-                    await websocket.send_json(_state_event(repository.get(table_id)))
-                elif payload["type"] == "request_close":
-                    _RequestClose.model_validate(payload)
-                    state = repository.get(table_id)
-                    if participant_id not in state.participants:
-                        raise ValueError(f"unknown participant: {participant_id}")
-                    await websocket.send_json({
-                        "type": "close_started",
-                        "table_id": table_id,
-                        "state_version": state.version,
-                        "reason": "participant_requested_close",
-                    })
-                    try:
-                        baseline = build_shared_baseline(state, turns=repository.turns(table_id))
-                        personal_card = build_personal_card(state, participant_id)
-                    except ValueError as error:
-                        await _send_error(websocket, "close_artifact_unavailable", str(error))
-                        continue
-                    await websocket.send_json({
-                        "type": "close_artifact_ready",
-                        "table_id": table_id,
-                        "state_version": state.version,
-                        "shared_baseline": baseline.model_dump(mode="json"),
-                        "personal_card": personal_card.model_dump(mode="json"),
-                    })
-                else:
-                    await _send_error(websocket, "unknown_event", f"unsupported event type: {payload['type']}")
-            except ValidationError:
-                await _send_error(websocket, "invalid_payload", "event payload does not match its contract")
-            except (KeyError, ValueError) as error:
-                await _send_error(websocket, "invalid_event", str(error))
+                        try:
+                            baseline = build_shared_baseline(state, turns=repository.turns(table_id))
+                            personal_card = build_personal_card(state, participant_id)
+                        except ValueError as error:
+                            await _send_error(websocket, "close_artifact_unavailable", str(error))
+                            continue
+                        await websocket.send_json({
+                            "type": "close_artifact_ready",
+                            "table_id": table_id,
+                            "state_version": state.version,
+                            "shared_baseline": baseline.model_dump(mode="json"),
+                            "personal_card": personal_card.model_dump(mode="json"),
+                        })
+                    else:
+                        await _send_error(websocket, "unknown_event", f"unsupported event type: {payload['type']}")
+                except ValidationError:
+                    await _send_error(websocket, "invalid_payload", "event payload does not match its contract")
+                except (KeyError, ValueError) as error:
+                    await _send_error(websocket, "invalid_event", str(error))
+        finally:
+            peers = connections.get(table_id)
+            if peers is not None:
+                peers.discard(websocket)
+                if not peers:
+                    connections.pop(table_id, None)
 
 
 __all__ = ("register_websocket_routes",)
