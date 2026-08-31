@@ -217,7 +217,7 @@ master
 | D28 backend handoff guide | complete | runtime/install/configuration, WebSocket and privacy boundaries, optional provider usage, and verified commands documented in `backend/README.md` | documentation review + 174-test baseline | `0336a0d` |
 | D29 SILENCE audit invariant | complete | all repository audit-write paths reject `SILENCE`, preserving the rule that silence produces no intervention record | 174 tests + compileall + diff check | `e00c379` |
 | D30 schema audit invariant | complete | `InterventionRecord` itself rejects `SILENCE`, so JSON reload and direct model construction cannot bypass the no-pseudo-audit rule | 175 tests + compileall + diff check | `34fe1ce` |
-| D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 177 tests + compileall + diff check | pending |
+| D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 178 tests + compileall + diff check | `eef2924` |
 
 ## 已知坑位（Running Gotchas）
 
