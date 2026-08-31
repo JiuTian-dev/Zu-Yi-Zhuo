@@ -227,3 +227,24 @@ def test_rest_sync_upgrade_broadcasts_mode_transition() -> None:
     assert mode_event["mode"] == "sync"
     assert changed["state"]["conversation"]["mode"] == "sync"
     assert changed["state"]["version"] == mode_event["state_version"]
+
+
+def test_late_joiner_can_replay_early_snapshots_without_privacy_leak() -> None:
+    client, _ = _client_with_table()
+    joined = client.post("/tables/table-rest/participants", json=_participant("p2", "研究"))
+    assert joined.status_code == 200
+
+    replay = client.get("/tables/table-rest/replay?participant_id=p2")
+    assert replay.status_code == 200
+    snapshots = replay.json()["snapshots"]
+
+    assert [item["version"] for item in snapshots] == [0, 1]
+    assert "p2" not in snapshots[0]["participants"]
+    assert snapshots[1]["participants"]["p2"]["declared_position"] == "先看现实约束"
+    assert snapshots[1]["participants"]["p1"]["declared_position"] is None
+
+
+def test_replay_rejects_an_unknown_current_viewer() -> None:
+    client, _ = _client_with_table()
+    response = client.get("/tables/table-rest/replay?participant_id=ghost")
+    assert response.status_code == 404
