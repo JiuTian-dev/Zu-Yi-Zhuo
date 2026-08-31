@@ -126,8 +126,8 @@ master
 |---|---|---|---|---|
 | Design confirmation | complete | DOCX execution SPEC v1.0 + repository execution plan | Source reviewed in full | `7c7f82c` |
 | D01 domain contracts | complete | Pydantic enums, Table State, intervention/artifact contracts | 17 schema tests + compileall + JSON Schema audit | `ee5f045` |
-| D02 Observer/CLI | in progress | 5 role seeds, scripted turns, state update and replay | 10 golden cases | pending |
-| D03 Gate/Router | pending | silence-first hard rules and 6 actions | 20-30 golden cases, >=75% | pending |
+| D02 Observer/CLI | complete | 5 role seeds, 3 scripted dialogues, immutable state update and JSON replay | 34 tests + compileall + 3 CLI replays | `d5a59e6` |
+| D03 Gate/Router | in progress | silence-first hard rules and 6 actions | 20-30 golden cases, >=75% | pending |
 | D04 Host | pending | action-specific natural Chinese host text | naturalness review | pending |
 | D05 Reflection/Close | pending | effect log, Q0→Q1, shared/personal cards | flagship replay | pending |
 | D06 API/WS | pending | session APIs and structured realtime events | frontend integration tests | pending |
