@@ -196,6 +196,7 @@ master
 | D15 matching REST preview | complete | `POST /matches/preview` exposes selected public seats and reasons without private profile fields | 161 tests + compileall + API contract check | `ad0de75` |
 | D16 matching confirmation | complete | `POST /matches/confirm` recomputes and commits the selected seats into a new table while returning the public match plan and redacted initial state | 162 tests + compileall + API contract check | `4d4e49a` |
 | D17 close state migration | complete | evidence-backed close marks table closed and rejects later human messages; repeated close is idempotent | 162 tests + compileall + close regression | `f5a09de` |
+| D18 intervention audit log | complete | non-SILENCE Host actions are persisted with evidence/confidence/metadata; JSON restart recovery and `GET /tables/{id}/interventions` query are covered; SILENCE creates no record | 163 tests + compileall + audit persistence regression | `5b942c7` |
 
 ## 已知坑位（Running Gotchas）
 
