@@ -48,3 +48,21 @@ def test_json_repository_defaults_agent_for_legacy_snapshots(tmp_path) -> None:
 
     restored = JsonTableRepository(path)
     assert restored.get("legacy-agent").agent.agent_id == "roundtable-agent"
+
+
+def test_json_repository_persists_close_and_normalizes_legacy_closed_agent(tmp_path) -> None:
+    path = tmp_path / "closed.json"
+    repository = JsonTableRepository(path)
+    repository.create("persist-close", "Q", [_seed("p1")])
+    closed = repository.close_table("persist-close")
+    assert closed.agent.status == "closed"
+    restored = JsonTableRepository(path)
+    assert restored.get("persist-close").conversation.closed is True
+    assert restored.get("persist-close").agent.status == "closed"
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    for snapshot in payload["tables"]["persist-close"]["states"]:
+        snapshot.pop("agent", None)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    legacy = JsonTableRepository(path)
+    assert legacy.get("persist-close").agent.status == "closed"
