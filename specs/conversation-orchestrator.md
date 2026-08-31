@@ -282,6 +282,13 @@
 - **替代方案**: 自动按点赞/排序升级、把评论直接伪装成匿名真人 turn，或只在前端复制文本而不进入服务端证据链。
 - **代价**: V1 只提供成员触发的单条文本升级，不做自动排序、投票或批量推广；生产环境应把 `participant_id` 替换为真实会话身份，并可由 Agent/主持策略调用同一显式接口。
 
+### ADR-38: 圆桌 Agent 是独立的公开席位，不计入真人席位上限
+
+- **决策**: `TableState` 增加稳定的 `AgentPresence`（默认 id 为 `roundtable-agent`、展示名“圆桌 Agent”、角色“对话搭档”），并标记 `active`、`paused` 或 `closed` 状态。它是每张桌固定存在的第六个公开角色，不进入 `participants`、邀请、匹配、no-match 或隐私投影；真人席位仍最多 5 人，4 人即可开桌。安全暂停、软过期和收桌分别把 Agent 标记为 `paused` 或 `closed`，正常主持写回保持 `active`。
+- **理由**: 产品明确区分“5 位真人 + 1 位圆桌 Agent”；把 Agent 只藏在事件名里会让重连、旁听和前端桌面无法稳定渲染角色，也容易把 Agent 误算成真人席位。独立公开元数据能补齐身份而不污染真人证据链。
+- **替代方案**: 把 Agent 伪装成 `participants` 中的第六个成员、只依赖 WebSocket `agent_action` 事件，或让前端硬编码 Agent 身份。
+- **代价**: V1 只记录单一固定 Agent 身份和生命周期状态，不支持多 Agent、Agent 配置或跨桌人格；生产环境可在此结构上扩展 provider/model 展示元数据。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -364,7 +371,7 @@ DisagreementType = fact_conflict | causal_disagreement | layer_mismatch |
 TableState(table_id, version, core_question, current_subquestion, phase,
            momentum, close_readiness, insights<=8, consensus<=5,
            disagreements, open_loops<=3, participants, origin_table_id?, conversation,
-           intervention)
+           intervention, agent)
 
 ConversationState(..., soft_expired, soft_expiry_reason?)
 
@@ -374,6 +381,7 @@ AgentActionEvent(action, target_participant_id?, text?, visual_hint,
 HumanTurn(..., message_id?, source_comment_id?)
 CommentPromotion(promotion_id, table_id, comment_id, promoter_id,
                  turn_id, state_version, message_id)
+AgentPresence(agent_id, display_name, role, status=active|paused|closed)
 ```
 
 ### LLM provider
@@ -426,7 +434,8 @@ master
                                                                                                                                                 ←── D56 safety report ledger and privacy boundary
                                                                                                                                                        ←── D57 authorized personal context source boundary
                                                                                                                                                                ←── D58 personal context consent and scope gate
-                                                                                                                                                                        ←── D59 explicit peripheral comment promotion with provenance
+                                                                                                                                                                       ←── D59 explicit peripheral comment promotion with provenance
+                                                                                                                                                                              ←── D60 explicit AgentPresence lifecycle contract
 ```
 
 ## Progress Ledger
@@ -496,6 +505,7 @@ master
 | D57 authorized personal context source boundary | complete | server-side OAuth/CLI/MCP adapter seam with viewer-only ephemeral personal preview | 271 tests + compileall + diff check | `9d33685` |
 | D58 personal context consent and scope gate | complete | self-scoped persistent scope consent, revoke path, and preview enforcement | 273 tests + compileall + diff check | `4e5cc42` |
 | D59 explicit peripheral comment promotion | complete | member-triggered safe comment-to-core turn with provenance, privacy-aware fanout, and idempotent JSON persistence | 278 tests + compileall + diff check | `931783d` |
+| D60 explicit AgentPresence lifecycle contract | in progress | stable public Agent identity outside human participants with safety/expiry/close status | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
