@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -200,7 +200,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["DELETE", "GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type", "Accept"],
     )
     register_websocket_routes(api, repo, provider)
@@ -251,6 +251,55 @@ def create_app(
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.relationship_memories(participant_id)
+
+    @api.post(
+        "/participants/{participant_id}/no-match/{blocked_participant_id}",
+        response_model=NoMatchPreference,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def set_no_match_preference(
+        participant_id: str,
+        blocked_participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> NoMatchPreference:
+        """Let a participant opt out of future matching with one person."""
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            return repo.set_no_match(participant_id, blocked_participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.delete(
+        "/participants/{participant_id}/no-match/{blocked_participant_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def remove_no_match_preference(
+        participant_id: str,
+        blocked_participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> None:
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            repo.remove_no_match(participant_id, blocked_participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.get(
+        "/participants/{participant_id}/no-match",
+        response_model=list[NoMatchPreference],
+    )
+    def get_no_match_preferences(
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> list[NoMatchPreference]:
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            return repo.no_match_preferences(participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @api.post("/opportunities/preview", response_model=OpportunityPreview)
     def preview_opportunity(payload: OpportunityRequest) -> OpportunityPreview:
@@ -394,6 +443,7 @@ def create_app(
             candidates = [
                 item for item in candidates
                 if item.participant_id not in existing_invited
+                and not repo.is_no_match(participant_id, item.participant_id)
             ]
             recommendations = recommend_candidates(state, candidates, payload.limit)
         except CandidateSourceError as error:

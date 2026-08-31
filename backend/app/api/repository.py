@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, ParticipantSeed, PeripheralComment, Phase, RelationshipMemory, SafetyLevel, TableState, ValueFeedback
+from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, Phase, RelationshipMemory, SafetyLevel, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -40,6 +40,7 @@ class InMemoryTableRepository:
         self._follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         self._value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         self._comments: dict[str, list[PeripheralComment]] = {}
+        self._no_match: dict[str, set[str]] = {}
 
     @_synchronized
     def create(
@@ -118,6 +119,8 @@ class InMemoryTableRepository:
             raise ValueError("table is soft-expired")
         if inviter_id not in state.participants:
             raise ValueError("inviter must be a table participant")
+        if self.is_no_match(inviter_id, candidate.participant_id):
+            raise ValueError("participant has disabled matching with this candidate")
         if candidate.participant_id in state.participants:
             raise ValueError("candidate is already a table participant")
         if candidate.roundtable_invite_preference is InvitationPreference.NONE:
@@ -138,6 +141,51 @@ class InMemoryTableRepository:
         )
         self._invitations[table_id].append(invitation)
         return invitation.model_copy(deep=True)
+
+    @_synchronized
+    def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
+        """Persist a self-scoped, symmetric no-match preference."""
+        preference = NoMatchPreference(
+            participant_id=participant_id,
+            blocked_participant_id=blocked_participant_id,
+        )
+        rows = {owner: set(targets) for owner, targets in self._no_match.items()}
+        rows.setdefault(participant_id, set()).add(blocked_participant_id)
+        self._no_match = rows
+        return preference
+
+    @_synchronized
+    def remove_no_match(self, participant_id: str, blocked_participant_id: str) -> bool:
+        """Remove one preference; repeated deletes are idempotent."""
+        if not participant_id.strip() or not blocked_participant_id.strip():
+            raise ValueError("participant ids must be non-empty")
+        targets = self._no_match.get(participant_id)
+        if not targets or blocked_participant_id not in targets:
+            return False
+        rows = {owner: set(values) for owner, values in self._no_match.items()}
+        rows[participant_id].remove(blocked_participant_id)
+        if not rows[participant_id]:
+            rows.pop(participant_id)
+        self._no_match = rows
+        return True
+
+    @_synchronized
+    def no_match_preferences(self, participant_id: str) -> list[NoMatchPreference]:
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        return [
+            NoMatchPreference(participant_id=participant_id, blocked_participant_id=target)
+            for target in sorted(self._no_match.get(participant_id, set()))
+        ]
+
+    @_synchronized
+    def is_no_match(self, participant_id: str, other_participant_id: str) -> bool:
+        if not participant_id.strip() or not other_participant_id.strip():
+            return False
+        return (
+            other_participant_id in self._no_match.get(participant_id, set())
+            or participant_id in self._no_match.get(other_participant_id, set())
+        )
 
     @_synchronized
     def invitations(self, table_id: str) -> list[Invitation]:
@@ -260,6 +308,11 @@ class InMemoryTableRepository:
             raise ValueError("table is closed")
         if state.conversation.soft_expired:
             raise ValueError("table is soft-expired")
+        if accept and any(
+            self.is_no_match(member_id, participant_id)
+            for member_id in state.participants
+        ):
+            raise ValueError("participant has disabled matching with this table")
         if accept and len(state.participants) >= MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated_invitation = invitation.model_copy(update={"status": requested})
@@ -547,11 +600,12 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._turns,
                 self._trusted_grounding_cards,
                 self._interventions,
-            self._invitations,
-            self._follow_up_outcomes,
-            self._value_feedback,
-            self._comments,
-        ) = self._load()
+                self._invitations,
+                self._follow_up_outcomes,
+                self._value_feedback,
+                self._comments,
+                self._no_match,
+            ) = self._load()
 
     @_synchronized
     def create(
@@ -578,6 +632,38 @@ class JsonTableRepository(InMemoryTableRepository):
             states, turns, self._trusted_grounding_cards, interventions, invitations, outcomes, feedback, comments
         )
         return state.model_copy(deep=True)
+
+    @_synchronized
+    def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
+        preference = NoMatchPreference(
+            participant_id=participant_id,
+            blocked_participant_id=blocked_participant_id,
+        )
+        rows = {owner: set(targets) for owner, targets in self._no_match.items()}
+        rows.setdefault(participant_id, set()).add(blocked_participant_id)
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards,
+            self._interventions, self._invitations, self._follow_up_outcomes,
+            self._value_feedback, self._comments, rows,
+        )
+        return preference
+
+    @_synchronized
+    def remove_no_match(self, participant_id: str, blocked_participant_id: str) -> bool:
+        if not participant_id.strip() or not blocked_participant_id.strip():
+            raise ValueError("participant ids must be non-empty")
+        if blocked_participant_id not in self._no_match.get(participant_id, set()):
+            return False
+        rows = {owner: set(targets) for owner, targets in self._no_match.items()}
+        rows[participant_id].remove(blocked_participant_id)
+        if not rows[participant_id]:
+            rows.pop(participant_id)
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards,
+            self._interventions, self._invitations, self._follow_up_outcomes,
+            self._value_feedback, self._comments, rows,
+        )
+        return True
 
     @_synchronized
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
@@ -656,6 +742,8 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("table is soft-expired")
         if inviter_id not in state.participants:
             raise ValueError("inviter must be a table participant")
+        if self.is_no_match(inviter_id, candidate.participant_id):
+            raise ValueError("participant has disabled matching with this candidate")
         if candidate.participant_id in state.participants:
             raise ValueError("candidate is already a table participant")
         if candidate.roundtable_invite_preference is InvitationPreference.NONE:
@@ -791,6 +879,11 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("table is closed")
         if state.conversation.soft_expired:
             raise ValueError("table is soft-expired")
+        if accept and any(
+            self.is_no_match(member_id, participant_id)
+            for member_id in state.participants
+        ):
+            raise ValueError("participant has disabled matching with this table")
         if accept and len(state.participants) >= MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated_invitation = invitation.model_copy(update={"status": requested})
@@ -932,6 +1025,7 @@ class JsonTableRepository(InMemoryTableRepository):
         follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] | None = None,
         value_feedback: dict[str, dict[str, ValueFeedback]] | None = None,
         comments: dict[str, list[PeripheralComment]] | None = None,
+        no_match: dict[str, set[str]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -939,6 +1033,7 @@ class JsonTableRepository(InMemoryTableRepository):
         outcome_rows = follow_up_outcomes if follow_up_outcomes is not None else self._follow_up_outcomes
         feedback_rows = value_feedback if value_feedback is not None else self._value_feedback
         comment_rows = comments if comments is not None else self._comments
+        no_match_rows = no_match if no_match is not None else self._no_match
         payload = {
             "tables": {
                 table_id: {
@@ -963,6 +1058,10 @@ class JsonTableRepository(InMemoryTableRepository):
             },
             "trusted_grounding_cards": {
                 table_id: card.model_dump(mode="json") for table_id, card in cards.items()
+            },
+            "no_match": {
+                participant_id: sorted(targets)
+                for participant_id, targets in no_match_rows.items()
             },
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1001,6 +1100,10 @@ class JsonTableRepository(InMemoryTableRepository):
         self._trusted_grounding_cards = {
             table_id: card.model_copy(deep=True) for table_id, card in cards.items()
         }
+        self._no_match = {
+            participant_id: set(targets)
+            for participant_id, targets in no_match_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -1011,12 +1114,14 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, dict[int, FollowUpOutcome]],
         dict[str, dict[str, ValueFeedback]],
         dict[str, list[PeripheralComment]],
+        dict[str, set[str]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError(f"invalid persistence file: {self.path}") from error
-        if (not isinstance(payload, dict) or set(payload) not in ({"tables"}, {"tables", "trusted_grounding_cards"})
+        if (not isinstance(payload, dict) or "tables" not in payload
+                or not set(payload).issubset({"tables", "trusted_grounding_cards", "no_match"})
                 or not isinstance(payload["tables"], dict)):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
         states: dict[str, list[TableState]] = {}
@@ -1120,4 +1225,23 @@ class JsonTableRepository(InMemoryTableRepository):
                 cards[table_id] = GroundingCard.model_validate(raw_card)
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid grounding card for table {table_id!r}") from error
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments
+        raw_no_match = payload.get("no_match", {})
+        if not isinstance(raw_no_match, dict):
+            raise ValueError("invalid persistence file: malformed no_match")
+        no_match: dict[str, set[str]] = {}
+        for participant_id, targets in raw_no_match.items():
+            if (
+                not isinstance(participant_id, str)
+                or not participant_id
+                or not isinstance(targets, list)
+                or len(set(targets)) != len(targets)
+                or any(
+                    not isinstance(target, str)
+                    or not target
+                    or target == participant_id
+                    for target in targets
+                )
+            ):
+                raise ValueError("invalid persistence file: invalid no_match participant")
+            no_match[participant_id] = set(targets)
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, no_match

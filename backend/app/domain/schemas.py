@@ -405,6 +405,19 @@ class RelationshipMemory(ContractModel):
     evidence_turns: TurnEvidence
 
 
+class NoMatchPreference(ContractModel):
+    """A participant's self-scoped preference not to be matched with another participant."""
+
+    participant_id: str = Field(min_length=1)
+    blocked_participant_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def participants_must_differ(self) -> "NoMatchPreference":
+        if self.participant_id == self.blocked_participant_id:
+            raise ValueError("participant cannot block themselves")
+        return self
+
+
 class FollowUpItem(ContractModel):
     item_type: Literal["suggestion", "commitment"]
     text: str = Field(min_length=1)

@@ -247,6 +247,13 @@
 - **替代方案**: 直接复制旧桌、只返回一段文本让前端自行建桌，或把新问题覆盖写回旧桌。
 - **代价**: V1 只支持从已收桌创建单层来源链接；未来若需要多代问题图谱，可在此字段之上扩展 lineage 查询而不改变桌内状态机。
 
+### ADR-33: 不再匹配偏好是全局、双向的写入边界
+
+- **决策**: 增加按参与者本人授权的全局 `no-match` 偏好。参与者只能为自己创建、删除或查询目标参与者的屏蔽关系；关系以 `(participant_id, blocked_participant_id)` 持久化，邀请创建与动态候选预览在任一方向命中时都拒绝/过滤。屏蔽不移除已有桌成员、不删除历史消息，也不自动撤销已经发出的邀请。
+- **理由**: 产品明确要求用户可以屏蔽某人并选择以后不再匹配；把它放在服务端全局账本可覆盖 REST、WebSocket 后续入口和重启恢复，同时避免把安全意愿依赖前端本地过滤。
+- **替代方案**: 只在当前桌临时隐藏、由前端维护黑名单，或屏蔽后立即改写历史桌成员。
+- **代价**: V1 只约束本服务的邀请和候选预览；外部候选 source 仍返回原始授权结果，由服务端在有 viewer 身份的入口过滤；未来接入统一用户身份后可把该账本映射为账号级偏好。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -281,6 +288,9 @@ GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 POST /tables/{id}/comments?author_id={author_id}
 GET  /tables/{id}/comments
+POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
+DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
+GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
 WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
@@ -302,6 +312,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 参与层级边界：`observer` 只读且不占席位；`commenter` 只能写独立公共评论，评论不触发主持决策、不进入核心 turn 或状态证据链。
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
+不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
 
 ### 数据模型 / 类型定义
 
@@ -368,6 +379,7 @@ master
                                                                                                                          ←── D52 read-only observer WebSocket
                                                                                                                               ←── D53 peripheral comment ledger
                                                                                                                                      ←── D54 evolved-question table recompose
+                                                                                                                                           ←── D55 global no-match preference boundary
 ```
 
 ## Progress Ledger
@@ -432,6 +444,7 @@ master
 | D52 read-only observer WebSocket | complete | observer-mode public projection with no seat, turn, invitation, consent, or close mutations | 249 tests + compileall + diff check | `918a5af` |
 | D53 peripheral comment ledger | complete | commenter-mode public comments with independent persistence, idempotency, and no core-turn mutation | 253 tests + compileall + diff check | `b484496` |
 | D54 evolved-question table recompose | complete | close-only next-table creation with persisted origin link and no automatic member copying | 256 tests + compileall + diff check | `ef544d1` |
+| D55 global no-match preference boundary | in progress | self-scoped persistent no-match ledger, symmetric invitation rejection and candidate-preview filtering | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
