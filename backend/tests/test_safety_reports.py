@@ -22,6 +22,10 @@ def _client(table_id: str = "report-table") -> tuple[TestClient, InMemoryTableRe
     return TestClient(create_app(repository)), repository
 
 
+def _moderator(request) -> str | None:
+    return request.headers.get("x-moderator-id")
+
+
 def _payload(description: str = "对方持续发送人身攻击") -> dict[str, str]:
     return {
         "report_id": "report-1",
@@ -84,6 +88,41 @@ def test_repository_keeps_full_reports_for_controlled_moderation_access() -> Non
     assert created is True
     assert repository.safety_reports("moderation") == [report]
     assert repository.safety_reports("moderation", "bob") == []
+
+
+def test_moderation_report_queue_requires_trusted_identity_and_returns_full_queue() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("moderation-api", "Q", [_seed("alice"), _seed("bob")])
+    report, _created = repository.record_safety_report(SafetyReport(
+        report_id="report-1",
+        table_id="moderation-api",
+        reporter_id="alice",
+        target_participant_id="bob",
+        category="privacy",
+        description="不应公开个人信息",
+        state_version=0,
+    ))
+    client = TestClient(create_app(repository, moderator_resolver=_moderator))
+
+    assert client.get("/tables/moderation-api/safety-reports/moderation").status_code == 401
+    queue = client.get(
+        "/tables/moderation-api/safety-reports/moderation",
+        headers={"X-Moderator-ID": "mod-1"},
+    )
+    assert queue.status_code == 200
+    assert queue.json() == [report.model_dump(mode="json")]
+    assert client.get(
+        "/tables/moderation-api/safety-reports?reporter_id=bob"
+    ).status_code == 200
+    assert client.get(
+        "/tables/moderation-api/safety-reports?reporter_id=bob"
+    ).json() == []
+
+
+def test_moderation_report_queue_is_unavailable_without_moderator_configuration() -> None:
+    client, _repository = _client("no-moderator")
+    response = client.get("/tables/no-moderator/safety-reports/moderation")
+    assert response.status_code == 503
 
 
 def test_json_repository_persists_reports_and_accepts_legacy_tables(tmp_path) -> None:
