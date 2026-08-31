@@ -807,7 +807,7 @@ master
 | D89 atomic actor close behavior commit | complete | Commit actor close state and private table_closed event together in memory/JSON repositories; REST/WS use the atomic actor path while legacy identity-less close remains compatible | 347 tests + compileall + diff check | `f59a6bc` |
 | D90 bounded external source consumption | complete | Consume at most the requested limit from candidate/content/personal source iterables before validation | 350 tests + compileall + diff check | `3a96bc5` |
 | D91 value feedback behavior event | complete | Atomically persist first value-feedback behavior with the private feedback upsert and reject client-forged server-generated event types | 351 tests + compileall + diff check | `5ec8e2e` |
-| D92 end-to-end demo journey smoke | in_progress | Black-box opportunity → match → WebSocket turn → close → follow-up/relationship/feedback journey with JSON restart recovery | pending | — |
+| D92 end-to-end demo journey smoke | complete | Black-box opportunity → match → WebSocket turn → close → follow-up/relationship/feedback journey with JSON restart recovery | 352 tests + compileall + diff check | `c7820a4` |
 
 ## 已知坑位（Running Gotchas）
 
