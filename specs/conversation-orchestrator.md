@@ -338,6 +338,13 @@
 - **替代方案**: 继续接受任意 `relationship_saved` JSON、在对话中自动生成关系，或把关系保存直接写入长期好友图。
 - **代价**: V1 只记录保存动作，不提供好友请求/取消保存或跨平台同步；正式社交能力接入时应在此事件旁新增授权关系服务。
 
+### ADR-46: 行为事件按类型校验桌上下文
+
+- **决策**: 仓储统一校验行为事件与桌上下文：`table_selected` 允许在入席前记录；`human_message` 与 `follow_up_outcome` 必须由当前桌成员写入，后者还要求桌已关闭；`relationship_saved` 必须由当前桌成员在收桌后指向另一名当前成员。JSON 重启加载复用同一校验，发现不兼容事件即拒绝恢复。
+- **理由**: self-scoped 只解决“谁能读写自己的账本”，不能保证事件描述的桌内事实成立；如果任意 viewer 可以伪造真人发言或跨桌关系，后续画像和推荐会被污染。类型化边界保留冷启动选桌的预入席需求，同时让其余行为都来自已验证的桌上下文。
+- **替代方案**: 只在 API 层做一次校验、允许所有事件作为客户端埋点，或把行为事件完全从持久化文件中排除。
+- **代价**: 旧 JSON 中不符合新上下文规则的行为账本需要人工清理或迁移；未来真实账号接入后仍需把成员身份绑定到会话认证。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -498,7 +505,8 @@ master
                                                                                                                                                                                                       ←── D64 follow-up behavior event wiring
                                                                                                                                                                                                            ←── D65 source full-lifecycle timeout
                                                                                                                                                                                                                  ←── D66 server-generated table selection event
-                                                                                                                                                                                                                        ←── D67 post-close relationship save event
+                                                                                                                                                                                                                       ←── D67 post-close relationship save event
+                                                                                                                                                                                                                              ←── D68 behavior event context validation
 ```
 
 ## Progress Ledger
@@ -576,6 +584,7 @@ master
 | D65 source full-lifecycle timeout | complete | candidate/content/personal command bridges enforce one timeout across process startup, stdin, drain, exit, and cleanup | 290 tests + compileall + diff check | `26abb0d` |
 | D66 server-generated table selection event | complete | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check | `0fb1bbc` |
 | D67 post-close relationship save event | complete | closed-table member-only relationship save endpoint emits a stable self-scoped `relationship_saved` event without persistent social-graph writes | 292 tests + compileall + diff check | `732ebde` |
+| D68 behavior event context validation | in progress | behavior events enforce type-specific table membership/lifecycle rules in memory, API, and JSON reload | 294 tests + compileall + diff check pending | — |
 
 ## 已知坑位（Running Gotchas）
 

@@ -46,6 +46,21 @@ def _follow_up_behavior_event(
     )
 
 
+def _validate_behavior_event_context(state: TableState, event: BehaviorEvent) -> None:
+    """Reject behavior signals that contradict the table lifecycle or membership."""
+    if event.event_type == "table_selected":
+        return
+    if event.participant_id not in state.participants:
+        raise ValueError("behavior participant must be a table participant")
+    if event.event_type == "follow_up_outcome" and not state.conversation.closed:
+        raise ValueError("follow_up_outcome requires a closed table")
+    if event.event_type == "relationship_saved":
+        if not state.conversation.closed:
+            raise ValueError("relationship_saved requires a closed table")
+        if event.related_participant_id not in state.participants:
+            raise ValueError("relationship target must be a table participant")
+
+
 def _synchronized(method: Callable[..., Any]) -> Callable[..., Any]:
     """Serialize one repository operation while allowing nested calls."""
 
@@ -428,6 +443,7 @@ class InMemoryTableRepository:
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
         """Persist one bounded product behavior signal with user-scoped idempotency."""
         state = self.get(event.table_id)
+        _validate_behavior_event_context(state, event)
         if event.state_version is not None and event.state_version > state.version:
             raise ValueError("behavior event cannot reference a future state version")
         existing = next(
@@ -1274,6 +1290,7 @@ class JsonTableRepository(InMemoryTableRepository):
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
         state = self.get(event.table_id)
+        _validate_behavior_event_context(state, event)
         if event.state_version is not None and event.state_version > state.version:
             raise ValueError("behavior event cannot reference a future state version")
         existing = next(
@@ -1832,6 +1849,11 @@ class JsonTableRepository(InMemoryTableRepository):
                 for item in events
             ):
                 raise ValueError("invalid persistence file: incompatible behavior event")
+            for item in events:
+                try:
+                    _validate_behavior_event_context(states[item.table_id][-1], item)
+                except ValueError as error:
+                    raise ValueError("invalid persistence file: incompatible behavior event context") from error
             event_ids = [item.event_id for item in events]
             if len(set(event_ids)) != len(event_ids):
                 raise ValueError("invalid persistence file: duplicate behavior event")

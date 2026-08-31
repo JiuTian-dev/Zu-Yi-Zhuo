@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
@@ -53,20 +54,50 @@ def test_behavior_events_are_self_scoped_bounded_and_idempotent() -> None:
         "/participants/viewer/behavior-events?viewer_id=other"
     ).status_code == 403
 
+    repository.close_table("behavior-table")
     relation = client.post(
-        "/participants/viewer/behavior-events?viewer_id=viewer",
+        "/participants/p1/behavior-events?viewer_id=p1",
         json={
             "event_id": "relation-1",
             "event_type": "relationship_saved",
             "table_id": "behavior-table",
-            "related_participant_id": "p1",
+            "related_participant_id": "p2",
         },
     )
     assert relation.status_code == 201
     assert [item["event_type"] for item in private.json()] == ["table_selected"]
     assert client.get(
-        "/participants/viewer/behavior-events?viewer_id=viewer"
+        "/participants/p1/behavior-events?viewer_id=p1"
     ).json()[-1]["event_type"] == "relationship_saved"
+
+
+def test_behavior_event_context_rejects_non_members_and_open_table_relationships() -> None:
+    repository = _repository("behavior-context")
+    client = TestClient(create_app(repository))
+
+    for event_type in ("human_message", "follow_up_outcome"):
+        response = client.post(
+            "/participants/outsider/behavior-events?viewer_id=outsider",
+            json={
+                "event_id": f"{event_type}-1",
+                "event_type": event_type,
+                "table_id": "behavior-context",
+                "state_version": 0,
+                "detail": "status:completed" if event_type == "follow_up_outcome" else None,
+            },
+        )
+        assert response.status_code == 409
+
+    relationship = client.post(
+        "/participants/p1/behavior-events?viewer_id=p1",
+        json={
+            "event_id": "relationship-open",
+            "event_type": "relationship_saved",
+            "table_id": "behavior-context",
+            "related_participant_id": "p2",
+        },
+    )
+    assert relationship.status_code == 409
 
 
 def test_server_generated_table_selection_is_open_scoped_and_idempotent() -> None:
@@ -255,3 +286,23 @@ def test_json_follow_up_outcome_and_behavior_event_commit_together(tmp_path) -> 
         "state_version": closed.version,
         "detail": "status:in_progress",
     }
+
+
+def test_json_rejects_behavior_event_with_incompatible_table_context(tmp_path) -> None:
+    path = tmp_path / "invalid-behavior-context.json"
+    repository = JsonTableRepository(path)
+    repository.create("context-json", "Q", [_seed("p1")])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["behavior_events"] = {
+        "outsider": [{
+            "event_id": "forged-human",
+            "participant_id": "outsider",
+            "event_type": "human_message",
+            "table_id": "context-json",
+            "state_version": 0,
+        }]
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="behavior event context"):
+        JsonTableRepository(path)
