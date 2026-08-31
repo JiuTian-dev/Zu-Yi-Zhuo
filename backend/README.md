@@ -103,7 +103,8 @@ python -m uvicorn app.main:app
 候选 source 默认未配置。需要接入已获授权的 CLI/MCP/OAuth wrapper 时，可设置
 `CANDIDATE_SOURCE_COMMAND` 为 JSON 字符串数组；后端会以无 shell 子进程方式调用它，stdin 输入
 `{"query":"...","limit":20}`，stdout 返回候选数组或 `{"candidates":[...]}`。每个候选必须符合
-`ParticipantSeed`，命令超时、非零退出、输出过大或字段不合法都会 fail-closed 为 502：
+`ParticipantSeed`，命令超时、非零退出、输出过大或字段不合法都会 fail-closed 为 502；注入式
+source 即使返回惰性迭代器，API 也最多消费请求的 `limit` 条：
 
 ```powershell
 $env:CANDIDATE_SOURCE_COMMAND = '["D:\\adapters\\zhihu-candidates.exe"]'
@@ -132,6 +133,8 @@ python -m uvicorn app.main:app
 ```
 
 个人 source 预览必须先有本人已授予且覆盖请求 scope 的 consent；撤回后立即返回 403。source 超时、退出失败、输出过大、JSON 不合法或 owner 不匹配时统一 fail-closed 为 502；未配置时返回 503。
+
+三类 source 入口（候选、公开内容、个人上下文）都会在服务端先限制结果消费数量，再进行逐条 schema 校验；不会先把适配器的完整返回值读入内存后再切片。
 
 动态补位预览会过滤现有参与者、已被邀请过的候选人以及明确选择 `none` 的候选人；返回的 `open_seats`、`role_gaps`
 和候选理由只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。

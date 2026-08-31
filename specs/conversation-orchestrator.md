@@ -485,6 +485,13 @@
 - **替代方案**: 继续在 API 层连续调用两个仓储方法、让 JSON 写入后异步补事件、或删除无身份 close 兼容；这些方案分别留下半提交窗口、难以证明事件最终到达、或破坏已有回放/脚本调用。
 - **代价**: 内存与 JSON 仓储需要维护一条带 actor 的平行 close 写路径；未来数据库实现应把状态行与行为事件放在同一事务。
 
+### ADR-67: 外部 source 结果在服务端有界消费
+
+- **决策**: 候选、公开内容和个人上下文 source 的 API 入口最多消费请求声明的 `limit` 条结果，再逐条做 schema 校验；不把完整适配器返回值先 materialize 后切片。`limit` 的既有正数和最大值校验、超时、非法输出与 fail-closed 响应保持不变。
+- **理由**: source 是部署方注入的外部边界，不能只在命令桥或类型声明中假设它遵守数量契约；有界消费避免过大的惰性迭代器或错误适配器在 schema 校验前耗尽内存，同时不改变有效结果的顺序。
+- **替代方案**: 继续对完整返回值做列表推导后切片、要求所有 adapter 自行截断、或超限直接拒绝；这些方案分别仍有资源风险、无法形成服务端边界、或会把合法前 `limit` 条结果误判为失败。
+- **代价**: source 适配器返回的第 `limit+1` 条及以后结果不会被读取；若未来需要分页，必须在 adapter 契约中增加显式 cursor，而不是放宽本入口上限。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -681,7 +688,8 @@ master
                                                                                                                                                                                                                                                                                                                               ←── D86 self-scoped invitation preference update
                                                                                                                                                                                                                                                                                                                                    ←── D87 WebSocket inbound event rate limit
                                                                                                                                                                                                                                                                                                                                          ←── D88 table_closed behavior event
-                                                                                                                                                                                                                                                                                                                                                   ←── D89 atomic actor close behavior commit
+                                                                                                                                                                                                                                                                                                                                        ←── D89 atomic actor close behavior commit
+                                                                                                                                                                                                                                                                                                                                              ←── D90 bounded external source consumption
 ```
 
 ## Progress Ledger
@@ -781,6 +789,7 @@ master
 | D87 WebSocket inbound event rate limit | complete | Add per-connection sliding-window event limit with structured retry response and runtime configuration | 345 tests + compileall + diff check | `ecd174d` |
 | D88 table_closed behavior event | complete | Record actor-scoped close behavior from REST/WS close paths with stable idempotent event and JSON recovery | 347 tests + compileall + diff check | `ff9d394` |
 | D89 atomic actor close behavior commit | complete | Commit actor close state and private table_closed event together in memory/JSON repositories; REST/WS use the atomic actor path while legacy identity-less close remains compatible | 347 tests + compileall + diff check | `f59a6bc` |
+| D90 bounded external source consumption | complete | Consume at most the requested limit from candidate/content/personal source iterables before validation | 350 tests + compileall + diff check | `3a96bc5` |
 
 ## 已知坑位（Running Gotchas）
 
