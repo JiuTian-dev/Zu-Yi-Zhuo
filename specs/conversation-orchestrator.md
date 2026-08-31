@@ -243,7 +243,7 @@ master
 | D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 178 tests + compileall + diff check | `eef2924` |
 | D32 invitation lifecycle | complete | persistent pending/accepted/declined invitations with candidate-scoped response and redacted preview | 181 tests + compileall + diff check | `fe05845` + `78ae2fb` |
 | D33 async-to-sync upgrade | complete | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | 184 tests + compileall + diff check | `5f9d3f7` + `fb82f8b` |
-| D34 public table discovery | in progress | list open tables with privacy-projected state and optional closed-table inclusion | pending | pending |
+| D34 public table discovery | complete | list open tables with privacy-projected state and optional closed-table inclusion | 185 tests + compileall + diff check | `bc7f9be` |
 
 ## 已知坑位（Running Gotchas）
 
