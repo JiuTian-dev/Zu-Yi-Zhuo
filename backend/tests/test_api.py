@@ -121,16 +121,41 @@ def test_profile_fields_are_hidden_until_explicit_consent() -> None:
     assert own_view["participants"]["p1"]["unused_relevant_experience"][0]["source_ref"] == "private:1"
     assert own_view["participants"]["p2"]["declared_position"] is None
 
-    consented = client.post("/tables/privacy/participants/p2/consent", json={"profile_shared": True})
+    consented = client.post(
+        "/tables/privacy/participants/p2/consent?viewer_id=p2",
+        json={"profile_shared": True},
+    )
     assert consented.status_code == 200
     assert consented.json()["participants"]["p2"]["declared_position"] == "另一份私有立场"
     public_view = client.get("/tables/privacy/state").json()
     assert public_view["participants"]["p2"]["declared_position"] == "另一份私有立场"
     assert public_view["participants"]["p2"]["unused_relevant_experience"][0]["source_ref"] == "private:2"
 
-    revoked = client.post("/tables/privacy/participants/p2/consent", json={"profile_shared": False})
+    revoked = client.post(
+        "/tables/privacy/participants/p2/consent?viewer_id=p2",
+        json={"profile_shared": False},
+    )
     assert revoked.status_code == 200
     assert client.get("/tables/privacy/state").json()["participants"]["p2"]["declared_position"] is None
+
+
+def test_rest_consent_is_self_scoped() -> None:
+    client, _ = client_and_repo()
+    response = client.post("/tables/privacy/participants/p2/consent?viewer_id=p1", json={"profile_shared": True})
+
+    assert response.status_code == 404  # the table is absent; no identity detail is disclosed
+
+    client.post("/tables", json={
+        "table_id": "privacy-self",
+        "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    response = client.post(
+        "/tables/privacy-self/participants/p2/consent?viewer_id=p1",
+        json={"profile_shared": True},
+    )
+    assert response.status_code == 403
+    assert client.get("/tables/privacy-self/state").json()["participants"]["p2"]["declared_position"] is None
 
 
 def test_match_preview_returns_public_seats_and_explainable_reasons() -> None:

@@ -126,9 +126,14 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
 
     @api.post("/tables/{table_id}/participants/{participant_id}/consent", response_model=TableState)
     def set_participant_consent(
-        table_id: str, participant_id: str, payload: ParticipantConsentRequest
+        table_id: str,
+        participant_id: str,
+        payload: ParticipantConsentRequest,
+        viewer_id: str = Query(..., min_length=1),
     ) -> TableState:
         table_or_404(table_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
             state = repo.set_profile_consent(table_id, participant_id, payload.profile_shared)
         except ValueError as error:
