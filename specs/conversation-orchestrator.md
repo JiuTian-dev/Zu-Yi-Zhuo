@@ -387,6 +387,13 @@
 - **替代方案**: 只在成功后广播、或把失败细节广播给全桌；前者造成在线 UI 无反馈，后者会泄露内部底稿错误并破坏统一错误边界。
 - **代价**: REST 收桌失败时客户端会看到一次没有后续 `table_closed` 的开始事件，必须以响应状态和最终 `table_state_changed` 判断结果。
 
+### ADR-53: 历史回放允许 viewer 在早期快照缺席
+
+- **决策**: `/tables/{table_id}/replay?participant_id=...` 先用当前桌状态校验 viewer 仍是合法参与者，再对每个历史快照直接执行隐私投影；历史快照中尚未入席的 viewer 不触发“未知参与者”错误，其他成员资料仍按当时快照的同意状态隐藏。
+- **理由**: 异步组桌允许先开桌、后补位；新成员重连时必须能恢复整段叙事，不能因为自己的 ID 在早期快照中不存在而拿不到回放。
+- **替代方案**: 对每个快照重复当前成员校验、只返回入席后的片段、或让前端自行拼接公共快照；这些方案分别造成误报、丢失上下文或复制隐私逻辑。
+- **代价**: 当前已离桌成员仍不能以当前成员身份读取回放；若未来需要离桌后的历史访问，应另设明确的历史授权策略。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -646,6 +653,7 @@ master
 | D73 production member boundary for privileged REST | complete | identity-resolver-backed member checks for close, direct seat addition, recomposition, and intervention audit reads while preserving development compatibility | 304 tests + compileall + diff check | `c705f5e` + `e27400c` |
 | D74 REST mutation realtime fanout parity | complete | REST seat/invitation/mode/consent/leave/expiry/close/comment writes emit versioned public events and projected state through the existing WebSocket broadcaster; idempotent no-op writes stay silent | 311 tests + compileall + diff check | `de21989` + `ed7da41` + `cbedbb4` |
 | D75 REST close lifecycle parity | complete | REST close emits `close_started` before artifact generation, then `table_closed` and projected state only after an evidence-backed atomic close; insufficient evidence leaves the state open | 312 tests + compileall + diff check | `27c9531` + `53aec0b` |
+| D76 replay projection for late joiners | in progress | Current member identity is validated once, then historical snapshots tolerate the viewer being absent before joining while retaining privacy projection | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
