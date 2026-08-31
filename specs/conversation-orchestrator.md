@@ -306,7 +306,7 @@ master
 | D39 reconnectable close artifacts | complete | evidence-backed close-artifacts REST recovery with participant-scoped personal card | 205 tests + compileall + diff check | `cffe3a8` |
 | D40 stale WebSocket membership guard | complete | re-check participant membership after handshake and before safety/turn handling, preventing a departed socket from writing snapshots | 206 tests + compileall + diff check | `f8b2d79` |
 | D41 bounded candidate-source calls | complete | injected candidate source calls have a positive timeout and fail closed with a generic 502 on timeout | 208 tests + compileall + diff check | `e95f4a5` |
-| D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | `9076fca` |
+| D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | 209 tests + compileall + diff check | `9076fca` |
 
 ## 已知坑位（Running Gotchas）
 
