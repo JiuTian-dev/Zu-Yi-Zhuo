@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain import HumanTurn, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
+from app.domain import HumanTurn, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
 from app.matching import build_match_plan
 from app.orchestrator import build_shared_baseline
 
@@ -134,6 +134,11 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @api.get("/tables/{table_id}/interventions", response_model=list[InterventionRecord])
+    def get_interventions(table_id: str) -> list[InterventionRecord]:
+        table_or_404(table_id)
+        return repo.interventions(table_id)
 
     @api.post("/tables/{table_id}/close", response_model=SharedBaseline)
     def close_table(table_id: str) -> SharedBaseline:

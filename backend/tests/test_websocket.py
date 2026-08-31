@@ -63,6 +63,11 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
     assert action["route"]["action"] == "PASS"
     assert repository.get("table-ws").intervention.last_action.value == "PASS"
     assert [state.version for state in repository.replay("table-ws")] == [0, 1, 2, 3, 4]
+    audit = client.get("/tables/table-ws/interventions")
+    assert audit.status_code == 200
+    assert len(audit.json()) == 1
+    assert audit.json()[0]["action"] == "PASS"
+    assert audit.json()[0]["state_version"] == 4
 
 
 def test_public_table_events_are_broadcast_to_other_connections() -> None:

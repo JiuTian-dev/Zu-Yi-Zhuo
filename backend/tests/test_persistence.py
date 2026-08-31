@@ -4,7 +4,8 @@ import pytest
 
 from app.api.repository import JsonTableRepository
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import GroundingCard, HumanTurn, SafetyLevel
+from app.domain import Action, GroundingCard, HumanTurn, InterventionRecord, SafetyLevel
+from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety
 
 
@@ -69,6 +70,31 @@ def test_json_repository_loads_legacy_snapshot_without_grounding_cards(tmp_path)
     restored = JsonTableRepository(path)
     assert restored.get("legacy").table_id == "legacy"
     assert restored.take_trusted_grounding_card("legacy") is None
+
+
+def test_json_repository_persists_intervention_audit_records(tmp_path) -> None:
+    path = tmp_path / "audit.json"
+    repository = JsonTableRepository(path)
+    repository.create("audit", "Q", flagship_participants)
+    repository.append_turn("audit", HumanTurn(turn_id=1, participant_id="architect", text="我亲历过试点。"))
+    record = InterventionRecord(
+        action=Action.PROBE,
+        target_participant_id="architect",
+        text="能补充一条现场证据吗？",
+        visual_hint={"kind": "probe"},
+        evidence_turns=[1],
+        state_version=1,
+        confidence=.8,
+        intervention_id="audit:intervention:1",
+        table_id="audit",
+        reasons_to_speak=[EvidenceStatement(text="有现场证据", evidence_turns=[1])],
+        latency_ms=3,
+        model="test",
+        token_usage=TokenUsage(input_tokens=2, output_tokens=4),
+    )
+    repository.append_intervention_record("audit", record)
+    assert repository.interventions("audit") == [record]
+    assert JsonTableRepository(path).interventions("audit") == [record]
 
 
 def test_flagship_replay_is_stable_across_ten_persisted_runs(tmp_path) -> None:

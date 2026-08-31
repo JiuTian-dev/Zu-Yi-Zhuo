@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 
-from app.domain import Action, GroundingCard, HumanTurn, Level, ParticipantSeed, Phase, TableState
+from app.domain import Action, GroundingCard, HumanTurn, InterventionRecord, Level, ParticipantSeed, Phase, TableState
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
@@ -17,6 +17,7 @@ class InMemoryTableRepository:
     def __init__(self) -> None:
         self._states: dict[str, list[TableState]] = {}
         self._turns: dict[str, list[HumanTurn]] = {}
+        self._interventions: dict[str, list[InterventionRecord]] = {}
         self._trusted_grounding_cards: dict[str, GroundingCard] = {}
 
     def create(
@@ -27,6 +28,7 @@ class InMemoryTableRepository:
         state = build_initial_state(table_id, core_question, participants)
         self._states[table_id] = [state]
         self._turns[table_id] = []
+        self._interventions[table_id] = []
         return state.model_copy(deep=True)
 
     def get(self, table_id: str) -> TableState:
@@ -112,6 +114,21 @@ class InMemoryTableRepository:
             raise ValueError("intervention state must be the next snapshot for its table")
         return self._append(table_id, state)
 
+    def append_intervention_record(self, table_id: str, record: InterventionRecord) -> None:
+        """Persist one explainable non-SILENCE action without changing table state."""
+        latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
+        if record.table_id != table_id or record.state_version != latest.version:
+            raise ValueError("intervention record must reference the current table state")
+        if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
+            raise ValueError(f"intervention already exists: {record.intervention_id}")
+        self._interventions[table_id].append(record.model_copy(deep=True))
+
+    def interventions(self, table_id: str) -> list[InterventionRecord]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._interventions[table_id]]
+
     def append_safety_state(self, table_id: str, state: TableState) -> TableState:
         """Commit a safety-only snapshot without recording the intercepted human turn."""
         latest = self.get(table_id)
@@ -159,7 +176,7 @@ class JsonTableRepository(InMemoryTableRepository):
         super().__init__()
         self.path = Path(path)
         if self.path.exists():
-            self._states, self._turns, self._trusted_grounding_cards = self._load()
+            self._states, self._turns, self._trusted_grounding_cards, self._interventions = self._load()
 
     def create(
         self, table_id: str, core_question: str, participants: Sequence[ParticipantSeed]
@@ -169,7 +186,8 @@ class JsonTableRepository(InMemoryTableRepository):
         state = build_initial_state(table_id, core_question, participants)
         states = {**self._states, table_id: [state]}
         turns = {**self._turns, table_id: []}
-        self._commit(states, turns, self._trusted_grounding_cards)
+        interventions = {**self._interventions, table_id: []}
+        self._commit(states, turns, self._trusted_grounding_cards, interventions)
         return state.model_copy(deep=True)
 
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
@@ -181,8 +199,22 @@ class JsonTableRepository(InMemoryTableRepository):
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], committed]}
-        self._commit(states, turns, self._trusted_grounding_cards)
+        self._commit(states, turns, self._trusted_grounding_cards, self._interventions)
         return snapshot.model_copy(deep=True)
+
+    def append_intervention_record(self, table_id: str, record: InterventionRecord) -> None:
+        latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
+        if record.table_id != table_id or record.state_version != latest.version:
+            raise ValueError("intervention record must reference the current table state")
+        if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
+            raise ValueError(f"intervention already exists: {record.intervention_id}")
+        interventions = {
+            **self._interventions,
+            table_id: [*self._interventions[table_id], record.model_copy(deep=True)],
+        }
+        self._commit(self._states, self._turns, self._trusted_grounding_cards, interventions)
 
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage a source and persist it before acknowledging the write."""
@@ -214,13 +246,16 @@ class JsonTableRepository(InMemoryTableRepository):
         states: dict[str, list[TableState]],
         turns: dict[str, list[HumanTurn]],
         trusted_grounding_cards: dict[str, GroundingCard] | None = None,
+        interventions: dict[str, list[InterventionRecord]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
+        audit = interventions if interventions is not None else self._interventions
         payload = {
             "tables": {
                 table_id: {
                     "states": [state.model_dump(mode="json") for state in snapshots],
                     "turns": [turn.model_dump(mode="json") for turn in turns[table_id]],
+                    "interventions": [item.model_dump(mode="json") for item in audit[table_id]],
                 }
                 for table_id, snapshots in states.items()
             },
@@ -243,13 +278,16 @@ class JsonTableRepository(InMemoryTableRepository):
         finally:
             if temp_name is not None:
                 Path(temp_name).unlink(missing_ok=True)
-        self._states, self._turns = states, turns
+        self._states, self._turns, self._interventions = states, turns, audit
         self._trusted_grounding_cards = {
             table_id: card.model_copy(deep=True) for table_id, card in cards.items()
         }
 
     def _load(self) -> tuple[
-        dict[str, list[TableState]], dict[str, list[HumanTurn]], dict[str, GroundingCard]
+        dict[str, list[TableState]],
+        dict[str, list[HumanTurn]],
+        dict[str, GroundingCard],
+        dict[str, list[InterventionRecord]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -260,12 +298,15 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
         states: dict[str, list[TableState]] = {}
         turns: dict[str, list[HumanTurn]] = {}
+        interventions: dict[str, list[InterventionRecord]] = {}
         for table_id, table in payload["tables"].items():
-            if not isinstance(table_id, str) or not table_id or not isinstance(table, dict) or set(table) != {"states", "turns"}:
+            if (not isinstance(table_id, str) or not table_id or not isinstance(table, dict)
+                    or set(table) not in ({"states", "turns"}, {"states", "turns", "interventions"})):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
             try:
                 snapshots = [TableState.model_validate(item) for item in table["states"]]
                 messages = [HumanTurn.model_validate(item) for item in table["turns"]]
+                audit = [InterventionRecord.model_validate(item) for item in table.get("interventions", [])]
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid data for table {table_id!r}") from error
             if not snapshots or any(state.table_id != table_id for state in snapshots):
@@ -274,8 +315,13 @@ class JsonTableRepository(InMemoryTableRepository):
                 raise ValueError(f"invalid persistence file: incompatible versions for table {table_id!r}")
             if [turn.turn_id for turn in messages] != sorted({turn.turn_id for turn in messages}):
                 raise ValueError(f"invalid persistence file: incompatible turns for table {table_id!r}")
+            if any(record.table_id != table_id for record in audit):
+                raise ValueError(f"invalid persistence file: incompatible interventions for table {table_id!r}")
+            if len({record.intervention_id for record in audit}) != len(audit):
+                raise ValueError(f"invalid persistence file: duplicate interventions for table {table_id!r}")
             states[table_id] = snapshots
             turns[table_id] = messages
+            interventions[table_id] = audit
         raw_cards = payload.get("trusted_grounding_cards", {})
         if not isinstance(raw_cards, dict):
             raise ValueError("invalid persistence file: malformed trusted_grounding_cards")
@@ -287,4 +333,4 @@ class JsonTableRepository(InMemoryTableRepository):
                 cards[table_id] = GroundingCard.model_validate(raw_card)
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid grounding card for table {table_id!r}") from error
-        return states, turns, cards
+        return states, turns, cards, interventions

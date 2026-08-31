@@ -6,7 +6,8 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, HumanTurn, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, HumanTurn, InterventionRecord, SafetyLevel, TableState
+from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import (
     build_personal_card,
     build_shared_baseline,
@@ -68,6 +69,29 @@ def _state_event(state: TableState) -> dict:
         "close_readiness": state.close_readiness.value,
         "state": state.model_dump(mode="json"),
     }
+
+
+def _build_intervention_record(
+    table_id: str,
+    state: TableState,
+    route,
+    action: AgentActionEvent,
+) -> InterventionRecord:
+    """Create a deterministic audit entry from the committed host event."""
+    evidence = list(action.evidence_turns or route.evidence_turns)
+    reasons = list(state.intervention.reasons_to_speak)
+    if not reasons:
+        reasons = [EvidenceStatement(text="主持动作有现场证据支持", evidence_turns=evidence)]
+    return InterventionRecord(
+        **action.model_dump(),
+        intervention_id=f"{table_id}:intervention:{state.version}",
+        table_id=table_id,
+        reasons_to_speak=reasons,
+        reasons_to_stay_silent=list(state.intervention.reasons_to_stay_silent),
+        latency_ms=0,
+        model="deterministic-demo",
+        token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+    )
 
 
 async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
@@ -179,6 +203,9 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             final_state = record_intervention(state, route, agent_turn_id)
                             state = repository.append_intervention_state(table_id, final_state)
                             action = action.model_copy(update={"state_version": state.version})
+                            repository.append_intervention_record(
+                                table_id, _build_intervention_record(table_id, state, route, action)
+                            )
 
                         await broadcast(table_id, {
                             "type": "message_committed",
