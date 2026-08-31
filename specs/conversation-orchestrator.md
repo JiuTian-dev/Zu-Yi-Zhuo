@@ -471,6 +471,13 @@
 - **替代方案**: 只依赖反向代理、超限直接关闭连接、或按桌全局限速；这些方案分别无法覆盖测试/内嵌部署、会让短暂抖动导致用户掉线、或让一名参与者影响同桌其他人的实时体验。
 - **代价**: 限速器是进程内的，跨实例部署仍需在网关或共享消息层补充全局配额；客户端需要在收到 `rate_limited` 时等待 `retry_after_seconds`，不能忙循环重发。
 
+### ADR-65: 收桌行为由本人入口自动沉淀
+
+- **决策**: `BehaviorEventType` 增加 `table_closed`。带有参与者身份的 REST `POST /tables/{table_id}/close?participant_id=...` 和参与者 WebSocket `request_close` 在 evidence-backed close 成功后，由服务端生成稳定的 `participant_id:table-closed:table_id` 事件，携带最终关闭状态版本和固定摘要 `closed`。事件只写入该参与者的私有行为账本，不广播；重复收桌/重试复用行为事件幂等规则。开发态允许不带 `participant_id` 的内部 close 调用继续只迁移桌状态，不生成无法归属的行为事件。
+- **理由**: 产品行为飞轮明确把“收桌”作为用户主动行为，不能只从公共状态反推谁触发了结束；由两条用户入口统一生成稳定事件，可支撑后续画像与留存分析，同时不把私密行为广播给同桌。
+- **替代方案**: 让前端自行 POST 任意 `table_closed` 事件、在每次状态查询时隐式记录、或把收桌行为写进公共消息；这些方案分别允许伪造、混淆曝光与主动行为、或污染桌面叙事和隐私边界。
+- **代价**: 只有携带参与者身份的用户入口会产生事件；直接调用仓储的旧脚本不会自动补行为，生产账号接入后仍需把 `participant_id` 替换为认证主体。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -665,7 +672,8 @@ master
                                                                                                                                                                                                                                                                                                                   ←── D84 WebSocket Origin allowlist boundary
                                                                                                                                                                                                                                                                                                                        ←── D85 WebSocket frame size boundary
                                                                                                                                                                                                                                                                                                                               ←── D86 self-scoped invitation preference update
-                                                                                                                                                                                                                                                                                                                                    ←── D87 WebSocket inbound event rate limit
+                                                                                                                                                                                                                                                                                                                                   ←── D87 WebSocket inbound event rate limit
+                                                                                                                                                                                                                                                                                                                                          ←── D88 table_closed behavior event
 ```
 
 ## Progress Ledger
@@ -763,6 +771,7 @@ master
 | D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
 | D86 self-scoped invitation preference update | complete | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | 341 tests + compileall + diff check | `72655e5` |
 | D87 WebSocket inbound event rate limit | complete | Add per-connection sliding-window event limit with structured retry response and runtime configuration | 345 tests + compileall + diff check | `ecd174d` |
+| D88 table_closed behavior event | in_progress | Record actor-scoped close behavior from REST/WS close paths with stable idempotent event and JSON recovery | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
