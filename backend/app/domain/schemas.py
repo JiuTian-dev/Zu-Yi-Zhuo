@@ -32,6 +32,56 @@ class ParticipantSeed(ContractModel):
     roundtable_invite_preference: InvitationPreference = InvitationPreference.FEW
 
 
+class ContentSignal(ContractModel):
+    """An authorized public Zhihu signal used only for opportunity discovery."""
+
+    signal_id: str = Field(min_length=1)
+    content_type: Literal["question", "answer", "article"]
+    title: str = Field(min_length=1, max_length=240)
+    excerpt: str = Field(min_length=1, max_length=1000)
+    source_ref: str = Field(min_length=1)
+    author_id: str = Field(min_length=1)
+    author_name: str = Field(min_length=1, max_length=120)
+    author_role: str | None = Field(default=None, min_length=1, max_length=80)
+    public_stance: str | None = Field(default=None, min_length=1, max_length=240)
+    engagement: int = Field(default=0, ge=0)
+    visibility: Literal["public"] = "public"
+
+
+class OpportunityRequest(ContractModel):
+    """Bounded public signals for the first-stage opportunity detector."""
+
+    query: str = Field(min_length=1, max_length=120)
+    signals: list[ContentSignal] = Field(min_length=2, max_length=20)
+
+    @model_validator(mode="after")
+    def signal_ids_and_authors_are_sufficient(self) -> "OpportunityRequest":
+        signal_ids = [signal.signal_id for signal in self.signals]
+        if len(signal_ids) != len(set(signal_ids)):
+            raise ValueError("signal_id values must be unique")
+        if len({signal.author_id for signal in self.signals}) < 2:
+            raise ValueError("opportunity signals must cover at least two authors")
+        return self
+
+
+class SourceEvidence(ContractModel):
+    """Evidence that points back to source signals rather than chat turns."""
+
+    text: str = Field(min_length=1, max_length=240)
+    signal_ids: list[str] = Field(min_length=1, max_length=20)
+
+
+class OpportunityPreview(ContractModel):
+    """Explainable opportunity candidate before any table is created."""
+
+    core_question: str = Field(min_length=1, max_length=120)
+    signal_ids: list[str] = Field(min_length=2, max_length=20)
+    unfinishedness: list[SourceEvidence] = Field(min_length=1, max_length=3)
+    role_gaps: list[str] = Field(default_factory=list, max_length=5)
+    candidates: list[ParticipantSeed] = Field(min_length=2, max_length=20)
+    confidence: Confidence
+
+
 class Invitation(ContractModel):
     """Private persisted invitation; public APIs must project it to InvitationView."""
 

@@ -9,8 +9,9 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
+from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
+from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
 from app.providers import LLMProvider
 
@@ -194,6 +195,10 @@ def create_app(
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.relationship_memories(participant_id)
+
+    @api.post("/opportunities/preview", response_model=OpportunityPreview)
+    def preview_opportunity(payload: OpportunityRequest) -> OpportunityPreview:
+        return build_opportunity_preview(payload)
 
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:
