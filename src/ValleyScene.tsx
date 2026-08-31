@@ -34,6 +34,10 @@ const DEPTH_STRATA: Array<{ id: DepthStratum; renderOrder: number }> = [
   { id: 'near', renderOrder: 2 },
 ]
 
+/** Shared light state so the relighting key light follows the pointer once per frame. */
+const sharedLight = { value: new THREE.Vector2(0.3, 0.35) }
+const sharedTime = { value: 0 }
+
 const DEPTH_VERTEX_SHADER = `
   uniform sampler2D depthMap;
   uniform float depthScale;
@@ -53,7 +57,11 @@ const DEPTH_VERTEX_SHADER = `
 
 const DEPTH_FRAGMENT_SHADER = `
   uniform sampler2D colorMap;
+  uniform sampler2D depthMap;
   uniform float stratum;
+  uniform vec2 texel;
+  uniform vec2 uLight;
+  uniform float uTime;
   varying vec2 vUv;
   varying float vDepth;
   void main() {
@@ -69,6 +77,16 @@ const DEPTH_FRAGMENT_SHADER = `
       ? farWeight
       : stratum < 1.5 ? middleWeight : nearWeight;
     vec4 color = texture2D(colorMap, vUv);
+    // Depth relighting: a cheap normal from the depth gradient lets a slow
+    // pointer-following key light add volume while staying subtle.
+    float dL = texture2D(depthMap, vUv - vec2(texel.x, 0.0)).r;
+    float dR = texture2D(depthMap, vUv + vec2(texel.x, 0.0)).r;
+    float dD = texture2D(depthMap, vUv - vec2(0.0, texel.y)).r;
+    float dU = texture2D(depthMap, vUv + vec2(0.0, texel.y)).r;
+    vec3 normal = normalize(vec3((dL - dR) * 2.4, (dD - dU) * 2.4, 1.0));
+    vec3 lightDir = normalize(vec3(uLight.x * 0.8 + 0.4, uLight.y * 0.5 + 0.7, 0.55));
+    float diffuse = clamp(dot(normal, lightDir), 0.0, 1.0);
+    color.rgb *= 0.93 + diffuse * 0.16;
     gl_FragColor = vec4(color.rgb, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -95,6 +113,9 @@ function DepthStratumPlate({
     depthScale: { value: 0.82 },
     depthBias: { value: -0.34 },
     stratum: { value: stratum === 'far' ? 0 : stratum === 'middle' ? 1 : 2 },
+    texel: { value: new THREE.Vector2(1 / 1672, 1 / 941) },
+    uLight: sharedLight,
+    uTime: sharedTime,
   }), [colorMap, depthMap, stratum])
 
   return (
@@ -126,7 +147,9 @@ function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | '
   colorMap.colorSpace = THREE.SRGBColorSpace
   colorMap.anisotropy = 8
   depthMap.colorSpace = THREE.NoColorSpace
-  useFrame(({ clock }) => {
+  useFrame(({ clock, pointer }) => {
+    sharedTime.value = clock.elapsedTime
+    if (!reducedMotion) sharedLight.value.set(pointer.x, pointer.y)
     if (!group.current || reducedMotion) return
     group.current.rotation.y = Math.sin(clock.elapsedTime * 0.22) * 0.006 * (phase === 'discovering' ? 1 : 0.35)
   })
@@ -209,6 +232,37 @@ function FloatingPetals({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase'
         </mesh>
       ))}
     </group>
+  )
+}
+
+const SHAFT_VERTEX = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`
+const SHAFT_FRAGMENT = `
+  uniform float uIntensity;
+  varying vec2 vUv;
+  void main(){
+    float edge = pow(max(0.0, 1.0 - abs(vUv.x - 0.5) * 2.0), 2.6);
+    float taper = smoothstep(0.0, 0.18, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
+    float amount = uIntensity * edge * taper;
+    gl_FragColor = vec4(vec3(1.0, 0.93, 0.78) * amount, amount);
+  }
+`
+
+function LightShaft({ reducedMotion }: Pick<ValleySceneProps, 'reducedMotion'>) {
+  const material = useRef<THREE.ShaderMaterial>(null)
+  const shaft = useRef<THREE.Mesh>(null)
+  const uniforms = useMemo(() => ({ uIntensity: { value: 0.055 } }), [])
+
+  useFrame(({ clock }) => {
+    if (!material.current || !shaft.current) return
+    material.current.uniforms.uIntensity.value = reducedMotion ? 0.04 : 0.055 + Math.sin(clock.elapsedTime * 0.24) * 0.02
+    if (!reducedMotion) shaft.current.rotation.z = -0.42 + Math.sin(clock.elapsedTime * 0.07) * 0.02
+  })
+
+  return (
+    <mesh ref={shaft} position={[1.35, 1.4, 0.35]} rotation={[0, 0, -0.42]} renderOrder={3}>
+      <planeGeometry args={[2.6, 10.5]} />
+      <shaderMaterial ref={material} uniforms={uniforms} vertexShader={SHAFT_VERTEX} fragmentShader={SHAFT_FRAGMENT} transparent depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} />
+    </mesh>
   )
 }
 
@@ -491,6 +545,7 @@ export function ValleySceneContent(props: ValleySceneProps) {
     <>
       <CameraRig phase={props.phase} reducedMotion={props.reducedMotion} />
       <DepthPlate phase={props.phase} reducedMotion={props.reducedMotion} />
+      <LightShaft reducedMotion={props.reducedMotion} />
       <HumanMattes activeActorId={props.activeActorId} hoveredActorId={props.hoveredActorId} phase={props.phase} />
       <TableHost phase={props.phase} action={hostAction} hovered={props.hoveredActorId === 'table-host'} reducedMotion={props.reducedMotion} />
       {props.phase === 'seated' && <HostForegroundMatte />}
