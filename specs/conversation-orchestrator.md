@@ -659,4 +659,5 @@ master
 
 - 当前前端展示题目是“为什么我们越来越不会休息？”，后端旗舰评测题目是“AI Agent 真正进入企业，卡住的是技术还是采购？”；在 API 联调前需明确采用双 demo table 还是统一题目。
 - 本机系统 Python 为 3.14；项目必须声明 3.11+ 兼容范围，避免无意使用 3.14 专属语法。
-- API 接入前必须增加独立的 pre-loop SafetyDecision/Enforcement；critical hard violation 不能只依赖主持 Router 的 REFRAME，需能表达暂停、拦截或移出。
+- 当前实时广播与仓储仍是单进程实现；多实例部署前需要接入共享消息总线和数据库事务，但不能改变现有事件/状态契约。
+- 正式知乎身份、候选 source 与个人 source 仍由部署方注入获授权适配器；未配置时后端必须继续 fail-closed，不回退到网页抓取或前端 token。
