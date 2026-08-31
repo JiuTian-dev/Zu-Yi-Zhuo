@@ -74,6 +74,57 @@ def test_close_artifacts_require_closed_table_and_known_participant() -> None:
     assert client.get("/tables/open-artifact/close-artifacts?participant_id=ghost").status_code == 409
 
 
+def test_follow_up_outcomes_can_be_reported_and_retrieved_after_close() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "echo-api", "core_question": "如何开始？",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn(
+        "echo-api", HumanTurn(turn_id=1, participant_id="p1", text="我会先做一次小范围试点。")
+    )
+    assert client.post("/tables/echo-api/close").status_code == 200
+
+    pending = client.get("/tables/echo-api/follow-ups?participant_id=p1")
+    assert pending.status_code == 200
+    assert pending.json()[0]["follow_up_index"] == 0
+    assert pending.json()[0]["item"]["is_commitment"] is True
+    assert pending.json()[0]["outcome"] is None
+
+    reported = client.post(
+        "/tables/echo-api/follow-ups/0/outcome?participant_id=p1",
+        json={"status": "completed", "note": "已完成第一轮验证"},
+    )
+    assert reported.status_code == 200
+    assert reported.json()["outcome"] == {
+        "table_id": "echo-api", "follow_up_index": 0, "participant_id": "p1",
+        "status": "completed", "note": "已完成第一轮验证",
+    }
+    assert client.get("/tables/echo-api/follow-ups?participant_id=p2").json()[0]["outcome"]["status"] == "completed"
+
+
+def test_follow_up_outcome_enforces_closed_table_owner_and_index() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "echo-auth", "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn("echo-auth", HumanTurn(turn_id=1, participant_id="p1", text="我会跟进这个问题。"))
+    assert client.post(
+        "/tables/echo-auth/follow-ups/0/outcome?participant_id=p1",
+        json={"status": "completed"},
+    ).status_code == 409
+    client.post("/tables/echo-auth/close")
+    assert client.post(
+        "/tables/echo-auth/follow-ups/0/outcome?participant_id=p2",
+        json={"status": "completed"},
+    ).status_code == 403
+    assert client.post(
+        "/tables/echo-auth/follow-ups/9/outcome?participant_id=p1",
+        json={"status": "completed"},
+    ).status_code == 404
+
+
 def test_table_directory_defaults_to_open_public_projections() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={

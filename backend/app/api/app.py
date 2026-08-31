@@ -2,13 +2,14 @@
 
 import asyncio
 import os
+from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, PersonalCard, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
+from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, PersonalCard, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
 from app.providers import LLMProvider
@@ -97,6 +98,21 @@ class CloseArtifactsResponse(BaseModel):
     state_version: int
     shared_baseline: SharedBaseline
     personal_card: PersonalCard
+
+
+class FollowUpOutcomeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["completed", "in_progress", "blocked", "dismissed"]
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+
+
+class FollowUpStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    follow_up_index: int = Field(ge=0)
+    item: FollowUpItem
+    outcome: FollowUpOutcome | None = None
 
 
 def create_app(
@@ -358,6 +374,66 @@ def create_app(
     def get_interventions(table_id: str) -> list[InterventionRecord]:
         table_or_404(table_id)
         return repo.interventions(table_id)
+
+    def close_follow_ups(table_id: str, participant_id: str) -> tuple[TableState, list[FollowUpItem], dict[int, FollowUpOutcome]]:
+        state = table_or_404(table_id)
+        if not state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is not closed")
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
+        try:
+            baseline = build_shared_baseline(state, turns=repo.turns(table_id))
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        outcomes = {item.follow_up_index: item for item in repo.follow_up_outcomes(table_id)}
+        return state, baseline.collective_next_steps, outcomes
+
+    @api.get("/tables/{table_id}/follow-ups", response_model=list[FollowUpStatusResponse])
+    def get_follow_ups(
+        table_id: str,
+        participant_id: str = Query(..., min_length=1),
+    ) -> list[FollowUpStatusResponse]:
+        _state, items, outcomes = close_follow_ups(table_id, participant_id)
+        return [
+            FollowUpStatusResponse(
+                follow_up_index=index,
+                item=item,
+                outcome=outcomes.get(index),
+            )
+            for index, item in enumerate(items)
+        ]
+
+    @api.post(
+        "/tables/{table_id}/follow-ups/{follow_up_index}/outcome",
+        response_model=FollowUpStatusResponse,
+    )
+    def report_follow_up_outcome(
+        table_id: str,
+        follow_up_index: int = Path(..., ge=0),
+        payload: FollowUpOutcomeRequest = ...,
+        participant_id: str = Query(..., min_length=1),
+    ) -> FollowUpStatusResponse:
+        _state, items, outcomes = close_follow_ups(table_id, participant_id)
+        if follow_up_index >= len(items):
+            raise HTTPException(status_code=404, detail="unknown follow-up item")
+        item = items[follow_up_index]
+        if item.is_commitment and item.owner_participant_id != participant_id:
+            raise HTTPException(status_code=403, detail="only the commitment owner may report its outcome")
+        existing = outcomes.get(follow_up_index)
+        if existing is not None and existing.participant_id != participant_id:
+            raise HTTPException(status_code=403, detail="follow-up outcome already belongs to another participant")
+        outcome = FollowUpOutcome(
+            table_id=table_id,
+            follow_up_index=follow_up_index,
+            participant_id=participant_id,
+            status=payload.status,
+            note=payload.note,
+        )
+        try:
+            saved = repo.record_follow_up_outcome(outcome)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return FollowUpStatusResponse(follow_up_index=follow_up_index, item=item, outcome=saved)
 
     @api.post("/tables/{table_id}/close", response_model=SharedBaseline)
     def close_table(table_id: str) -> SharedBaseline:

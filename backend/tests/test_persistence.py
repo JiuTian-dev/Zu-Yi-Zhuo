@@ -6,7 +6,7 @@ import pytest
 
 from app.api.repository import JsonTableRepository
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import Action, GroundingCard, HumanTurn, InterventionRecord, SafetyLevel
+from app.domain import Action, FollowUpOutcome, GroundingCard, HumanTurn, InterventionRecord, SafetyLevel
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety
 
@@ -131,6 +131,38 @@ def test_json_repository_persists_invitation_state_and_acceptance(tmp_path) -> N
     reloaded = JsonTableRepository(path)
     assert reloaded.get("invite").participants["product"].display_name == "周宁"
     assert reloaded.invitations("invite")[0].status.value == "accepted"
+
+
+def test_follow_up_outcome_is_persisted_and_upserted_after_close(tmp_path) -> None:
+    path = tmp_path / "follow-ups.json"
+    repository = JsonTableRepository(path)
+    repository.create("echo", "Q", [flagship_participants[0]])
+    repository.append_turn("echo", HumanTurn(turn_id=1, participant_id="architect", text="我会先做一次小范围试点。"))
+    repository.close_table("echo")
+
+    outcome = FollowUpOutcome(
+        table_id="echo", follow_up_index=0, participant_id="architect",
+        status="in_progress", note="已经找到试点对象",
+    )
+    assert repository.record_follow_up_outcome(outcome) == outcome
+    updated = outcome.model_copy(update={"status": "completed", "note": "已完成第一轮验证"})
+    assert repository.record_follow_up_outcome(updated) == updated
+
+    restored = JsonTableRepository(path)
+    assert restored.follow_up_outcomes("echo") == [updated]
+
+
+def test_follow_up_outcome_rejects_open_table_and_unknown_participant(tmp_path) -> None:
+    repository = JsonTableRepository(tmp_path / "follow-ups-invalid.json")
+    repository.create("open", "Q", [flagship_participants[0]])
+    outcome = FollowUpOutcome(
+        table_id="open", follow_up_index=0, participant_id="architect", status="completed",
+    )
+    with pytest.raises(ValueError, match="closed"):
+        repository.record_follow_up_outcome(outcome)
+    repository.close_table("open")
+    with pytest.raises(ValueError, match="unknown participant"):
+        repository.record_follow_up_outcome(outcome.model_copy(update={"participant_id": "ghost"}))
 
 
 def test_json_repository_persists_intervention_audit_records(tmp_path) -> None:

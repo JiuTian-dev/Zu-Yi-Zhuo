@@ -330,6 +330,16 @@ class FollowUpItem(ContractModel):
         return self
 
 
+class FollowUpOutcome(ContractModel):
+    """A participant-reported result for one close-card follow-up item."""
+
+    table_id: str = Field(min_length=1)
+    follow_up_index: int = Field(ge=0)
+    participant_id: str = Field(min_length=1)
+    status: Literal["completed", "in_progress", "blocked", "dismissed"]
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+
+
 class ReflectionResult(ContractModel):
     """Effect log for an intervention after enough human turns have passed."""
 

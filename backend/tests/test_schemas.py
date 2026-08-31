@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.domain import Action, AgentActionEvent, PersonalCard, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, FollowUpOutcome, PersonalCard, SafetyLevel, TableState
 from app.domain.schemas import ConversationState, InterventionRecord, InterventionState, ParticipantState, SharedBaseline
 
 def evidence(text: str, turn: int = 1) -> dict:
@@ -87,6 +87,16 @@ def test_intervention_record_rejects_silence_action() -> None:
             model="test",
             token_usage={"input_tokens": 0, "output_tokens": 0},
         )
+
+
+def test_follow_up_outcome_contract_is_bounded_and_strict() -> None:
+    outcome = FollowUpOutcome(
+        table_id="t", follow_up_index=0, participant_id="p1", status="completed",
+        note="已完成一轮验证",
+    )
+    assert outcome.model_dump(mode="json")["status"] == "completed"
+    with pytest.raises(ValidationError):
+        FollowUpOutcome(table_id="t", follow_up_index=0, participant_id="p1", status="done")
 
 def test_participant_map_key_must_match_id() -> None:
     data = valid_state(); data["participants"] = {"wrong": data["participants"]["p1"]}
