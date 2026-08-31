@@ -412,6 +412,7 @@ GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
 POST /tables/{id}/safety-reports?reporter_id={reporter_id}
 GET  /tables/{id}/safety-reports?reporter_id={reporter_id}
 POST /tables/{id}/safety/resolve
+GET  /tables/{id}/safety/resolutions
 POST /personal-context/source-preview?viewer_id={viewer_id}
 PUT  /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}
 DELETE /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}

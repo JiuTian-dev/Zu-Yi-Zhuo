@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, BehaviorEvent, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
+from app.domain import Action, BehaviorEvent, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -88,6 +88,7 @@ class InMemoryTableRepository:
         self._comment_promotions: dict[str, list[CommentPromotion]] = {}
         self._no_match: dict[str, set[str]] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
+        self._safety_resolutions: dict[str, list[SafetyResolution]] = {}
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
         self._behavior_events: dict[str, list[BehaviorEvent]] = {}
 
@@ -114,6 +115,7 @@ class InMemoryTableRepository:
         self._comments[table_id] = []
         self._comment_promotions[table_id] = []
         self._safety_reports[table_id] = []
+        self._safety_resolutions[table_id] = []
         return state.model_copy(deep=True)
 
     @_synchronized
@@ -269,6 +271,63 @@ class InMemoryTableRepository:
         if reporter_id is not None:
             rows = [item for item in rows if item.reporter_id == reporter_id]
         return [item.model_copy(deep=True) for item in rows]
+
+    @_synchronized
+    def safety_resolutions(self, table_id: str) -> list[SafetyResolution]:
+        """Return immutable moderator decisions for controlled review."""
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._safety_resolutions[table_id]]
+
+    @_synchronized
+    def resolve_safety(
+        self,
+        table_id: str,
+        action: str,
+        moderator_id: str,
+        reason: str,
+        participant_id: str | None = None,
+    ) -> tuple[TableState, SafetyResolution]:
+        """Atomically resume a paused table or remove one offending member."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if state.conversation.safety_level is not SafetyLevel.CRITICAL:
+            raise ValueError("table is not paused for safety review")
+        if action not in {"resume", "remove_participant"}:
+            raise ValueError("unsupported safety resolution action")
+        if not moderator_id.strip() or not reason.strip():
+            raise ValueError("moderator_id and reason must be non-empty")
+        if action == "resume" and participant_id is not None:
+            raise ValueError("resume must not include participant_id")
+        if action == "remove_participant":
+            if not participant_id or participant_id not in state.participants:
+                raise ValueError("participant_id must be a current table participant")
+
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        if action == "remove_participant":
+            del updated.participants[participant_id]  # type: ignore[index]
+        updated.conversation.safety_level = SafetyLevel.NORMAL
+        updated.conversation.state = (
+            "sync_active" if updated.conversation.mode is ConversationMode.SYNC else "active"
+        )
+        updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "active"
+        committed = self._append(table_id, updated)
+        resolution = SafetyResolution(
+            resolution_id=f"{table_id}:safety-resolution:{committed.version}",
+            table_id=table_id,
+            action=action,
+            moderator_id=moderator_id.strip(),
+            participant_id=participant_id,
+            reason=reason.strip(),
+            from_state_version=state.version,
+            state_version=committed.version,
+        )
+        self._safety_resolutions[table_id].append(resolution.model_copy(deep=True))
+        return committed, resolution
 
     @_synchronized
     def set_personal_context_consent(
@@ -834,6 +893,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._comment_promotions,
                 self._no_match,
                 self._safety_reports,
+                self._safety_resolutions,
                 self._personal_context_consents,
                 self._behavior_events,
             ) = self._load()
@@ -861,10 +921,12 @@ class JsonTableRepository(InMemoryTableRepository):
         comments = {**self._comments, table_id: []}
         comment_promotions = {**self._comment_promotions, table_id: []}
         reports = {**self._safety_reports, table_id: []}
+        resolutions = {**self._safety_resolutions, table_id: []}
         self._commit(
             states, turns, self._trusted_grounding_cards, interventions, invitations,
             outcomes, feedback, comments, self._no_match, reports,
             comment_promotions=comment_promotions,
+            safety_resolutions=resolutions,
         )
         return state.model_copy(deep=True)
 
@@ -895,6 +957,67 @@ class JsonTableRepository(InMemoryTableRepository):
             self._value_feedback, self._comments, self._no_match, reports,
         )
         return report.model_copy(deep=True), True
+
+    @_synchronized
+    def resolve_safety(
+        self,
+        table_id: str,
+        action: str,
+        moderator_id: str,
+        reason: str,
+        participant_id: str | None = None,
+    ) -> tuple[TableState, SafetyResolution]:
+        """Persist the safety state and moderator audit in one JSON commit."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if state.conversation.safety_level is not SafetyLevel.CRITICAL:
+            raise ValueError("table is not paused for safety review")
+        if action not in {"resume", "remove_participant"}:
+            raise ValueError("unsupported safety resolution action")
+        if not moderator_id.strip() or not reason.strip():
+            raise ValueError("moderator_id and reason must be non-empty")
+        if action == "resume" and participant_id is not None:
+            raise ValueError("resume must not include participant_id")
+        if action == "remove_participant":
+            if not participant_id or participant_id not in state.participants:
+                raise ValueError("participant_id must be a current table participant")
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        if action == "remove_participant":
+            del updated.participants[participant_id]  # type: ignore[index]
+        updated.conversation.safety_level = SafetyLevel.NORMAL
+        updated.conversation.state = (
+            "sync_active" if updated.conversation.mode is ConversationMode.SYNC else "active"
+        )
+        updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "active"
+        snapshot = TableState.model_validate(updated.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        resolution = SafetyResolution(
+            resolution_id=f"{table_id}:safety-resolution:{snapshot.version}",
+            table_id=table_id,
+            action=action,
+            moderator_id=moderator_id.strip(),
+            participant_id=participant_id,
+            reason=reason.strip(),
+            from_state_version=state.version,
+            state_version=snapshot.version,
+        )
+        resolutions = {
+            **self._safety_resolutions,
+            table_id: [*self._safety_resolutions[table_id], resolution.model_copy(deep=True)],
+        }
+        self._commit(
+            states, self._turns, self._trusted_grounding_cards, self._interventions,
+            self._invitations, self._follow_up_outcomes, self._value_feedback,
+            self._comments, self._no_match, self._safety_reports,
+            self._personal_context_consents,
+            safety_resolutions=resolutions,
+        )
+        return snapshot.model_copy(deep=True), resolution.model_copy(deep=True)
 
     @_synchronized
     def set_personal_context_consent(
@@ -1510,6 +1633,7 @@ class JsonTableRepository(InMemoryTableRepository):
         personal_context_consents: dict[str, PersonalContextConsent] | None = None,
         comment_promotions: dict[str, list[CommentPromotion]] | None = None,
         behavior_events: dict[str, list[BehaviorEvent]] | None = None,
+        safety_resolutions: dict[str, list[SafetyResolution]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1533,6 +1657,11 @@ class JsonTableRepository(InMemoryTableRepository):
             behavior_events
             if behavior_events is not None
             else self._behavior_events
+        )
+        resolution_rows = (
+            safety_resolutions
+            if safety_resolutions is not None
+            else self._safety_resolutions
         )
         payload = {
             "tables": {
@@ -1560,6 +1689,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "safety_reports": [
                         item.model_dump(mode="json")
                         for item in report_rows[table_id]
+                    ],
+                    "safety_resolutions": [
+                        item.model_dump(mode="json")
+                        for item in resolution_rows[table_id]
                     ],
                 }
                 for table_id, snapshots in states.items()
@@ -1636,6 +1769,10 @@ class JsonTableRepository(InMemoryTableRepository):
             participant_id: [item.model_copy(deep=True) for item in rows]
             for participant_id, rows in behavior_rows.items()
         }
+        self._safety_resolutions = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in resolution_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -1651,6 +1788,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[SafetyReport]],
         dict[str, PersonalContextConsent],
         dict[str, list[BehaviorEvent]],
+        dict[str, list[SafetyResolution]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -1672,6 +1810,7 @@ class JsonTableRepository(InMemoryTableRepository):
         comments: dict[str, list[PeripheralComment]] = {}
         comment_promotions: dict[str, list[CommentPromotion]] = {}
         safety_reports: dict[str, list[SafetyReport]] = {}
+        safety_resolutions: dict[str, list[SafetyResolution]] = {}
         for table_id, table in payload["tables"].items():
             table_keys = set(table) if isinstance(table, dict) else set()
             if (not isinstance(table_id, str) or not table_id or not isinstance(table, dict)
@@ -1681,6 +1820,7 @@ class JsonTableRepository(InMemoryTableRepository):
                             "states", "turns", "interventions", "invitations",
                             "follow_up_outcomes", "value_feedback", "comments",
                             "comment_promotions", "safety_reports",
+                            "safety_resolutions",
                         }
                     )):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
@@ -1712,6 +1852,10 @@ class JsonTableRepository(InMemoryTableRepository):
                 if not isinstance(raw_reports, list):
                     raise ValueError("safety_reports must be an array")
                 reports = [SafetyReport.model_validate(item) for item in raw_reports]
+                raw_resolutions = table.get("safety_resolutions", [])
+                if not isinstance(raw_resolutions, list):
+                    raise ValueError("safety_resolutions must be an array")
+                resolutions = [SafetyResolution.model_validate(item) for item in raw_resolutions]
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid data for table {table_id!r}") from error
             if not snapshots or any(state.table_id != table_id for state in snapshots):
@@ -1799,6 +1943,17 @@ class JsonTableRepository(InMemoryTableRepository):
             report_ids = [report.report_id for report in reports]
             if len(set(report_ids)) != len(report_ids):
                 raise ValueError(f"invalid persistence file: duplicate safety reports for table {table_id!r}")
+            if any(
+                resolution.table_id != table_id
+                or resolution.from_state_version < 0
+                or resolution.state_version <= resolution.from_state_version
+                or resolution.state_version > snapshots[-1].version
+                for resolution in resolutions
+            ):
+                raise ValueError(f"invalid persistence file: incompatible safety resolutions for table {table_id!r}")
+            resolution_ids = [resolution.resolution_id for resolution in resolutions]
+            if len(set(resolution_ids)) != len(resolution_ids):
+                raise ValueError(f"invalid persistence file: duplicate safety resolutions for table {table_id!r}")
             states[table_id] = snapshots
             turns[table_id] = messages
             interventions[table_id] = audit
@@ -1811,6 +1966,7 @@ class JsonTableRepository(InMemoryTableRepository):
             comment_promotions[table_id] = promotions
             self_reports = reports
             safety_reports[table_id] = self_reports
+            safety_resolutions[table_id] = resolutions
         raw_cards = payload.get("trusted_grounding_cards", {})
         if not isinstance(raw_cards, dict):
             raise ValueError("invalid persistence file: malformed trusted_grounding_cards")
@@ -1882,4 +2038,4 @@ class JsonTableRepository(InMemoryTableRepository):
             if len(set(event_ids)) != len(event_ids):
                 raise ValueError("invalid persistence file: duplicate behavior event")
             behavior_events[participant_id] = events
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, consents, behavior_events
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, safety_resolutions, consents, behavior_events

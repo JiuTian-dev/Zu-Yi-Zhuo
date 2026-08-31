@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -19,7 +19,7 @@ from app.domain.schemas import EvidenceStatement
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
-from .identity import IdentityResolver, require_request_identity
+from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 
@@ -202,6 +202,21 @@ class SafetyReportRequest(BaseModel):
     description: str = Field(min_length=1, max_length=500)
 
 
+class SafetyResolutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["resume", "remove_participant"]
+    participant_id: str | None = Field(default=None, min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class SafetyResolutionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolution: SafetyResolution
+    state: TableState
+
+
 class RecomposeTableRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -243,6 +258,7 @@ def create_app(
     personal_context_source: PersonalContextSource | None = None,
     personal_context_source_timeout_seconds: float = 5.0,
     identity_resolver: IdentityResolver | None = None,
+    moderator_resolver: ModeratorResolver | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -259,6 +275,7 @@ def create_app(
     api.state.content_source = content_source
     api.state.personal_context_source = personal_context_source
     api.state.identity_resolver = identity_resolver
+    api.state.moderator_resolver = moderator_resolver
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -939,6 +956,62 @@ def create_app(
         if reporter_id not in state.participants:
             raise HTTPException(status_code=403, detail="reporter must be a table participant")
         return repo.safety_reports(table_id, reporter_id)
+
+    @api.post(
+        "/tables/{table_id}/safety/resolve",
+        response_model=SafetyResolutionResponse,
+    )
+    async def resolve_safety(
+        table_id: str,
+        payload: SafetyResolutionRequest,
+        request: Request,
+    ) -> SafetyResolutionResponse:
+        """Let a trusted moderation adapter resume or remove after a hard pause."""
+        if moderator_resolver is None:
+            raise HTTPException(status_code=503, detail="moderation is not configured")
+        moderator_id = require_moderator_identity(moderator_resolver, request)
+        table_or_404(table_id)
+        try:
+            state, resolution = repo.resolve_safety(
+                table_id,
+                payload.action,
+                moderator_id,
+                payload.reason,
+                payload.participant_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+        broadcaster = getattr(api.state, "table_broadcast", None)
+        state_broadcaster = getattr(api.state, "table_broadcast_state", None)
+        if broadcaster is not None:
+            await broadcaster(table_id, {
+                "type": "safety_resolved",
+                "action": resolution.action,
+                "participant_id": resolution.participant_id,
+                "state_version": resolution.state_version,
+            })
+        if state_broadcaster is not None:
+            await state_broadcaster(table_id, state)
+        return SafetyResolutionResponse(
+            resolution=resolution,
+            state=project_state_for_viewer(state, None),
+        )
+
+    @api.get(
+        "/tables/{table_id}/safety/resolutions",
+        response_model=list[SafetyResolution],
+    )
+    def get_safety_resolutions(
+        table_id: str,
+        request: Request,
+    ) -> list[SafetyResolution]:
+        """Expose the safety-resolution audit only to the moderation adapter."""
+        if moderator_resolver is None:
+            raise HTTPException(status_code=503, detail="moderation is not configured")
+        require_moderator_identity(moderator_resolver, request)
+        table_or_404(table_id)
+        return repo.safety_resolutions(table_id)
 
     def invitation_view(invitation) -> InvitationView:
         candidate = invitation.candidate

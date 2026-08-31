@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request, WebSocket
 
 IdentityInput: TypeAlias = Request | WebSocket
 IdentityResolver: TypeAlias = Callable[[IdentityInput], str | None]
+ModeratorResolver: TypeAlias = Callable[[Request], str | None]
 
 
 def require_request_identity(
@@ -52,4 +53,22 @@ def websocket_identity_error(
     return None
 
 
-__all__ = ("IdentityInput", "IdentityResolver", "require_request_identity", "websocket_identity_error")
+def require_moderator_identity(resolver: ModeratorResolver, request: Request) -> str:
+    """Resolve a trusted moderator subject without accepting client claims."""
+    try:
+        subject = resolver(request)
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="moderator authentication required") from error
+    if not isinstance(subject, str) or not subject.strip():
+        raise HTTPException(status_code=401, detail="moderator authentication required")
+    return subject.strip()
+
+
+__all__ = (
+    "IdentityInput",
+    "IdentityResolver",
+    "ModeratorResolver",
+    "require_moderator_identity",
+    "require_request_identity",
+    "websocket_identity_error",
+)

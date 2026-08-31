@@ -7,6 +7,7 @@ from .enums import Action, ConversationMode, DisagreementType, InvitationPrefere
 Confidence = Annotated[float, Field(ge=0, le=1)]
 TurnEvidence = Annotated[list[PositiveInt], Field(min_length=1)]
 SafetyAction = Literal["allow", "pause", "intercept", "remove"]
+SafetyResolutionAction = Literal["resume", "remove_participant"]
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -282,6 +283,29 @@ class SafetyDecision(ContractModel):
             raise ValueError("blocked safety decisions require enforcement and turn evidence")
         if not self.blocked and self.action != "allow":
             raise ValueError("allowed safety decisions must use allow")
+        return self
+
+
+class SafetyResolution(ContractModel):
+    """Immutable moderator outcome for one critical safety pause."""
+
+    resolution_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    action: SafetyResolutionAction
+    moderator_id: str = Field(min_length=1)
+    participant_id: str | None = Field(default=None, min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+    from_state_version: int = Field(ge=0)
+    state_version: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def action_target_matches(self) -> "SafetyResolution":
+        if self.action == "remove_participant" and self.participant_id is None:
+            raise ValueError("remove_participant requires participant_id")
+        if self.action == "resume" and self.participant_id is not None:
+            raise ValueError("resume must not include participant_id")
+        if self.state_version <= self.from_state_version:
+            raise ValueError("safety resolution must advance the table state")
         return self
 
 class OpenLoop(ContractModel):

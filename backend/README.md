@@ -38,6 +38,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/comments/{comment_id}/promote?participant_id=...`：核心成员显式促成一条评论；服务端重新做安全检查，成功后以促成人身份写入主桌 turn，并保留 `source_comment_id` 和可回放的 `CommentPromotion`。
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
+- `POST /tables/{table_id}/safety/resolve` / `GET /tables/{table_id}/safety/resolutions`：仅对注入的 `moderator_resolver` 开放；可原子恢复 critical 暂停或移除一名成员，并读取不可变处置审计。未配置审核器时返回 503，不能用请求体自报 moderator。
 - `POST /tables/{table_id}/recompose`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `POST /tables/{table_id}/select?participant_id=...`：显式记录一次 open 桌选择；服务端生成稳定行为事件，不会自动入席或改变桌状态。
