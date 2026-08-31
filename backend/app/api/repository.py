@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, BehaviorEvent, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, BehaviorEvent, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -88,6 +88,7 @@ class InMemoryTableRepository:
         self._comment_promotions: dict[str, list[CommentPromotion]] = {}
         self._no_match: dict[str, set[str]] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
+        self._safety_report_audits: dict[str, list[SafetyReportStatusAudit]] = {}
         self._safety_resolutions: dict[str, list[SafetyResolution]] = {}
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
         self._behavior_events: dict[str, list[BehaviorEvent]] = {}
@@ -115,6 +116,7 @@ class InMemoryTableRepository:
         self._comments[table_id] = []
         self._comment_promotions[table_id] = []
         self._safety_reports[table_id] = []
+        self._safety_report_audits[table_id] = []
         self._safety_resolutions[table_id] = []
         return state.model_copy(deep=True)
 
@@ -273,13 +275,32 @@ class InMemoryTableRepository:
         return [item.model_copy(deep=True) for item in rows]
 
     @_synchronized
+    def safety_report_audits(
+        self, table_id: str, report_id: str | None = None
+    ) -> list[SafetyReportStatusAudit]:
+        """Return trusted report status history for the moderation adapter."""
+        self.get(table_id)
+        rows = self._safety_report_audits[table_id]
+        if report_id is not None:
+            rows = [item for item in rows if item.report_id == report_id]
+        return [item.model_copy(deep=True) for item in rows]
+
+    @_synchronized
     def update_safety_report_status(
-        self, table_id: str, report_id: str, status: str
+        self,
+        table_id: str,
+        report_id: str,
+        status: str,
+        *,
+        moderator_id: str = "system",
+        reason: str | None = None,
     ) -> SafetyReport:
         """Advance one private report through the moderator status lifecycle."""
         self.get(table_id)
         if status not in {"acknowledged", "resolved"}:
             raise ValueError("unsupported safety report status")
+        if not moderator_id.strip():
+            raise ValueError("moderator_id must be non-empty")
         for index, report in enumerate(self._safety_reports[table_id]):
             if report.report_id != report_id:
                 continue
@@ -294,6 +315,15 @@ class InMemoryTableRepository:
                 raise ValueError("safety report status cannot move backwards")
             updated = report.model_copy(update={"status": status})
             self._safety_reports[table_id][index] = updated
+            self._safety_report_audits[table_id].append(SafetyReportStatusAudit(
+                event_id=f"{table_id}:{report_id}:{status}",
+                table_id=table_id,
+                report_id=report_id,
+                moderator_id=moderator_id.strip(),
+                from_status=report.status,
+                to_status=status,
+                reason=reason.strip() if reason is not None and reason.strip() else None,
+            ))
             return updated.model_copy(deep=True)
         raise KeyError(f"unknown safety report: {report_id}")
 
@@ -918,6 +948,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._comment_promotions,
                 self._no_match,
                 self._safety_reports,
+                self._safety_report_audits,
                 self._safety_resolutions,
                 self._personal_context_consents,
                 self._behavior_events,
@@ -946,11 +977,13 @@ class JsonTableRepository(InMemoryTableRepository):
         comments = {**self._comments, table_id: []}
         comment_promotions = {**self._comment_promotions, table_id: []}
         reports = {**self._safety_reports, table_id: []}
+        report_audits = {**self._safety_report_audits, table_id: []}
         resolutions = {**self._safety_resolutions, table_id: []}
         self._commit(
             states, turns, self._trusted_grounding_cards, interventions, invitations,
             outcomes, feedback, comments, self._no_match, reports,
             comment_promotions=comment_promotions,
+            safety_report_audits=report_audits,
             safety_resolutions=resolutions,
         )
         return state.model_copy(deep=True)
@@ -985,12 +1018,20 @@ class JsonTableRepository(InMemoryTableRepository):
 
     @_synchronized
     def update_safety_report_status(
-        self, table_id: str, report_id: str, status: str
+        self,
+        table_id: str,
+        report_id: str,
+        status: str,
+        *,
+        moderator_id: str = "system",
+        reason: str | None = None,
     ) -> SafetyReport:
         """Advance and atomically persist one private report status."""
         self.get(table_id)
         if status not in {"acknowledged", "resolved"}:
             raise ValueError("unsupported safety report status")
+        if not moderator_id.strip():
+            raise ValueError("moderator_id must be non-empty")
         for index, report in enumerate(self._safety_reports[table_id]):
             if report.report_id != report_id:
                 continue
@@ -1004,6 +1045,15 @@ class JsonTableRepository(InMemoryTableRepository):
             if status not in allowed[report.status]:
                 raise ValueError("safety report status cannot move backwards")
             updated = report.model_copy(update={"status": status})
+            audit = SafetyReportStatusAudit(
+                event_id=f"{table_id}:{report_id}:{status}",
+                table_id=table_id,
+                report_id=report_id,
+                moderator_id=moderator_id.strip(),
+                from_status=report.status,
+                to_status=status,
+                reason=reason.strip() if reason is not None and reason.strip() else None,
+            )
             reports = {
                 **self._safety_reports,
                 table_id: [
@@ -1011,10 +1061,15 @@ class JsonTableRepository(InMemoryTableRepository):
                     for item in self._safety_reports[table_id]
                 ],
             }
+            report_audits = {
+                **self._safety_report_audits,
+                table_id: [*self._safety_report_audits[table_id], audit],
+            }
             self._commit(
                 self._states, self._turns, self._trusted_grounding_cards,
                 self._interventions, self._invitations, self._follow_up_outcomes,
                 self._value_feedback, self._comments, self._no_match, reports,
+                safety_report_audits=report_audits,
             )
             return updated.model_copy(deep=True)
         raise KeyError(f"unknown safety report: {report_id}")
@@ -1695,6 +1750,7 @@ class JsonTableRepository(InMemoryTableRepository):
         comment_promotions: dict[str, list[CommentPromotion]] | None = None,
         behavior_events: dict[str, list[BehaviorEvent]] | None = None,
         safety_resolutions: dict[str, list[SafetyResolution]] | None = None,
+        safety_report_audits: dict[str, list[SafetyReportStatusAudit]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1704,6 +1760,11 @@ class JsonTableRepository(InMemoryTableRepository):
         comment_rows = comments if comments is not None else self._comments
         no_match_rows = no_match if no_match is not None else self._no_match
         report_rows = safety_reports if safety_reports is not None else self._safety_reports
+        report_audit_rows = (
+            safety_report_audits
+            if safety_report_audits is not None
+            else self._safety_report_audits
+        )
         consent_rows = (
             personal_context_consents
             if personal_context_consents is not None
@@ -1750,6 +1811,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "safety_reports": [
                         item.model_dump(mode="json")
                         for item in report_rows[table_id]
+                    ],
+                    "safety_report_audits": [
+                        item.model_dump(mode="json")
+                        for item in report_audit_rows[table_id]
                     ],
                     "safety_resolutions": [
                         item.model_dump(mode="json")
@@ -1822,6 +1887,10 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in report_rows.items()
         }
+        self._safety_report_audits = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in report_audit_rows.items()
+        }
         self._personal_context_consents = {
             viewer_id: consent.model_copy(deep=True)
             for viewer_id, consent in consent_rows.items()
@@ -1847,6 +1916,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[CommentPromotion]],
         dict[str, set[str]],
         dict[str, list[SafetyReport]],
+        dict[str, list[SafetyReportStatusAudit]],
         dict[str, PersonalContextConsent],
         dict[str, list[BehaviorEvent]],
         dict[str, list[SafetyResolution]],
@@ -1871,6 +1941,7 @@ class JsonTableRepository(InMemoryTableRepository):
         comments: dict[str, list[PeripheralComment]] = {}
         comment_promotions: dict[str, list[CommentPromotion]] = {}
         safety_reports: dict[str, list[SafetyReport]] = {}
+        safety_report_audits: dict[str, list[SafetyReportStatusAudit]] = {}
         safety_resolutions: dict[str, list[SafetyResolution]] = {}
         for table_id, table in payload["tables"].items():
             table_keys = set(table) if isinstance(table, dict) else set()
@@ -1881,7 +1952,7 @@ class JsonTableRepository(InMemoryTableRepository):
                             "states", "turns", "interventions", "invitations",
                             "follow_up_outcomes", "value_feedback", "comments",
                             "comment_promotions", "safety_reports",
-                            "safety_resolutions",
+                            "safety_report_audits", "safety_resolutions",
                         }
                     )):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
@@ -1913,6 +1984,13 @@ class JsonTableRepository(InMemoryTableRepository):
                 if not isinstance(raw_reports, list):
                     raise ValueError("safety_reports must be an array")
                 reports = [SafetyReport.model_validate(item) for item in raw_reports]
+                raw_report_audits = table.get("safety_report_audits", [])
+                if not isinstance(raw_report_audits, list):
+                    raise ValueError("safety_report_audits must be an array")
+                report_audits = [
+                    SafetyReportStatusAudit.model_validate(item)
+                    for item in raw_report_audits
+                ]
                 raw_resolutions = table.get("safety_resolutions", [])
                 if not isinstance(raw_resolutions, list):
                     raise ValueError("safety_resolutions must be an array")
@@ -2005,6 +2083,15 @@ class JsonTableRepository(InMemoryTableRepository):
             if len(set(report_ids)) != len(report_ids):
                 raise ValueError(f"invalid persistence file: duplicate safety reports for table {table_id!r}")
             if any(
+                audit.table_id != table_id
+                or audit.report_id not in report_ids
+                for audit in report_audits
+            ):
+                raise ValueError(f"invalid persistence file: incompatible safety report audits for table {table_id!r}")
+            audit_ids = [audit.event_id for audit in report_audits]
+            if len(set(audit_ids)) != len(audit_ids):
+                raise ValueError(f"invalid persistence file: duplicate safety report audits for table {table_id!r}")
+            if any(
                 resolution.table_id != table_id
                 or resolution.from_state_version < 0
                 or resolution.state_version <= resolution.from_state_version
@@ -2027,6 +2114,7 @@ class JsonTableRepository(InMemoryTableRepository):
             comment_promotions[table_id] = promotions
             self_reports = reports
             safety_reports[table_id] = self_reports
+            safety_report_audits[table_id] = report_audits
             safety_resolutions[table_id] = resolutions
         raw_cards = payload.get("trusted_grounding_cards", {})
         if not isinstance(raw_cards, dict):
@@ -2099,4 +2187,4 @@ class JsonTableRepository(InMemoryTableRepository):
             if len(set(event_ids)) != len(event_ids):
                 raise ValueError("invalid persistence file: duplicate behavior event")
             behavior_events[participant_id] = events
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, safety_resolutions, consents, behavior_events
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, safety_report_audits, safety_resolutions, consents, behavior_events

@@ -526,6 +526,29 @@ class SafetyReport(ContractModel):
         return self
 
 
+class SafetyReportStatusAudit(ContractModel):
+    """Immutable trusted record for one real moderator report transition."""
+
+    event_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    report_id: str = Field(min_length=1)
+    moderator_id: str = Field(min_length=1)
+    from_status: Literal["open", "acknowledged", "resolved"]
+    to_status: Literal["open", "acknowledged", "resolved"]
+    reason: str | None = Field(default=None, min_length=1, max_length=240)
+
+    @model_validator(mode="after")
+    def status_must_advance(self) -> "SafetyReportStatusAudit":
+        allowed = {
+            "open": {"acknowledged", "resolved"},
+            "acknowledged": {"resolved"},
+            "resolved": set(),
+        }
+        if self.to_status not in allowed[self.from_status]:
+            raise ValueError("safety report audit must record a forward transition")
+        return self
+
+
 class FollowUpItem(ContractModel):
     item_type: Literal["suggestion", "commitment"]
     text: str = Field(min_length=1)

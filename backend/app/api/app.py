@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -206,6 +206,7 @@ class SafetyReportStatusRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["acknowledged", "resolved"]
+    reason: str | None = Field(default=None, min_length=1, max_length=240)
 
 
 class SafetyResolutionRequest(BaseModel):
@@ -1020,6 +1021,24 @@ def create_app(
         table_or_404(table_id)
         return repo.safety_reports(table_id)
 
+    @api.get(
+        "/tables/{table_id}/safety-reports/{report_id}/history",
+        response_model=list[SafetyReportStatusAudit],
+    )
+    def get_moderation_safety_report_history(
+        table_id: str,
+        report_id: str,
+        request: Request,
+    ) -> list[SafetyReportStatusAudit]:
+        """Expose one report's trusted transition chain only to moderation."""
+        if moderator_resolver is None:
+            raise HTTPException(status_code=503, detail="moderation is not configured")
+        require_moderator_identity(moderator_resolver, request)
+        table_or_404(table_id)
+        if not any(item.report_id == report_id for item in repo.safety_reports(table_id)):
+            raise HTTPException(status_code=404, detail=f"unknown safety report: {report_id}")
+        return repo.safety_report_audits(table_id, report_id)
+
     @api.patch(
         "/tables/{table_id}/safety-reports/{report_id}",
         response_model=SafetyReport,
@@ -1033,10 +1052,16 @@ def create_app(
         """Advance a private report only through the trusted moderation boundary."""
         if moderator_resolver is None:
             raise HTTPException(status_code=503, detail="moderation is not configured")
-        require_moderator_identity(moderator_resolver, request)
+        moderator_id = require_moderator_identity(moderator_resolver, request)
         table_or_404(table_id)
         try:
-            return repo.update_safety_report_status(table_id, report_id, payload.status)
+            return repo.update_safety_report_status(
+                table_id,
+                report_id,
+                payload.status,
+                moderator_id=moderator_id,
+                reason=payload.reason,
+            )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
