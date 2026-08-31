@@ -86,6 +86,40 @@ class TableState(ContractModel):
     def participant_keys_match_ids(self) -> "TableState":
         if any(key != participant.participant_id for key, participant in self.participants.items()):
             raise ValueError("participant map keys must match participant_id")
+        if self.conversation.safety_level is SafetyLevel.CRITICAL and not self.conversation.risk_flags:
+            raise ValueError("critical safety requires risk_flags with turn evidence")
+        return self
+
+class GateDecision(ContractModel):
+    should_speak: bool = False
+    safety_override: bool = False
+    evidence_turns: list[PositiveInt] = Field(default_factory=list)
+    reasons_to_speak: list[str] = Field(default_factory=list)
+    reasons_to_stay_silent: list[str] = Field(default_factory=lambda: ["default silence"])
+    confidence: Confidence = 1.0
+
+    @model_validator(mode="after")
+    def safety_requires_speech(self) -> "GateDecision":
+        if self.safety_override and not self.should_speak:
+            raise ValueError("safety_override requires should_speak")
+        if self.should_speak and not self.reasons_to_speak:
+            raise ValueError("speech decisions require reasons_to_speak")
+        if not self.should_speak and not self.reasons_to_stay_silent:
+            raise ValueError("silence decisions require reasons_to_stay_silent")
+        return self
+
+class RouteDecision(ContractModel):
+    action: Action = Action.SILENCE
+    target_participant_id: str | None = None
+    evidence_turns: list[PositiveInt] = Field(default_factory=list)
+    confidence: Confidence = 1.0
+
+    @model_validator(mode="after")
+    def action_has_evidence(self) -> "RouteDecision":
+        if self.action != Action.SILENCE and not self.evidence_turns:
+            raise ValueError("non-SILENCE routes require evidence_turns")
+        if self.action == Action.PASS and self.target_participant_id is None:
+            raise ValueError("PASS requires target_participant_id")
         return self
 
 class AgentActionEvent(ContractModel):
