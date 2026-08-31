@@ -173,9 +173,13 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
             await websocket.close(code=1008)
             return
         try:
-            repository.get(table_id)
+            state = repository.get(table_id)
         except KeyError:
             await _send_error(websocket, "unknown_table", f"unknown table: {table_id}")
+            await websocket.close(code=1008)
+            return
+        if participant_id not in state.participants:
+            await _send_error(websocket, "unknown_participant", f"unknown participant: {participant_id}")
             await websocket.close(code=1008)
             return
 

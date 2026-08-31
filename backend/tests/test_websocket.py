@@ -202,10 +202,9 @@ def test_participant_events_only_accept_the_query_participant_id() -> None:
     assert left["state"]["participants"] == {}
 
     with client.websocket_connect("/ws/tables/table-ws?participant_id=ghost") as websocket:
-        websocket.send_json({"type": "participant_joined", "participant_id": "ghost"})
         error = websocket.receive_json()
 
-    assert error["code"] == "invalid_event"
+    assert error["code"] == "unknown_participant"
     assert "unknown participant" in error["detail"]
 
 
@@ -299,7 +298,7 @@ def test_request_close_for_unknown_query_participant_does_not_leak_personal_card
         error = websocket.receive_json()
 
     assert error["type"] == "error"
-    assert error["code"] == "invalid_event"
+    assert error["code"] == "unknown_participant"
     assert "unknown participant" in error["detail"]
 
 
