@@ -205,6 +205,13 @@
 - **替代方案**: 直接把搜索结果当作桌、让 LLM 自由生成问题/候选人，或在服务端抓取知乎私密行为。
 - **代价**: V1 启发式不能替代语义聚类；真正的知乎 source 只需把授权结果映射为 `ContentSignal`，后续可替换 detector 而不改桌内闭环。
 
+### ADR-27: 动态补位只推荐不自动入席
+
+- **决策**: 增加 `POST /tables/{id}/candidate-preview?participant_id=...`。桌内成员可用当前问题或自定义 query 请求已授权 source；服务端结合桌内已有角色、主题词、候选经历和 `roundtable_invite_preference` 生成有理由的候选推荐，过滤已有席位及曾经邀请过的候选，返回 `open_seats`/`role_gaps` 和公开推荐字段。该接口不改 Table State、不创建邀请、不自动入席；成员仍需调用现有邀请接口逐个发出邀请。
+- **理由**: 产品要求第 5 席可动态补入，但候补不是机械替补，Agent 应根据真实讨论判断现在最缺谁；把推荐和入席拆开既能利用实时桌状态，也保留候选人和桌内成员的选择权。
+- **替代方案**: 满桌前自动把 source 返回的人写入 participants、只按相关性排序，或把候选推荐交给前端自行实现。
+- **代价**: source 未配置时只能返回 503；角色缺口是 V1 确定性启发式，后续可替换为模型/行为信号而不改变邀请事务。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -218,6 +225,7 @@ GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
 POST /tables/{id}/participants
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
+POST /tables/{id}/candidate-preview?participant_id={participant_id}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -312,6 +320,7 @@ master
                                                                                   ←── D46 participant leave REST parity
                                                                                         ←── D47 command-backed candidate source
                                                                                               ←── D48 opportunity discovery preview
+                                                                                                    ←── D49 dynamic candidate replenishment preview
 ```
 
 ## Progress Ledger
@@ -369,7 +378,8 @@ master
 | D45 relationship memory view | complete | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | 221 tests + compileall + diff check | `c9334c4` |
 | D46 participant leave REST parity | complete | self-scoped REST leave endpoint sharing atomic repository membership migration with WebSocket | 222 tests + compileall + diff check | `58c0119` |
 | D47 command-backed candidate source | complete | bounded no-shell JSON stdin/stdout bridge for authorized CLI/MCP/OAuth candidate adapters | 227 tests + compileall + diff check | `a7a28bc` |
-| D48 opportunity discovery preview | complete | public-signal opportunity detector with unfinishedness evidence, role gaps, and normalized candidate seeds | 231 tests + compileall + diff check | pending |
+| D48 opportunity discovery preview | complete | public-signal opportunity detector with unfinishedness evidence, role gaps, and normalized candidate seeds | 231 tests + compileall + diff check | `9eda0ce` + `874fa68` |
+| D49 dynamic candidate replenishment preview | complete | member-scoped, source-backed recommendations for current role gaps without automatic seat or invitation writes | 236 tests + compileall + diff check | `9884bee` |
 
 ## 已知坑位（Running Gotchas）
 
