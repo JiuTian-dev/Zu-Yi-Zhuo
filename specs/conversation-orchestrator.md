@@ -742,7 +742,7 @@ master
 | D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 327 tests + compileall + diff check | `288dde4` + `af854ad` |
 | D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
 | D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
-| D85 WebSocket frame size boundary | in_progress | Bound JSON frame size before parsing and reject overlong human text without persistence | pending | — |
+| D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
 
 ## 已知坑位（Running Gotchas）
 
