@@ -38,6 +38,17 @@ class ParticipantConsentRequest(BaseModel):
     profile_shared: bool
 
 
+class ConfirmMatchRequest(MatchRequest):
+    table_id: str | None = Field(default=None, min_length=1)
+
+
+class MatchedTableResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan: MatchPlan
+    state: TableState
+
+
 def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     repo = repository or InMemoryTableRepository()
@@ -67,6 +78,18 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:
         return build_match_plan(payload)
+
+    @api.post("/matches/confirm", response_model=MatchedTableResponse, status_code=status.HTTP_201_CREATED)
+    def confirm_match(payload: ConfirmMatchRequest) -> MatchedTableResponse:
+        plan = build_match_plan(payload)
+        selected_ids = {seat.participant_id for seat in plan.selected}
+        selected = [candidate for candidate in payload.candidates if candidate.participant_id in selected_ids]
+        table_id = payload.table_id or uuid4().hex
+        try:
+            state = repo.create(table_id, payload.core_question, selected)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return MatchedTableResponse(plan=plan, state=projected(state))
 
     @api.get("/tables/{table_id}", response_model=TableState)
     def get_table(table_id: str, participant_id: str | None = Query(default=None)) -> TableState:

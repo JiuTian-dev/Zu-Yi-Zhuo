@@ -161,3 +161,25 @@ def test_match_preview_returns_public_seats_and_explainable_reasons() -> None:
     assert {seat["participant_id"] for seat in payload["selected"]} == {"tech", "buyer", "product"}
     assert {reason["participant_id"] for reason in payload["reasons"]} == {"tech", "buyer", "product"}
     assert all("declared_position" not in seat and "relevant_experience" not in seat for seat in payload["selected"])
+
+
+def test_match_confirm_creates_a_table_from_the_same_public_match_plan() -> None:
+    client, _ = client_and_repo()
+    candidates = [
+        {**participant("p1"), "role": "架构师", "relevant_experience": [{"text": "做过 Agent 试点", "source_ref": "private:1"}]},
+        {**participant("p2"), "role": "采购负责人", "relevant_experience": [{"text": "做过供应商采购", "source_ref": "private:2"}]},
+        {**participant("p3"), "role": "产品负责人"},
+    ]
+    response = client.post("/matches/confirm", json={
+        "table_id": "matched-table", "core_question": "Agent 试点如何进入企业？",
+        "candidates": candidates, "table_size": 3,
+    })
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["plan"]["core_question"] == payload["state"]["core_question"]
+    assert {seat["participant_id"] for seat in payload["plan"]["selected"]} == {"p1", "p2", "p3"}
+    assert set(payload["state"]["participants"]) == {"p1", "p2", "p3"}
+    assert payload["state"]["participants"]["p1"]["declared_position"] is None
+    assert client.post("/matches/confirm", json={
+        "table_id": "matched-table", "core_question": "Q", "candidates": candidates, "table_size": 3,
+    }).status_code == 409
