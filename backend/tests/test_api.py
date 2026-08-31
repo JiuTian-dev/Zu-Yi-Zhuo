@@ -629,6 +629,45 @@ def test_rest_consent_is_self_scoped() -> None:
     assert client.get("/tables/privacy-self/state").json()["participants"]["p2"]["declared_position"] is None
 
 
+def test_rest_invitation_preference_is_self_scoped_and_idempotent() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "preference",
+        "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+
+    changed = client.put(
+        "/tables/preference/participants/p1/invitation-preference?viewer_id=p1",
+        json={"preference": "many"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["version"] == 1
+    assert changed.json()["participants"]["p1"]["roundtable_invite_preference"] == "many"
+
+    repeated = client.put(
+        "/tables/preference/participants/p1/invitation-preference?viewer_id=p1",
+        json={"preference": "many"},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["version"] == 1
+
+    mismatch = client.put(
+        "/tables/preference/participants/p1/invitation-preference?viewer_id=p2",
+        json={"preference": "none"},
+    )
+    assert mismatch.status_code == 403
+    assert repository.get("preference").participants["p1"].roundtable_invite_preference.value == "many"
+
+    opted_out = client.put(
+        "/tables/preference/participants/p1/invitation-preference?viewer_id=p1",
+        json={"preference": "none"},
+    )
+    assert opted_out.status_code == 200
+    assert opted_out.json()["version"] == 2
+    assert opted_out.json()["participants"]["p1"]["roundtable_invite_preference"] == "none"
+
+
 def test_match_preview_returns_public_seats_and_explainable_reasons() -> None:
     client, _ = client_and_repo()
     candidates = [

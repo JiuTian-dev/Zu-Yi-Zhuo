@@ -263,6 +263,51 @@ def test_websocket_consent_is_self_scoped_and_updates_peer_projection() -> None:
     assert "participant_id must match" in error["detail"]
 
 
+def test_websocket_invitation_preference_is_self_scoped_and_idempotent() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as owner:
+        with client.websocket_connect("/ws/tables/table-ws?participant_id=p2") as peer:
+            owner.send_json({
+                "type": "participant_invitation_preference",
+                "participant_id": "p1",
+                "preference": "many",
+            })
+            expected = {
+                "type": "participant_invitation_preference_changed",
+                "participant_id": "p1",
+                "preference": "many",
+                "state_version": 3,
+            }
+            assert owner.receive_json() == peer.receive_json() == expected
+            owner_state = owner.receive_json()
+            peer_state = peer.receive_json()
+            assert owner_state["state"]["participants"]["p1"]["roundtable_invite_preference"] == "many"
+            assert peer_state["state"]["participants"]["p1"]["roundtable_invite_preference"] == "many"
+
+            owner.send_json({
+                "type": "participant_invitation_preference",
+                "participant_id": "p1",
+                "preference": "many",
+            })
+            owner.send_json({"type": "request_debug_state"})
+            assert owner.receive_json()["state"]["version"] == 3
+
+            owner.send_json({
+                "type": "participant_invitation_preference",
+                "participant_id": "p2",
+                "preference": "none",
+            })
+            error = owner.receive_json()
+
+    assert error["type"] == "error"
+    assert error["code"] == "invalid_event"
+    assert "participant_id must match" in error["detail"]
+    assert repository.get("table-ws").version == 3
+
+
 def test_debug_join_unknown_event_and_silence_are_structured() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

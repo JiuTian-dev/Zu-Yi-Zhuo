@@ -145,6 +145,29 @@ def test_rest_nudge_broadcasts_same_action_and_state_contract_as_websocket() -> 
     assert changed["state"]["version"] == response.json()["state"]["version"] == 2
 
 
+def test_rest_invitation_preference_broadcasts_event_and_projected_state() -> None:
+    client, _ = _client_with_table(["p1", "p2"])
+    with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as owner:
+        with client.websocket_connect("/ws/tables/table-rest?participant_id=p2") as peer:
+            response = client.put(
+                "/tables/table-rest/participants/p1/invitation-preference?viewer_id=p1",
+                json={"preference": "none"},
+            )
+            assert response.status_code == 200
+            expected = {
+                "type": "participant_invitation_preference_changed",
+                "participant_id": "p1",
+                "preference": "none",
+                "state_version": 1,
+            }
+            assert owner.receive_json() == peer.receive_json() == expected
+            owner_state = owner.receive_json()
+            peer_state = peer.receive_json()
+
+    assert owner_state["state"]["version"] == peer_state["state"]["version"] == 1
+    assert response.json()["participants"]["p1"]["roundtable_invite_preference"] == "none"
+
+
 def test_rest_close_failure_broadcasts_start_without_mutating_state() -> None:
     client, repository = _client_with_table()
     with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:

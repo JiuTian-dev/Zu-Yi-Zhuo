@@ -6,7 +6,7 @@ import pytest
 
 from app.api.repository import JsonTableRepository
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import Action, FollowUpOutcome, GroundingCard, HumanTurn, InterventionRecord, SafetyLevel
+from app.domain import Action, FollowUpOutcome, GroundingCard, HumanTurn, InvitationPreference, InterventionRecord, SafetyLevel
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety
 
@@ -153,6 +153,23 @@ def test_json_repository_persists_invitation_state_and_acceptance(tmp_path) -> N
     reloaded = JsonTableRepository(path)
     assert reloaded.get("invite").participants["product"].display_name == "周宁"
     assert reloaded.invitations("invite")[0].status.value == "accepted"
+
+
+def test_json_repository_persists_participant_invitation_preference(tmp_path) -> None:
+    path = tmp_path / "invitation-preference.json"
+    repository = JsonTableRepository(path)
+    repository.create("preference", "Q", [flagship_participants[0], flagship_participants[1]])
+
+    updated = repository.set_invitation_preference(
+        "preference", "architect", InvitationPreference.NONE
+    )
+    assert updated.version == 1
+
+    restored = JsonTableRepository(path)
+    assert restored.get("preference").participants["architect"].roundtable_invite_preference is InvitationPreference.NONE
+    assert restored.set_invitation_preference(
+        "preference", "architect", InvitationPreference.NONE
+    ).version == 1
 
 
 def test_follow_up_outcome_is_persisted_and_upserted_after_close(tmp_path) -> None:

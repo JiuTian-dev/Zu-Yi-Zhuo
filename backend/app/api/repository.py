@@ -711,6 +711,29 @@ class InMemoryTableRepository:
         return self._append(table_id, updated)
 
     @_synchronized
+    def set_invitation_preference(
+        self,
+        table_id: str,
+        participant_id: str,
+        preference: InvitationPreference,
+    ) -> TableState:
+        """Set a participant's self-scoped roundtable invitation preference."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        participant = state.participants.get(participant_id)
+        if participant is None:
+            raise ValueError(f"unknown participant: {participant_id}")
+        if participant.roundtable_invite_preference is preference:
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.participants[participant_id].roundtable_invite_preference = preference
+        return self._append(table_id, updated)
+
+    @_synchronized
     def upgrade_to_sync(self, table_id: str) -> TableState:
         """Atomically switch an eligible table from async to sync mode."""
         state = self.get(table_id)

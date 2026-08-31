@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, AgentActionEvent, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, InvitationPreference, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
 from app.domain.schemas import EvidenceStatement
 from app.orchestrator import (
     build_personal_card,
@@ -77,6 +77,12 @@ class _ParticipantConsent(_ClientEvent):
     type: Literal["participant_consent"]
     participant_id: str = Field(min_length=1)
     profile_shared: bool
+
+
+class _ParticipantInvitationPreference(_ClientEvent):
+    type: Literal["participant_invitation_preference"]
+    participant_id: str = Field(min_length=1)
+    preference: InvitationPreference
 
 
 class _RequestDebugState(_ClientEvent):
@@ -270,7 +276,8 @@ def register_websocket_routes(
                 mutates_table = (
                     viewer_mode == "participant" and payload["type"] in {
                         "human_message", "participant_joined", "participant_left",
-                        "participant_consent", "request_close", "request_nudge",
+                        "participant_consent", "participant_invitation_preference",
+                        "request_close", "request_nudge",
                     }
                 ) or (
                     viewer_mode == "commenter" and payload["type"] == "peripheral_comment"
@@ -494,6 +501,22 @@ def register_websocket_routes(
                             "profile_shared": event.profile_shared,
                         })
                         await broadcast_state(table_id, state)
+                    elif payload["type"] == "participant_invitation_preference":
+                        event = _ParticipantInvitationPreference.model_validate(payload)
+                        if event.participant_id != participant_id:
+                            raise ValueError("participant_id must match the WebSocket query")
+                        previous_state = repository.get(table_id)
+                        state = repository.set_invitation_preference(
+                            table_id, participant_id, event.preference
+                        )
+                        if state.version != previous_state.version:
+                            await broadcast(table_id, {
+                                "type": "participant_invitation_preference_changed",
+                                "participant_id": participant_id,
+                                "preference": event.preference.value,
+                                "state_version": state.version,
+                            })
+                            await broadcast_state(table_id, state)
                     elif payload["type"] == "request_debug_state":
                         _RequestDebugState.model_validate(payload)
                         await websocket.send_json(_state_event(

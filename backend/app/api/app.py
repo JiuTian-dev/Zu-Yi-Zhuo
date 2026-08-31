@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -51,6 +51,12 @@ class ParticipantConsentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     profile_shared: bool
+
+
+class ParticipantInvitationPreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preference: InvitationPreference
 
 
 class CreateInvitationRequest(BaseModel):
@@ -1370,6 +1376,37 @@ def create_app(
                 "type": "participant_consent_changed",
                 "participant_id": participant_id,
                 "profile_shared": payload.profile_shared,
+                "state_version": state.version,
+            })
+            await broadcast_table_state(table_id, state)
+        return projected(state, participant_id)
+
+    @api.put(
+        "/tables/{table_id}/participants/{participant_id}/invitation-preference",
+        response_model=TableState,
+    )
+    async def set_participant_invitation_preference(
+        table_id: str,
+        participant_id: str,
+        payload: ParticipantInvitationPreferenceRequest,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> TableState:
+        require_request_identity(identity_resolver, request, viewer_id)
+        previous_state = table_or_404(table_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            state = repo.set_invitation_preference(
+                table_id, participant_id, payload.preference
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        if state.version != previous_state.version:
+            await broadcast_table_event(table_id, {
+                "type": "participant_invitation_preference_changed",
+                "participant_id": participant_id,
+                "preference": payload.preference.value,
                 "state_version": state.version,
             })
             await broadcast_table_state(table_id, state)

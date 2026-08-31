@@ -44,6 +44,29 @@ def test_injected_identity_resolver_cross_checks_self_scoped_rest_routes() -> No
     assert valid.status_code == 200
 
 
+def test_injected_identity_resolver_protects_invitation_preference_update() -> None:
+    client = TestClient(create_app(_repository(), identity_resolver=_header_identity))
+
+    missing = client.put(
+        "/tables/identity-table/participants/p1/invitation-preference?viewer_id=p1",
+        json={"preference": "many"},
+    )
+    mismatch = client.put(
+        "/tables/identity-table/participants/p1/invitation-preference?viewer_id=p1",
+        headers={"X-User-ID": "p2"},
+        json={"preference": "many"},
+    )
+    valid = client.put(
+        "/tables/identity-table/participants/p1/invitation-preference?viewer_id=p1",
+        headers={"X-User-ID": "p1"},
+        json={"preference": "many"},
+    )
+
+    assert missing.status_code == 401
+    assert mismatch.status_code == 403
+    assert valid.status_code == 200
+
+
 def test_injected_identity_resolver_cross_checks_participant_websocket_handshake() -> None:
     client = TestClient(create_app(_repository(), identity_resolver=_header_identity))
 
