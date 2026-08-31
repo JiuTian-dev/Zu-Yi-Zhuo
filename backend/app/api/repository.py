@@ -125,6 +125,17 @@ class InMemoryTableRepository:
             raise ValueError(f"intervention already exists: {record.intervention_id}")
         self._interventions[table_id].append(record.model_copy(deep=True))
 
+    def update_intervention_record(self, table_id: str, record: InterventionRecord) -> InterventionRecord:
+        """Replace an existing audit entry when post-intervention evidence arrives."""
+        self.get(table_id)
+        if record.table_id != table_id:
+            raise ValueError("intervention record must belong to the table")
+        for index, existing in enumerate(self._interventions[table_id]):
+            if existing.intervention_id == record.intervention_id:
+                self._interventions[table_id][index] = record.model_copy(deep=True)
+                return record.model_copy(deep=True)
+        raise ValueError(f"unknown intervention: {record.intervention_id}")
+
     def interventions(self, table_id: str) -> list[InterventionRecord]:
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._interventions[table_id]]
@@ -215,6 +226,22 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [*self._interventions[table_id], record.model_copy(deep=True)],
         }
         self._commit(self._states, self._turns, self._trusted_grounding_cards, interventions)
+
+    def update_intervention_record(self, table_id: str, record: InterventionRecord) -> InterventionRecord:
+        self.get(table_id)
+        if record.table_id != table_id:
+            raise ValueError("intervention record must belong to the table")
+        if not any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
+            raise ValueError(f"unknown intervention: {record.intervention_id}")
+        interventions = {
+            **self._interventions,
+            table_id: [
+                record.model_copy(deep=True) if item.intervention_id == record.intervention_id else item
+                for item in self._interventions[table_id]
+            ],
+        }
+        self._commit(self._states, self._turns, self._trusted_grounding_cards, interventions)
+        return record.model_copy(deep=True)
 
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage a source and persist it before acknowledging the write."""

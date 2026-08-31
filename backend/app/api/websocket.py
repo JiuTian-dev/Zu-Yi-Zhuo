@@ -6,13 +6,14 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, AgentActionEvent, HumanTurn, InterventionRecord, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, HumanTurn, InterventionRecord, ReflectionResult, RouteDecision, SafetyLevel, TableState
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import (
     build_personal_card,
     build_shared_baseline,
     decide_intervention,
     enforce_safety,
+    evaluate_reflection,
     evaluate_safety,
     generate_host_event,
     record_intervention,
@@ -92,6 +93,41 @@ def _build_intervention_record(
         model="deterministic-demo",
         token_usage=TokenUsage(input_tokens=0, output_tokens=0),
     )
+
+
+def _reflect_latest_intervention(repository, table_id: str, state: TableState) -> InterventionRecord | None:
+    """Attach post-intervention evidence after two human turns, once only."""
+    records = repository.interventions(table_id)
+    if not records:
+        return None
+    record = records[-1]
+    if record.reflection is not None or state.intervention.human_turns_since_last_intervention < 2:
+        return None
+    before_version = record.state_version - 1
+    before = next((item for item in repository.replay(table_id) if item.version == before_version), None)
+    if before is None:
+        return None
+    route = RouteDecision(
+        action=record.action,
+        target_participant_id=record.target_participant_id,
+        evidence_turns=record.evidence_turns,
+        confidence=record.confidence,
+    )
+    reflection: ReflectionResult = evaluate_reflection(
+        before, state, route,
+        human_turn_ids=[turn.turn_id for turn in repository.turns(table_id)
+                        if turn.turn_id > max(record.evidence_turns, default=0)],
+    )
+    evidence_items = [*reflection.effects, *reflection.negative_effects]
+    evidence = sorted({turn_id for item in evidence_items for turn_id in item.evidence_turns})
+    if not evidence:
+        return None
+    outcome_text = "；".join(item.text for item in evidence_items)
+    updated = record.model_copy(update={
+        "outcome": EvidenceStatement(text=outcome_text, evidence_turns=evidence),
+        "reflection": EvidenceStatement(text=reflection.strategy_note, evidence_turns=evidence),
+    })
+    return repository.update_intervention_record(table_id, updated)
 
 
 async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
@@ -190,6 +226,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
 
                         turn = HumanTurn(turn_id=turn_id, participant_id=participant_id, text=event.text)
                         state = repository.append_turn(table_id, turn)
+                        reflected = _reflect_latest_intervention(repository, table_id, state)
                         action = None
                         grounding_card = None
                         gate, route = decide_intervention(state)
@@ -231,6 +268,11 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                                 **grounding_card.model_dump(mode="json"),
                             })
                         await broadcast_state(table_id, state)
+                        if reflected is not None:
+                            await broadcast(table_id, {
+                                "type": "intervention_reflected",
+                                "record": reflected.model_dump(mode="json"),
+                            })
                     elif payload["type"] == "participant_joined":
                         event = _ParticipantJoined.model_validate(payload)
                         if event.participant_id != participant_id:

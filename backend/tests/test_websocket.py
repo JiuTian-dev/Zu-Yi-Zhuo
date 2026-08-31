@@ -70,6 +70,39 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
     assert audit.json()[0]["state_version"] == 4
 
 
+def test_intervention_audit_receives_post_turn_reflection() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "reflect-0", "participant_id": "p1",
+            "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
+        })
+        assert websocket.receive_json()["type"] == "message_committed"
+        assert websocket.receive_json()["type"] == "agent_action"
+        assert websocket.receive_json()["type"] == "table_state_changed"
+
+        for index in (1, 2):
+            websocket.send_json({
+                "type": "human_message", "message_id": f"reflect-{index}", "participant_id": "p1",
+                "text": f"补充第 {index} 条现场信息。", "client_ts": f"2026-08-31T12:0{index}:00Z",
+            })
+            assert websocket.receive_json()["type"] == "message_committed"
+            event = websocket.receive_json()
+            while event["type"] != "table_state_changed":
+                event = websocket.receive_json()
+            if index == 2:
+                reflected = websocket.receive_json()
+
+    assert reflected["type"] == "intervention_reflected"
+    assert reflected["record"]["outcome"] is not None
+    assert reflected["record"]["reflection"] is not None
+    audit = client.get("/tables/table-ws/interventions").json()
+    assert audit[0]["reflection"]["evidence_turns"] == [3]
+
+
 def test_public_table_events_are_broadcast_to_other_connections() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
