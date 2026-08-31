@@ -289,6 +289,13 @@
 - **替代方案**: 把 Agent 伪装成 `participants` 中的第六个成员、只依赖 WebSocket `agent_action` 事件，或让前端硬编码 Agent 身份。
 - **代价**: V1 只记录单一固定 Agent 身份和生命周期状态，不支持多 Agent、Agent 配置或跨桌人格；生产环境可在此结构上扩展 provider/model 展示元数据。
 
+### ADR-39: JSON 收桌必须与内存收桌保持原子、可重启一致
+
+- **决策**: `JsonTableRepository.close_table` 覆盖内存实现，沿用同一幂等状态迁移规则并把关闭快照、真人 turn、干预、邀请、评论、反馈、举报、授权和 Agent 生命周期一起写入原子 JSON 替换；重复关闭不增加版本。旧快照若缺少 Agent 字段，则按 `conversation.closed`/`soft_expired` 自动补齐 `closed`/`paused` 状态。
+- **理由**: 收桌是产品闭环的关键持久化边界；如果重启后恢复为未关闭桌，收桌卡、行动回响和问题重组都会失真。复用仓储事务能避免只更新内存而丢失历史。
+- **替代方案**: 继续依赖继承的内存 `_append`、启动时扫描并猜测关闭状态，或把收桌标记交给前端保存。
+- **代价**: V1 仍是单进程 JSON 仓储；多进程部署需要把同样的状态迁移下沉到数据库事务并加锁。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -435,7 +442,8 @@ master
                                                                                                                                                        ←── D57 authorized personal context source boundary
                                                                                                                                                                ←── D58 personal context consent and scope gate
                                                                                                                                                                        ←── D59 explicit peripheral comment promotion with provenance
-                                                                                                                                                                              ←── D60 explicit AgentPresence lifecycle contract
+                                                                                                                                                                             ←── D60 explicit AgentPresence lifecycle contract
+                                                                                                                                                                                    ←── D61 JSON close lifecycle persistence
 ```
 
 ## Progress Ledger
@@ -506,6 +514,7 @@ master
 | D58 personal context consent and scope gate | complete | self-scoped persistent scope consent, revoke path, and preview enforcement | 273 tests + compileall + diff check | `4e5cc42` |
 | D59 explicit peripheral comment promotion | complete | member-triggered safe comment-to-core turn with provenance, privacy-aware fanout, and idempotent JSON persistence | 278 tests + compileall + diff check | `931783d` |
 | D60 explicit AgentPresence lifecycle contract | complete | stable public Agent identity outside human participants with safety/expiry/close status and legacy persistence defaults | 280 tests + compileall + diff check | `64b9463` |
+| D61 JSON close lifecycle persistence | in progress | restart-safe idempotent close snapshot and legacy Agent lifecycle normalization | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
