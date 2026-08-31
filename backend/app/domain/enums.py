@@ -37,3 +37,7 @@ class InvitationStatus(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     DECLINED = "declined"
+
+class ConversationMode(StrEnum):
+    ASYNC = "async"
+    SYNC = "sync"

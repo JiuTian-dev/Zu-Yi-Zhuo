@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, model_validator
 
-from .enums import Action, DisagreementType, InvitationStatus, Level, Phase, SafetyLevel
+from .enums import Action, ConversationMode, DisagreementType, InvitationStatus, Level, Phase, SafetyLevel
 
 Confidence = Annotated[float, Field(ge=0, le=1)]
 TurnEvidence = Annotated[list[PositiveInt], Field(min_length=1)]
@@ -58,6 +58,25 @@ class InvitationView(ContractModel):
     role: str = Field(min_length=1)
     reason: str = Field(min_length=1, max_length=240)
     status: InvitationStatus
+
+
+class SyncUpgradeSignals(ContractModel):
+    """Self-reported signals used to preview a table's sync upgrade."""
+
+    wants_continue: bool
+    sync_extra_value: bool
+    discussion_quality: bool = False
+    external_attention: bool = False
+    public_value: bool = False
+
+
+class SyncUpgradeDecision(ContractModel):
+    eligible: bool
+    core_members_want_continue: bool
+    sync_has_extra_value: bool
+    active_member_count: int = Field(ge=0)
+    bonus_signals: list[str] = Field(default_factory=list, max_length=3)
+    reason: str = Field(min_length=1, max_length=240)
 
 
 class MatchRequest(ContractModel):
@@ -161,6 +180,7 @@ class ConversationState(ContractModel):
     most_promising_thread: EvidenceStatement | None = None
     risk_flags: list[EvidenceStatement] = Field(default_factory=list)
     safety_level: SafetyLevel
+    mode: ConversationMode = ConversationMode.ASYNC
     closed: bool = False
 
 class InterventionState(ContractModel):

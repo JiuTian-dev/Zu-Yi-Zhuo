@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, GroundingCard, HumanTurn, Invitation, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, TableState
+from app.domain import Action, ConversationMode, GroundingCard, HumanTurn, Invitation, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, SafetyLevel, TableState
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
@@ -177,6 +177,22 @@ class InMemoryTableRepository:
         updated = state.model_copy(deep=True)
         updated.version += 1
         updated.participants[participant_id].profile_shared = shared
+        return self._append(table_id, updated)
+
+    @_synchronized
+    def upgrade_to_sync(self, table_id: str) -> TableState:
+        """Atomically switch an eligible table from async to sync mode."""
+        state = self.get(table_id)
+        if state.conversation.mode is ConversationMode.SYNC:
+            return state
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.safety_level is SafetyLevel.CRITICAL:
+            raise ValueError("table is paused for safety review")
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.conversation.mode = ConversationMode.SYNC
+        updated.conversation.state = "sync_active"
         return self._append(table_id, updated)
 
     @_synchronized

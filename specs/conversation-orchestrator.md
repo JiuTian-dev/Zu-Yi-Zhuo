@@ -107,6 +107,13 @@
 - **替代方案**: 直接把候选人写入 `TableState.participants`，或由前端本地维护 pending 状态。
 - **代价**: JSON 快照新增可选 `invitations` 段；未来数据库实现需把 `(table_id, candidate_id)` 设为唯一键，并把状态更新与接受入席放在同一事务。
 
+### ADR-13: 异步默认、显式升级同步
+
+- **决策**: 新桌默认 `conversation.mode=async`；桌内成员可先预览升级条件，再用“两项硬条件”请求切换到 `sync`。讨论质量、外围关注和公共价值只作为透明的加分信号，不单独触发升级。
+- **理由**: 陌生人同时在线的组织成本高，异步更适合冷启动；当人还想聊且值得现在聊时再升级，避免把同步当成默认负担。
+- **替代方案**: 创建桌时强制同步，或完全由前端本地切换模式。
+- **代价**: 模式切换会产生一个可回放的状态版本；跨进程部署时仍需把升级判断和状态迁移放进数据库事务。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -120,6 +127,8 @@ POST /tables/{id}/participants
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
+POST /tables/{id}/sync/preview?participant_id={participant_id}
+POST /tables/{id}/sync/upgrade?participant_id={participant_id}
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
 GET  /tables/{id}/interventions
@@ -135,6 +144,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
+模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
 
 ### 数据模型 / 类型定义
 
@@ -230,6 +240,7 @@ master
 | D30 schema audit invariant | complete | `InterventionRecord` itself rejects `SILENCE`, so JSON reload and direct model construction cannot bypass the no-pseudo-audit rule | 175 tests + compileall + diff check | `34fe1ce` |
 | D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 178 tests + compileall + diff check | `eef2924` |
 | D32 invitation lifecycle | complete | persistent pending/accepted/declined invitations with candidate-scoped response and redacted preview | 181 tests + compileall + diff check | `fe05845` + `78ae2fb` |
+| D33 async-to-sync upgrade | in progress | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | pending | pending |
 
 ## 已知坑位（Running Gotchas）
 
