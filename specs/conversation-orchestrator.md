@@ -513,6 +513,13 @@
 - **替代方案**: 只依赖路由层拦截、让调用方传入布尔开关、或允许通用入口写入后再异步纠正；这些方案分别容易被绕过、扩大伪造面、或留下不可信的中间快照。
 - **代价**: 仓储需要区分通用行为写入和两个专用事实写入；未来新增服务端生成事件时必须同步加入仓储边界测试。
 
+### ADR-71: REST 写请求按进程边界做资源限流
+
+- **决策**: 对 `POST`、`PUT`、`PATCH`、`DELETE` REST 请求增加可配置的单进程滑动窗口限流；默认每个客户端地址每 60 秒允许 600 次，超限返回 HTTP 429 和 `Retry-After` 秒数。`GET`、健康探针、WebSocket 和现有外部 source 超时/数量边界保持独立。配置可通过 `REST_MAX_MUTATIONS_PER_MINUTE` 或 `create_app(..., rest_max_mutations_per_minute=...)` 覆盖，必须为正整数。
+- **理由**: 现有 WebSocket 和外部 source 已有资源边界，但公开 REST 写路径仍可被异常重试或自动化请求无限消耗 CPU、锁和 JSON 原子写入；OWASP API4 建议在服务端限制调用频率并返回可重试时间。单进程滑动窗口符合当前反目标，不引入 Redis 或微服务，并为后续共享限流器保留替换点。
+- **替代方案**: 只在前端节流、为每个业务路由复制计数器、或现在引入 Redis；这些方案分别不能形成服务端防线、容易出现不一致、或超出当前单体 MVP 的部署边界。
+- **代价**: 限流状态只在单进程内有效，多个实例需要共享网关/存储限流；基于 TCP peer 地址在共享 NAT 下是粗粒度保护，生产应在可信网关后结合认证主体做更细粒度策略。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -713,7 +720,8 @@ master
                                                                                                                                                                                                                                                                                                                                              ←── D90 bounded external source consumption
                                                                                                                                                                                                                                                                                                                                             ←── D91 value feedback behavior event
                                                                                                                                                                                                                                                                                                                                                   ←── D92 end-to-end demo journey smoke
-                                                                                                                                                                                                                                                                                                                                                        ←── D93 repository behavior trust boundary
+                                                                                                                                                                                                                                                                                                                                                       ←── D93 repository behavior trust boundary
+                                                                                                                                                                                                                                                                                                                                                             ←── D94 REST mutation rate limit
 ```
 
 ## Progress Ledger
@@ -817,6 +825,7 @@ master
 | D91 value feedback behavior event | complete | Atomically persist first value-feedback behavior with the private feedback upsert and reject client-forged server-generated event types | 351 tests + compileall + diff check | `5ec8e2e` |
 | D92 end-to-end demo journey smoke | complete | Black-box opportunity → match → WebSocket turn → close → follow-up/relationship/feedback journey with JSON restart recovery | 352 tests + compileall + diff check | `c7820a4` |
 | D93 repository behavior trust boundary | complete | Generic in-memory/JSON behavior writes reject server-generated close/feedback events while dedicated paths remain valid | 353 tests + compileall + diff check | `761a8d6` |
+| D94 REST mutation rate limit | complete | Configurable per-process sliding-window limit for REST write methods with 429/Retry-After responses and preserved read/WS behavior | 357 tests + compileall + diff check | `59bcec0` |
 
 ## 已知坑位（Running Gotchas）
 

@@ -63,6 +63,8 @@ WebSocket 单个 JSON 文本帧默认最多 64 KiB，可用 `WS_MAX_FRAME_BYTES`
 
 每条 WebSocket 连接默认每 60 秒最多接收 120 个事件，可用 `WS_MAX_EVENTS_PER_MINUTE` 调整。超限事件会在 JSON 解析和桌锁之前被丢弃，并返回 `rate_limited` 与 `retry_after_seconds`；连接保持可用，客户端应等待提示时间后再重试。
 
+REST 的 `POST`、`PUT`、`PATCH`、`DELETE` 写请求默认按客户端地址每 60 秒最多 600 次，可用 `REST_MAX_MUTATIONS_PER_MINUTE` 或 `create_app(..., rest_max_mutations_per_minute=...)` 调整。超限返回 HTTP 429 和 `Retry-After`；`GET`、健康探针和 WebSocket 不计入此窗口。该限流器是单进程保护，多实例部署应在可信网关或共享限流器处统一执行。
+
 通过 REST 完成补位、邀请接受、同步升级、同意变更、邀请偏好更新、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`participant_invitation_preference_changed`、`table_closed`），再发送按 viewer 隐私投影的 `table_state_changed`。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
 REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
 
