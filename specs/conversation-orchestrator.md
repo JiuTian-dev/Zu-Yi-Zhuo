@@ -359,6 +359,13 @@
 - **替代方案**: 在每个路由重复解析 token、把 token 存入 JSON 仓储，或直接把开发态参数当作生产认证。
 - **代价**: 仓库不内置某个平台的 token 校验；部署者必须提供同步解析器，并为跨域客户端允许所需认证 header。
 
+### ADR-49: 安全暂停必须有受控恢复与移除路径
+
+- **决策**: 当 pre-loop SafetyDecision 把桌置为 `critical/safety_paused` 后，新增受单独 `moderator_resolver` 保护的 `POST /tables/{id}/safety/resolve`；审核结果只允许 `resume` 或 `remove_participant`。恢复/移除与新 Table State 在同一仓储事务中提交，并追加不可变 `SafetyResolution` 审计记录；在线连接收到 `safety_resolved` 和投影后的 `table_state_changed`。未配置审核器返回 503，未认证返回 401，不能由请求体自报 `moderator_id`。
+- **理由**: 产品要求“先主持、再提醒、最后才执法”，严重越界进入平台处理；永久暂停既无法继续安全运营，也无法证明谁在何时解除或移除。单独权限适配器把平台账号/角色校验留在部署层，默认开发态不改变。
+- **替代方案**: 让任何参与者恢复、把恢复做成前端本地状态、或直接删除整桌；这些方案都会绕过运营审计或破坏可回放历史。
+- **代价**: V1 不内置具体后台账号和 RBAC；部署者需提供同步 moderator resolver，运营 UI 需消费新的处置事件。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -404,6 +411,7 @@ DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_i
 GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
 POST /tables/{id}/safety-reports?reporter_id={reporter_id}
 GET  /tables/{id}/safety-reports?reporter_id={reporter_id}
+POST /tables/{id}/safety/resolve
 POST /personal-context/source-preview?viewer_id={viewer_id}
 PUT  /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}
 DELETE /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}
@@ -431,6 +439,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
 不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
+安全处置边界：critical 安全暂停只能由服务端注入的 `moderator_resolver` 认证后恢复或移除成员；处置记录和状态迁移原子落账，普通参与者/前端传入的 moderator 字段不具备权限；恢复保留原风险证据，移除不删除历史 turn。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
@@ -524,7 +533,8 @@ master
                                                                                                                                                                                                                              ←── D68 behavior event context validation
                                                                                                                                                                                                                                    ←── D69 self-scoped behavior ledger erasure
                                                                                                                                                                                                                                          ←── D70 frontend-compatible runtime contract smoke
-                                                                                                                                                                                                                                                ←── D71 injectable authenticated identity boundary
+                                                                                                                                                                                                                                        ←── D71 injectable authenticated identity boundary
+                                                                                                                                                                                                                                                ←── D72 controlled safety resolution lifecycle
 ```
 
 ## Progress Ledger
@@ -606,6 +616,7 @@ master
 | D69 self-scoped behavior ledger erasure | complete | authenticated-by-viewer delete clears only the caller's behavior events with atomic JSON persistence and no table-history deletion | 295 tests + compileall + diff check | `b72bf33` |
 | D70 frontend-compatible runtime contract smoke | complete | backend regression locks the actual valley demo flow: create table, add fifth viewer seat, exchange a human WebSocket turn, and recover a viewer-scoped close artifact | 296 tests + compileall + diff check + live ASGI smoke | `d831038` |
 | D71 injectable authenticated identity boundary | complete | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | 298 tests + compileall + diff check | `0a262ea` |
+| D72 controlled safety resolution lifecycle | in progress | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
