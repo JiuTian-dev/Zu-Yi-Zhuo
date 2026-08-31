@@ -532,7 +532,7 @@ master
 | D60 explicit AgentPresence lifecycle contract | complete | stable public Agent identity outside human participants with safety/expiry/close status and legacy persistence defaults | 280 tests + compileall + diff check | `64b9463` |
 | D61 JSON close lifecycle persistence | complete | restart-safe idempotent close snapshot and legacy Agent lifecycle normalization | 281 tests + compileall + diff check | `7965cf1` |
 | D62 replay public narrative artifacts | complete | replay response includes interventions, comments, and comment promotion provenance | 281 tests + compileall + diff check | `96aa8c4` |
-| D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture and JSON persistence | 284 tests + compileall + diff check | `79a2669` |
+| D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture, namespaced IDs, and JSON persistence | 284 tests + compileall + diff check | `766cb50` |
 
 ## 已知坑位（Running Gotchas）
 
