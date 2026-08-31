@@ -9,6 +9,7 @@ from app.domain import HumanTurn, ParticipantSeed, SharedBaseline, TableState
 from app.orchestrator import build_shared_baseline
 
 from .repository import InMemoryTableRepository
+from .websocket import register_websocket_routes
 
 
 class CreateTableRequest(BaseModel):
@@ -34,6 +35,7 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
+    register_websocket_routes(api, repo)
 
     def table_or_404(table_id: str) -> TableState:
         try:
