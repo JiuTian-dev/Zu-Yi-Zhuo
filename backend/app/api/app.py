@@ -8,6 +8,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -21,6 +22,7 @@ from app.domain.schemas import EvidenceStatement
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
+from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
@@ -298,6 +300,7 @@ def create_app(
     websocket_allowed_origins: Sequence[str] | None = None,
     websocket_max_frame_bytes: int | None = None,
     websocket_max_events_per_minute: int | None = None,
+    rest_max_mutations_per_minute: int | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -341,6 +344,20 @@ def create_app(
         raise ValueError("websocket_max_events_per_minute must be a positive integer") from error
     if max_websocket_events_per_minute <= 0:
         raise ValueError("websocket_max_events_per_minute must be a positive integer")
+    raw_rest_limit = (
+        os.getenv(
+            "REST_MAX_MUTATIONS_PER_MINUTE",
+            str(DEFAULT_MAX_MUTATIONS_PER_MINUTE),
+        )
+        if rest_max_mutations_per_minute is None
+        else str(rest_max_mutations_per_minute)
+    )
+    try:
+        max_rest_mutations_per_minute = int(raw_rest_limit)
+    except ValueError as error:
+        raise ValueError("rest_max_mutations_per_minute must be a positive integer") from error
+    if max_rest_mutations_per_minute <= 0:
+        raise ValueError("rest_max_mutations_per_minute must be a positive integer")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
@@ -350,6 +367,7 @@ def create_app(
     api.state.personal_context_source = personal_context_source
     api.state.identity_resolver = identity_resolver
     api.state.moderator_resolver = moderator_resolver
+    rest_rate_limiter = MutationRateLimiter(max_rest_mutations_per_minute)
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -361,6 +379,21 @@ def create_app(
         allow_methods=["DELETE", "GET", "PATCH", "POST", "PUT", "OPTIONS"],
         allow_headers=["Accept", "Authorization", "Content-Type"],
     )
+
+    @api.middleware("http")
+    async def limit_rest_mutations(request: Request, call_next):
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            client = request.client
+            client_key = client.host if client is not None and client.host else "unknown"
+            allowed, retry_after = rest_rate_limiter.allow(client_key)
+            if not allowed:
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"detail": "too many REST mutations; retry later"},
+                    headers={"Retry-After": str(retry_after)},
+                )
+        return await call_next(request)
+
     register_websocket_routes(
         api,
         repo,
