@@ -394,6 +394,13 @@
 - **替代方案**: 对每个快照重复当前成员校验、只返回入席后的片段、或让前端自行拼接公共快照；这些方案分别造成误报、丢失上下文或复制隐私逻辑。
 - **代价**: 当前已离桌成员仍不能以当前成员身份读取回放；若未来需要离桌后的历史访问，应另设明确的历史授权策略。
 
+### ADR-54: 举报队列只向受信审核器开放
+
+- **决策**: 增加 `GET /tables/{table_id}/safety-reports/moderation`，只接受服务端注入的 `moderator_resolver` 身份，返回该桌完整举报队列；普通成员继续通过 `reporter_id` 只读取自己的举报，接口不广播举报正文。
+- **理由**: 举报账本已经支持幂等写入和 JSON 恢复，但没有受控读取面就无法形成可操作的审核闭环；把审核读取和处置身份绑定，避免让前端或被举报成员看到敏感正文。
+- **替代方案**: 复用成员查询接口、接受请求体中的 moderator 字段、或把举报推到 WebSocket；这些方案分别扩大泄露面、可伪造身份或把私密内容带入桌面广播。
+- **代价**: 部署方必须提供审核身份解析器；未配置时队列明确返回 503，而不是降级为公开数据。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -654,6 +661,7 @@ master
 | D74 REST mutation realtime fanout parity | complete | REST seat/invitation/mode/consent/leave/expiry/close/comment writes emit versioned public events and projected state through the existing WebSocket broadcaster; idempotent no-op writes stay silent | 311 tests + compileall + diff check | `de21989` + `ed7da41` + `cbedbb4` |
 | D75 REST close lifecycle parity | complete | REST close emits `close_started` before artifact generation, then `table_closed` and projected state only after an evidence-backed atomic close; insufficient evidence leaves the state open | 312 tests + compileall + diff check | `27c9531` + `53aec0b` |
 | D76 replay projection for late joiners | complete | Current member identity is validated once, then historical snapshots tolerate the viewer being absent before joining while retaining privacy projection | 314 tests + compileall + diff check | `b7bdc90` + `e39c138` |
+| D77 moderator-only safety report queue | in progress | Trusted moderator identity can read a table's full private report queue; participant self-read remains unchanged and no report is broadcast | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
