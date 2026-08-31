@@ -1,0 +1,161 @@
+"""Optional OpenAI Responses API adapter.
+
+The core application deliberately depends only on :class:`LLMProvider`.  This
+module is an opt-in integration for deployments that install the OpenAI SDK
+and provide ``OPENAI_API_KEY``.  Importing ``app.providers`` does not import
+the vendor SDK, so deterministic demo mode remains dependency-free.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from pydantic import BaseModel
+
+
+class ProviderConfigurationError(RuntimeError):
+    """Raised when the optional provider cannot be configured safely."""
+
+
+def _input_messages(
+    task: str, messages: Sequence[Mapping[str, str]]
+) -> tuple[str, list[dict[str, str]]]:
+    instruction = task.strip()
+    if not instruction:
+        raise ValueError("provider task must be non-empty")
+    normalized: list[dict[str, str]] = []
+    for message in messages:
+        role = str(message.get("role", "user")).strip() or "user"
+        content = str(message.get("content", ""))
+        if not content.strip():
+            continue
+        normalized.append({"role": role, "content": content})
+    return instruction, normalized
+
+
+def _request_options(config: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Keep retry bookkeeping and unknown config keys out of the SDK call."""
+
+    source = config or {}
+    allowed = (
+        "model",
+        "temperature",
+        "max_output_tokens",
+        "top_p",
+        "reasoning",
+        "store",
+        "metadata",
+        "verbosity",
+        "previous_response_id",
+        "truncation",
+        "timeout",
+    )
+    return {key: source[key] for key in allowed if key in source}
+
+
+class OpenAIResponsesProvider:
+    """Async provider backed by ``AsyncOpenAI.responses``.
+
+    ``client`` is injectable for tests and for callers that already manage an
+    SDK client.  With no client, the SDK is imported lazily and configured from
+    ``OPENAI_API_KEY``, ``OPENAI_BASE_URL`` and ``OPENAI_MODEL``.
+    """
+
+    def __init__(
+        self,
+        client: Any | None = None,
+        *,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        self.model = (model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
+        if not self.model:
+            raise ProviderConfigurationError("OPENAI_MODEL must be non-empty")
+        self._default_timeout = timeout
+        if client is not None:
+            self._client = client
+            return
+
+        token = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
+        if not token:
+            raise ProviderConfigurationError(
+                "OPENAI_API_KEY is required when no client is supplied"
+            )
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as error:  # pragma: no cover - exercised without optional extra
+            raise ProviderConfigurationError(
+                "install the optional 'openai' dependency to use this provider"
+            ) from error
+
+        options: dict[str, Any] = {"api_key": token}
+        endpoint = (base_url or os.getenv("OPENAI_BASE_URL") or "").strip()
+        if endpoint:
+            options["base_url"] = endpoint
+        if timeout is not None:
+            options["timeout"] = timeout
+        self._client = AsyncOpenAI(**options)
+
+    def _options(self, config: Mapping[str, Any] | None) -> dict[str, Any]:
+        options = _request_options(config)
+        options.setdefault("model", self.model)
+        if self._default_timeout is not None:
+            options.setdefault("timeout", self._default_timeout)
+        return options
+
+    async def structured(
+        self,
+        task: str,
+        messages: Sequence[Mapping[str, str]],
+        schema: type[BaseModel],
+        config: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Return the SDK's parsed Pydantic value for a structured task."""
+
+        instruction, input_messages = _input_messages(task, messages)
+        parse = getattr(getattr(self._client, "responses", None), "parse", None)
+        if parse is None:
+            raise ProviderConfigurationError(
+                "the configured OpenAI SDK client does not expose responses.parse"
+            )
+        response = await parse(
+            instructions=instruction,
+            input=input_messages,
+            text_format=schema,
+            **self._options(config),
+        )
+        parsed = getattr(response, "output_parsed", None)
+        if parsed is None:
+            raise ValueError("OpenAI Responses returned no parsed structured output")
+        return parsed
+
+    async def text(
+        self,
+        task: str,
+        messages: Sequence[Mapping[str, str]],
+        config: Mapping[str, Any] | None = None,
+    ) -> str:
+        """Return non-empty assistant text; empty responses fail closed."""
+
+        instruction, input_messages = _input_messages(task, messages)
+        create = getattr(getattr(self._client, "responses", None), "create", None)
+        if create is None:
+            raise ProviderConfigurationError(
+                "the configured OpenAI SDK client does not expose responses.create"
+            )
+        response = await create(
+            instructions=instruction,
+            input=input_messages,
+            **self._options(config),
+        )
+        value = getattr(response, "output_text", None)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("OpenAI Responses returned empty text")
+        return value.strip()
+
+
+__all__ = ("OpenAIResponsesProvider", "ProviderConfigurationError")

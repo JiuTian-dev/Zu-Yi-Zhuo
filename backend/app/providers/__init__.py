@@ -8,6 +8,7 @@ from .resilient import (
     call_structured,
     call_text,
 )
+from .openai_responses import OpenAIResponsesProvider, ProviderConfigurationError
 
 __all__ = (
     "LLMProvider",
@@ -16,4 +17,6 @@ __all__ = (
     "TextCall",
     "call_structured",
     "call_text",
+    "OpenAIResponsesProvider",
+    "ProviderConfigurationError",
 )
