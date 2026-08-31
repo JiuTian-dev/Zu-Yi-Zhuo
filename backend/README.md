@@ -52,6 +52,7 @@ python -m uvicorn app.main:app --reload
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=commenter`：外围评论连接；只接受 `peripheral_comment`，评论可由核心成员通过 REST 显式促成。
 
 通过 REST 完成补位、邀请接受、同步升级、同意变更、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`table_closed`），再发送按 viewer 隐私投影的 `table_state_changed`。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
+REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
 
 默认开发态继续使用显式 `viewer_id`/`participant_id` 自证，方便本地 Demo。生产部署可在 `create_app(..., identity_resolver=...)` 注入同步身份解析器：解析器接收 FastAPI `Request` 或 WebSocket，返回已认证的内部主体 ID；所有自作用域 REST 写入/读取和参与者 WebSocket 握手都会校验主体一致性，缺失身份返回 401，不一致返回 403。解析器负责 JWT、会话、反向代理或 OAuth 校验，后端不保存知乎 token。
 

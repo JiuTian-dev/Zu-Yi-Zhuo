@@ -1426,6 +1426,13 @@ def create_app(
             require_request_identity(identity_resolver, request, participant_id)
         if participant_id is not None and participant_id not in state.participants:
             raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if not state.conversation.closed:
+            await broadcast_table_event(table_id, {
+                "type": "close_started",
+                "table_id": table_id,
+                "state_version": state.version,
+                "reason": "rest_requested_close",
+            })
         try:
             build_shared_baseline(state, turns=repo.turns(table_id))
             closed = repo.close_table(table_id)
