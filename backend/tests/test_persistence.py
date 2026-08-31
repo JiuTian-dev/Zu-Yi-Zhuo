@@ -189,7 +189,9 @@ def test_json_repository_persists_table_closed_behavior_event(tmp_path) -> None:
         state_version=closed.version,
         detail="closed",
     )
-    assert JsonTableRepository(path).behavior_events("architect") == [event]
+    restored_events = JsonTableRepository(path).behavior_events("architect")
+    assert restored_events[0].event_type == "human_message"
+    assert restored_events[-1] == event
 
 
 def test_follow_up_outcome_is_persisted_and_upserted_after_close(tmp_path) -> None:
