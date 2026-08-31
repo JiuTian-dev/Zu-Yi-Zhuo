@@ -133,6 +133,7 @@ master
 | D04 Host | complete | six action-specific natural Chinese host events, visual hints and safe fallbacks | 104 tests + compileall; naturalness/contract checkpoint | `7bf7b9e` |
 | D05 Reflection/Close | complete | deterministic effect log with post-intervention evidence attribution; close-readiness refresh; Q0→Q1 shared baseline; personal cards; commitment/suggestion extraction | 123 tests + compileall + diff review; explicit stale-turn regression | `a00df65` |
 | D06 API/WS | complete | FastAPI REST table lifecycle, immutable in-memory replay (`messages + snapshots`), structured WebSocket message/join/leave/debug events, Host action delivery and cooldown writeback | 132 tests + compileall + REST/WS contract review | `c1cb020` + `dcc4d89` |
+| D06c realtime artifacts | complete | WebSocket close lifecycle (`close_started`/`close_artifact_ready`) and server-only trusted grounding-card delivery | 147 tests + compileall + privacy/source-boundary review | `1d0e37e` |
 | D07a safety boundary | complete | pre-loop deterministic SafetyDecision/Enforcement; CRITICAL pause/intercept snapshot; Host/record hard stop | 138 tests + compileall + safety bypass review | `f6ead4d` |
 | D07b persistence/QA | complete | atomic JSON snapshot repository with strict load validation, restart recovery and safety-only snapshots; deterministic replay QA | 142 tests + compileall + 10 persisted flagship runs | `e0f554d` |
 
