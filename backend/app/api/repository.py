@@ -129,12 +129,19 @@ class InMemoryTableRepository:
         participants: Sequence[ParticipantSeed],
         *,
         origin_table_id: str | None = None,
+        origin_signal_ids: Sequence[str] | None = None,
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
         if len(participants) > MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
-        state = build_initial_state(table_id, core_question, participants, origin_table_id)
+        state = build_initial_state(
+            table_id,
+            core_question,
+            participants,
+            origin_table_id,
+            origin_signal_ids,
+        )
         self._states[table_id] = [state]
         self._turns[table_id] = []
         self._interventions[table_id] = []
@@ -1089,12 +1096,19 @@ class JsonTableRepository(InMemoryTableRepository):
         participants: Sequence[ParticipantSeed],
         *,
         origin_table_id: str | None = None,
+        origin_signal_ids: Sequence[str] | None = None,
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
         if len(participants) > MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
-        state = build_initial_state(table_id, core_question, participants, origin_table_id)
+        state = build_initial_state(
+            table_id,
+            core_question,
+            participants,
+            origin_table_id,
+            origin_signal_ids,
+        )
         states = {**self._states, table_id: [state]}
         turns = {**self._turns, table_id: []}
         interventions = {**self._interventions, table_id: []}

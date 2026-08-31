@@ -15,7 +15,9 @@ def build_initial_state(
     core_question: str,
     participants: Sequence[ParticipantSeed],
     origin_table_id: str | None = None,
+    origin_signal_ids: Sequence[str] | None = None,
 ) -> TableState:
+    origin_ids = list(origin_signal_ids or [])
     mapped = {seed.participant_id: ParticipantState(
         participant_id=seed.participant_id, display_name=seed.display_name, role=seed.role, declared_position=seed.declared_position,
         unused_relevant_experience=seed.relevant_experience,
@@ -24,8 +26,17 @@ def build_initial_state(
     ) for seed in participants}
     if len(mapped) != len(participants):
         raise ValueError("participant_id must be unique")
+    available_signal_ids = {
+        signal_id
+        for seed in participants
+        for signal_id in seed.public_signal_ids
+    }
+    if any(signal_id not in available_signal_ids for signal_id in origin_ids):
+        raise ValueError("origin_signal_ids must reference participant public_signal_ids")
     return TableState(
-        table_id=table_id, origin_table_id=origin_table_id, version=0, core_question=core_question, phase=Phase.OPENING,
+        table_id=table_id, origin_table_id=origin_table_id,
+        origin_signal_ids=origin_ids,
+        version=0, core_question=core_question, phase=Phase.OPENING,
         momentum=Level.LOW, close_readiness=Level.LOW, participants=mapped,
         conversation=ConversationState(state="active", safety_level=SafetyLevel.NORMAL),
         intervention=InterventionState(confidence=1.0),

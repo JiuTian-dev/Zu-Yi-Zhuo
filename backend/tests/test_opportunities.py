@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.api.app import create_app
+from app.api.repository import JsonTableRepository
 from app.domain import ContentSignal, OpportunityRequest
 from app.opportunities import build_opportunity_preview
 
@@ -65,6 +66,92 @@ def test_opportunity_preview_can_feed_existing_match_preview() -> None:
         reason["participant_id"]: reason["evidence_signal_ids"]
         for reason in matched.json()["reasons"]
     } == {"u1": ["s1"], "u2": ["s2"]}
+
+
+def test_match_confirmation_persists_public_origin_signal_ids_and_replays_them(tmp_path) -> None:
+    repository = JsonTableRepository(tmp_path / "lineage.json")
+    client = TestClient(create_app(repository))
+    preview = client.post("/opportunities/preview", json={
+        "query": "企业 Agent 如何落地？",
+        "signals": [
+            _signal("s1", "u1", "question", author_role="产品"),
+            _signal("s2", "u2", "answer", author_role="架构师"),
+        ],
+    }).json()
+
+    confirmed = client.post("/matches/confirm", json={
+        "table_id": "lineage-table",
+        "core_question": preview["core_question"],
+        "candidates": preview["candidates"],
+        "table_size": 2,
+        "origin_signal_ids": preview["signal_ids"],
+    })
+
+    assert confirmed.status_code == 201
+    assert confirmed.json()["state"]["origin_signal_ids"] == ["s1", "s2"]
+    replay = client.get("/tables/lineage-table/replay")
+    assert replay.status_code == 200
+    assert replay.json()["snapshots"][0]["origin_signal_ids"] == ["s1", "s2"]
+
+    restored = JsonTableRepository(tmp_path / "lineage.json")
+    assert restored.get("lineage-table").origin_signal_ids == ["s1", "s2"]
+    assert restored.replay("lineage-table")[0].origin_signal_ids == ["s1", "s2"]
+
+
+def test_match_confirmation_rejects_unknown_origin_signal_ids() -> None:
+    client = TestClient(create_app())
+    response = client.post("/matches/confirm", json={
+        "table_id": "invalid-lineage",
+        "core_question": "企业 Agent 如何落地？",
+        "candidates": [
+            {
+                "participant_id": "u1",
+                "display_name": "u1",
+                "role": "产品",
+                "declared_position": "先验证价值",
+                "public_signal_ids": ["s1"],
+            },
+            {
+                "participant_id": "u2",
+                "display_name": "u2",
+                "role": "技术",
+                "declared_position": "先解决边界",
+                "public_signal_ids": ["s2"],
+            },
+        ],
+        "table_size": 2,
+        "origin_signal_ids": ["not-in-candidates"],
+    })
+
+    assert response.status_code == 422
+
+
+def test_direct_table_creation_accepts_public_origin_signal_ids() -> None:
+    client = TestClient(create_app())
+    response = client.post("/tables", json={
+        "table_id": "direct-lineage",
+        "core_question": "Q",
+        "participants": [
+            {
+                "participant_id": "p1",
+                "display_name": "甲",
+                "role": "产品",
+                "declared_position": "先验证价值",
+                "public_signal_ids": ["s1"],
+            },
+            {
+                "participant_id": "p2",
+                "display_name": "乙",
+                "role": "技术",
+                "declared_position": "先解决边界",
+                "public_signal_ids": ["s2"],
+            },
+        ],
+        "origin_signal_ids": ["s1", "s2"],
+    })
+
+    assert response.status_code == 201
+    assert response.json()["origin_signal_ids"] == ["s1", "s2"]
 
 
 def test_opportunity_request_rejects_duplicate_or_private_signals() -> None:

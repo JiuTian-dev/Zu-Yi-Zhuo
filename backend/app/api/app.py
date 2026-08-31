@@ -40,6 +40,24 @@ class CreateTableRequest(BaseModel):
     table_id: str | None = Field(default=None, min_length=1)
     core_question: str = Field(min_length=1)
     participants: list[ParticipantSeed] = Field(default_factory=list)
+    origin_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+
+    @model_validator(mode="after")
+    def origin_signal_ids_are_public_candidate_ids(self) -> "CreateTableRequest":
+        if len(self.origin_signal_ids) != len(set(self.origin_signal_ids)):
+            raise ValueError("origin_signal_ids must be unique")
+        available = {
+            signal_id
+            for participant in self.participants
+            for signal_id in participant.public_signal_ids
+        }
+        if any(signal_id not in available for signal_id in self.origin_signal_ids):
+            raise ValueError("origin_signal_ids must reference participant public_signal_ids")
+        return self
 
 
 class ReplayResponse(BaseModel):
@@ -105,6 +123,24 @@ class NudgeResponse(BaseModel):
 
 class ConfirmMatchRequest(MatchRequest):
     table_id: str | None = Field(default=None, min_length=1)
+    origin_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+
+    @model_validator(mode="after")
+    def origin_signal_ids_are_candidate_ids(self) -> "ConfirmMatchRequest":
+        if len(self.origin_signal_ids) != len(set(self.origin_signal_ids)):
+            raise ValueError("origin_signal_ids must be unique")
+        available = {
+            signal_id
+            for candidate in self.candidates
+            for signal_id in candidate.public_signal_ids
+        }
+        if any(signal_id not in available for signal_id in self.origin_signal_ids):
+            raise ValueError("origin_signal_ids must reference candidate public_signal_ids")
+        return self
 
 
 class SourceMatchRequest(BaseModel):
@@ -439,7 +475,14 @@ def create_app(
     def create_table(payload: CreateTableRequest) -> TableState:
         table_id = payload.table_id or uuid4().hex
         try:
-            return projected(repo.create(table_id, payload.core_question, payload.participants))
+            return projected(
+                repo.create(
+                    table_id,
+                    payload.core_question,
+                    payload.participants,
+                    origin_signal_ids=payload.origin_signal_ids,
+                )
+            )
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -820,7 +863,12 @@ def create_app(
         selected = [candidate for candidate in payload.candidates if candidate.participant_id in selected_ids]
         table_id = payload.table_id or uuid4().hex
         try:
-            state = repo.create(table_id, payload.core_question, selected)
+            state = repo.create(
+                table_id,
+                payload.core_question,
+                selected,
+                origin_signal_ids=payload.origin_signal_ids,
+            )
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return MatchedTableResponse(plan=plan, state=projected(state))

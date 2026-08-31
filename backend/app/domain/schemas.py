@@ -371,6 +371,13 @@ class AgentPresence(ContractModel):
 class TableState(ContractModel):
     table_id: str = Field(min_length=1)
     origin_table_id: str | None = Field(default=None, min_length=1)
+    # Public opportunity provenance only; private profile fields and source
+    # payloads are intentionally not persisted in table state.
+    origin_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
     version: int = Field(ge=0)
     core_question: str = Field(min_length=1)
     current_subquestion: str | None = None
@@ -392,6 +399,8 @@ class TableState(ContractModel):
             raise ValueError("participant map keys must match participant_id")
         if self.origin_table_id == self.table_id:
             raise ValueError("origin_table_id must differ from table_id")
+        if len(self.origin_signal_ids) != len(set(self.origin_signal_ids)):
+            raise ValueError("origin_signal_ids must be unique")
         if self.conversation.safety_level is SafetyLevel.CRITICAL and not self.conversation.risk_flags:
             raise ValueError("critical safety requires risk_flags with turn evidence")
         if self.conversation.soft_expired and self.conversation.state not in {"soft_expired", "closed"}:
