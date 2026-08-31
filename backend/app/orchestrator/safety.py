@@ -37,6 +37,7 @@ def enforce_safety(previous: TableState, decision: SafetyDecision) -> TableState
     if decision.blocked:
         state.conversation.safety_level = SafetyLevel.CRITICAL
         state.conversation.state = "safety_paused"
+        state.agent.status = "paused"
         state.conversation.risk_flags.append(EvidenceStatement(
             text=decision.reason, evidence_turns=decision.evidence_turns,
         ))

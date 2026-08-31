@@ -33,6 +33,7 @@ def record_intervention(previous: TableState, decision: RouteDecision, agent_tur
     state.intervention.last_action = decision.action
     state.intervention.last_agent_turn_id = agent_turn_id
     state.intervention.human_turns_since_last_intervention = 0
+    state.agent.status = "active"
     if decision.target_participant_id:
         state.participants[decision.target_participant_id].good_pass_opportunity = False
     return TableState.model_validate(state.model_dump())

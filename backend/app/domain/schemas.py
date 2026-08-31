@@ -322,6 +322,16 @@ class InterventionState(ContractModel):
     last_agent_turn_id: str | None = None
     human_turns_since_last_intervention: int = Field(default=0, ge=0)
 
+
+class AgentPresence(ContractModel):
+    """Stable public identity for the roundtable's non-human seat."""
+
+    agent_id: str = Field(default="roundtable-agent", min_length=1)
+    display_name: str = Field(default="圆桌 Agent", min_length=1, max_length=120)
+    role: str = Field(default="对话搭档", min_length=1, max_length=120)
+    status: Literal["active", "paused", "closed"] = "active"
+
+
 class TableState(ContractModel):
     table_id: str = Field(min_length=1)
     origin_table_id: str | None = Field(default=None, min_length=1)
@@ -338,6 +348,7 @@ class TableState(ContractModel):
     participants: dict[str, ParticipantState] = Field(default_factory=dict)
     conversation: ConversationState
     intervention: InterventionState
+    agent: AgentPresence = Field(default_factory=AgentPresence)
 
     @model_validator(mode="after")
     def participant_keys_match_ids(self) -> "TableState":
