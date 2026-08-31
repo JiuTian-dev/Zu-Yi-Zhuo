@@ -54,6 +54,18 @@ $env:TABLE_REPOSITORY_PATH = "D:\知乎黑客松\runtime\tables.json"
 python -m uvicorn app.main:app
 ```
 
+候选 source 默认未配置。需要接入已获授权的 CLI/MCP/OAuth wrapper 时，可设置
+`CANDIDATE_SOURCE_COMMAND` 为 JSON 字符串数组；后端会以无 shell 子进程方式调用它，stdin 输入
+`{"query":"...","limit":20}`，stdout 返回候选数组或 `{"candidates":[...]}`。每个候选必须符合
+`ParticipantSeed`，命令超时、非零退出、输出过大或字段不合法都会 fail-closed 为 502：
+
+```powershell
+$env:CANDIDATE_SOURCE_COMMAND = '["D:\\adapters\\zhihu-candidates.exe"]'
+python -m uvicorn app.main:app
+```
+
+wrapper 自己负责知乎授权和 token 管理；不要把 secret、Cookie 或 MCP 配置交给浏览器或前端。
+
 Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`，可用逗号分隔的 `CORS_ORIGINS` 覆盖。
 
 ## 可选模型 provider
@@ -80,6 +92,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - REST consent 必须带 `viewer_id`，且必须等于路径中的参与者；当前这是开发态身份声明，不等同于生产认证。
 - 未同意时，状态投影隐藏 `declared_position`/`unused_relevant_experience`，PASS 主持话也不会广播经历原文。
 - 当前默认没有候选 source，候选人仍可由显式 `ParticipantSeed` 候选池提供；没有依赖知乎非官方抓取。
+- 可选 `CommandCandidateSource` 为官方/获授权的 CLI、MCP 或 OAuth wrapper 提供 stdin/stdout 接入；命令不经 shell，默认 5 秒超时和 1 MB 输出上限，后端只接收规范化 `ParticipantSeed`。
 - 接入正式知乎 CLI/MCP/OAuth 时，通过 `create_app(..., candidate_source=...)` 注入适配器，适配器只返回已授权、规范化候选资料，服务端不会接收或记录 access token。
 - 外部 source 调用默认有 5 秒超时；可在 `create_app(..., candidate_source_timeout_seconds=...)` 注入不同正数。超时统一返回通用 502，不会回退到未经授权的候选。
 - 软过期桌不再出现在默认 `GET /tables`；使用 `include_closed=true` 可在历史/运营视图中看到它，且仍按 viewer 做隐私投影。

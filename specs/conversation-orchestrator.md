@@ -191,6 +191,13 @@
 - **替代方案**: 只在前端隐藏成员、把离桌当作删除用户，或为 REST/WS 各维护一套成员状态。
 - **代价**: 离桌后桌内人数可能低于开桌门槛；补位必须重新走邀请/候选流程，不自动恢复离桌成员。
 
+### ADR-25: 外部候选源通过无 shell 的 JSON 命令桥接
+
+- **决策**: 在未核验稳定的知乎读取 API 之前，提供可选 `CommandCandidateSource`。后端启动一个服务端预配置的可执行命令，通过 stdin 发送 `{"query": ..., "limit": ...}`，要求 stdout 返回候选数组或 `{"candidates": [...]}`，再用 `ParticipantSeed` 严格校验后进入匹配。命令以参数数组执行，不经过 shell；进程、输出大小和候选数量均有界，任何非零退出、超时、非 JSON 或非法候选统一视为 source failure。API/日志不接收或打印 access token，正式 CLI/MCP/OAuth 适配器自行负责授权。
+- **理由**: 官方知乎材料可确认 OpenAPI 凭证和发布 skill，但当前没有足以支撑本项目的稳定搜索/用户画像读取契约；命令桥允许接入官方或获授权的本地适配器，又避免把非官方抓取写进核心服务。
+- **替代方案**: 直接请求 undocumented 知乎内部接口、把 Cookie/token 交给前端，或在没有授权 source 时降级到网页抓取。
+- **代价**: 接入者需要提供一个小型 CLI/MCP wrapper 遵守 JSON stdin/stdout 契约；source 未配置时继续返回 503。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -294,8 +301,9 @@ master
                                                               ←── D08 provider adapter + fail-closed calls
                                                               ←── D11 runtime entrypoint + configurable persistence
                                                                     ←── D36 provider-backed Host wording boundary
-                                                                          ←── D44 soft-expired table lifecycle
-                                                                                ←── D46 participant leave REST parity
+                                                                    ←── D44 soft-expired table lifecycle
+                                                                                  ←── D46 participant leave REST parity
+                                                                                        ←── D47 command-backed candidate source
 ```
 
 ## Progress Ledger
@@ -352,6 +360,7 @@ master
 | D44 soft-expired table lifecycle | complete | explicit soft-expire state, discovery filtering, read-only conversation boundary, history-preserving close path, and reconnect-safe WebSocket error | 218 tests + compileall + diff check | `5aab4c8` |
 | D45 relationship memory view | complete | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | 221 tests + compileall + diff check | `c9334c4` |
 | D46 participant leave REST parity | complete | self-scoped REST leave endpoint sharing atomic repository membership migration with WebSocket | 222 tests + compileall + diff check | `58c0119` |
+| D47 command-backed candidate source | complete | bounded no-shell JSON stdin/stdout bridge for authorized CLI/MCP/OAuth candidate adapters | 227 tests + compileall + diff check | `a7a28bc` |
 
 ## 已知坑位（Running Gotchas）
 
