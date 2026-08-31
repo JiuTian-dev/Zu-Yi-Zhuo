@@ -617,7 +617,7 @@ master
 | D69 self-scoped behavior ledger erasure | complete | authenticated-by-viewer delete clears only the caller's behavior events with atomic JSON persistence and no table-history deletion | 295 tests + compileall + diff check | `b72bf33` |
 | D70 frontend-compatible runtime contract smoke | complete | backend regression locks the actual valley demo flow: create table, add fifth viewer seat, exchange a human WebSocket turn, and recover a viewer-scoped close artifact | 296 tests + compileall + diff check + live ASGI smoke | `d831038` |
 | D71 injectable authenticated identity boundary | complete | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | 298 tests + compileall + diff check | `0a262ea` |
-| D72 controlled safety resolution lifecycle | in progress | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | pending | — |
+| D72 controlled safety resolution lifecycle | complete | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | 302 tests + compileall + diff check | `22ce4d8` + `8184d30` |
 
 ## 已知坑位（Running Gotchas）
 
