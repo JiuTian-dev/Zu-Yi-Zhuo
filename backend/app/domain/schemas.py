@@ -579,6 +579,29 @@ class CommentPromotion(ContractModel):
     message_id: str = Field(min_length=1)
 
 
+BehaviorEventType = Literal["table_selected", "human_message", "relationship_saved", "follow_up_outcome"]
+
+
+class BehaviorEvent(ContractModel):
+    """Bounded, self-scoped product behavior signal; never a message archive."""
+
+    event_id: str = Field(min_length=1)
+    participant_id: str = Field(min_length=1)
+    event_type: BehaviorEventType
+    table_id: str = Field(min_length=1)
+    state_version: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
+    related_participant_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
+    detail: str | None = Field(default=None, min_length=1, max_length=240, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def event_context_is_bounded(self) -> "BehaviorEvent":
+        if self.event_type in {"human_message", "follow_up_outcome"} and self.state_version is None:
+            raise ValueError("state_version is required for table behavior events")
+        if self.event_type == "relationship_saved" and self.related_participant_id is None:
+            raise ValueError("relationship_saved requires related_participant_id")
+        return self
+
+
 class ReflectionResult(ContractModel):
     """Effect log for an intervention after enough human turns have passed."""
 
