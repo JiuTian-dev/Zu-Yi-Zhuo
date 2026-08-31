@@ -61,6 +61,20 @@ def _validate_behavior_event_context(state: TableState, event: BehaviorEvent) ->
             raise ValueError("relationship target must be a table participant")
 
 
+def _table_closed_behavior_event(
+    table_id: str, participant_id: str, state_version: int
+) -> BehaviorEvent:
+    """Build the stable private behavior signal for an actor-initiated close."""
+    return BehaviorEvent(
+        event_id=f"{participant_id}:table-closed:{table_id}",
+        participant_id=participant_id,
+        event_type="table_closed",
+        table_id=table_id,
+        state_version=state_version,
+        detail="closed",
+    )
+
+
 def _synchronized(method: Callable[..., Any]) -> Callable[..., Any]:
     """Serialize one repository operation while allowing nested calls."""
 
@@ -579,14 +593,9 @@ class InMemoryTableRepository:
             raise ValueError("table_closed behavior requires a closed table")
         if participant_id not in state.participants:
             raise ValueError("close actor must be a table participant")
-        return self.record_behavior_event(BehaviorEvent(
-            event_id=f"{participant_id}:table-closed:{table_id}",
-            participant_id=participant_id,
-            event_type="table_closed",
-            table_id=table_id,
-            state_version=state.version,
-            detail="closed",
-        ))
+        return self.record_behavior_event(
+            _table_closed_behavior_event(table_id, participant_id, state.version)
+        )
 
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
@@ -864,6 +873,31 @@ class InMemoryTableRepository:
         updated.intervention.recommended_action = Action.SILENCE
         updated.agent.status = "closed"
         return self._append(table_id, updated)
+
+    @_synchronized
+    def close_table_for_participant(self, table_id: str, participant_id: str) -> TableState:
+        """Atomically persist an actor close snapshot and its private behavior event."""
+        state = self.get(table_id)
+        if participant_id not in state.participants:
+            raise ValueError("close actor must be a table participant")
+        if state.conversation.closed:
+            self.record_table_closed_behavior(table_id, participant_id)
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.phase = Phase.CLOSE
+        updated.close_readiness = Level.HIGH
+        updated.conversation.state = "closed"
+        updated.conversation.closed = True
+        updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "closed"
+        snapshot = TableState.model_validate(updated.model_dump())
+        event = _table_closed_behavior_event(table_id, participant_id, snapshot.version)
+        self._states[table_id].append(snapshot)
+        self._behavior_events[participant_id] = [
+            *self._behavior_events.get(participant_id, []), event
+        ]
+        return snapshot.model_copy(deep=True)
 
     @_synchronized
     def append_intervention_state(self, table_id: str, state: TableState) -> TableState:
@@ -1369,6 +1403,46 @@ class JsonTableRepository(InMemoryTableRepository):
         snapshot = TableState.model_validate(updated.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         self._commit(states, self._turns, self._trusted_grounding_cards, self._interventions)
+        return snapshot.model_copy(deep=True)
+
+    @_synchronized
+    def close_table_for_participant(self, table_id: str, participant_id: str) -> TableState:
+        """Atomically persist an actor close snapshot and its private behavior event."""
+        state = self.get(table_id)
+        if participant_id not in state.participants:
+            raise ValueError("close actor must be a table participant")
+        if state.conversation.closed:
+            self.record_table_closed_behavior(table_id, participant_id)
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.phase = Phase.CLOSE
+        updated.close_readiness = Level.HIGH
+        updated.conversation.state = "closed"
+        updated.conversation.closed = True
+        updated.intervention.recommended_action = Action.SILENCE
+        updated.agent.status = "closed"
+        snapshot = TableState.model_validate(updated.model_dump())
+        event = _table_closed_behavior_event(table_id, participant_id, snapshot.version)
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        behavior_events = {
+            **self._behavior_events,
+            participant_id: [*self._behavior_events.get(participant_id, []), event],
+        }
+        self._commit(
+            states,
+            self._turns,
+            self._trusted_grounding_cards,
+            self._interventions,
+            self._invitations,
+            self._follow_up_outcomes,
+            self._value_feedback,
+            self._comments,
+            self._no_match,
+            self._safety_reports,
+            self._personal_context_consents,
+            behavior_events=behavior_events,
+        )
         return snapshot.model_copy(deep=True)
 
     @_synchronized

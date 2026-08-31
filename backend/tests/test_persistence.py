@@ -177,10 +177,11 @@ def test_json_repository_persists_table_closed_behavior_event(tmp_path) -> None:
     repository = JsonTableRepository(path)
     repository.create("closed-behavior", "Q", [flagship_participants[0]])
     repository.append_message_once("closed-behavior", "architect", "收束讨论。", "close-1")
-    closed = repository.close_table("closed-behavior")
-    event, created = repository.record_table_closed_behavior("closed-behavior", "architect")
+    closed = repository.close_table_for_participant("closed-behavior", "architect")
+    retry = repository.close_table_for_participant("closed-behavior", "architect")
+    event = repository.behavior_events("architect")[-1]
 
-    assert created is True
+    assert retry.version == closed.version
     assert event == BehaviorEvent(
         event_id="architect:table-closed:closed-behavior",
         participant_id="architect",

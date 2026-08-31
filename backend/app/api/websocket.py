@@ -601,10 +601,9 @@ def register_websocket_routes(
                         })
                         try:
                             build_shared_baseline(state, turns=repository.turns(table_id))
-                            state = repository.close_table(table_id)
+                            state = repository.close_table_for_participant(table_id, participant_id)
                             baseline = build_shared_baseline(state, turns=repository.turns(table_id))
                             personal_card = build_personal_card(state, participant_id)
-                            repository.record_table_closed_behavior(table_id, participant_id)
                         except ValueError as error:
                             await _send_error(websocket, "close_artifact_unavailable", str(error))
                             continue
