@@ -436,6 +436,13 @@
 - **替代方案**: 复制一份 REST 递话逻辑、只保留 WebSocket 或让前端自己生成递话；这些方案会产生行为漂移、无法覆盖断线调度或绕过 evidence-first。
 - **代价**: REST 递话失败返回 409/403，调用方需要按结构化错误等待或重新连接；两个入口仍共享当前单进程仓储和 broadcaster 限制。
 
+### ADR-60: 冷启动递话只针对最近发言者的第一次表达
+
+- **决策**: `run_nudge` 只在最近一条真人 turn 是该发言者的第一次表达时继续递话；同一发言者已有更早 turn 时返回结构化不可用错误。REST 与 WebSocket 共享这一校验，审计理由继续引用该 turn 作为 evidence。
+- **理由**: 产品承诺的是“新人第一次表达不能沉底”，固定写成“首条表达”的理由不能被复用到同一人后续发言，否则会把普通讨论误记为冷启动事件。
+- **替代方案**: 允许任意最新 turn、由前端自行判断是否首条、或把理由改成泛化的“最新表达”；这些方案分别扩大主持插话面、把证据边界移出后端或削弱产品语义的可审计性。
+- **代价**: 如果未来要支持普通讨论中的显式递话，应另设独立动作/理由，不复用冷启动 `nudge` 入口。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -715,7 +722,8 @@ master
 | D79 safety report transition audit | complete | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility and tamper-evident chain validation | 321 tests + compileall + diff check | `41653a9` + `e2ebdb1` |
 | D80 bounded moderator safety queue | complete | Moderator report queue supports status filtering and stable bounded `offset`/`limit` pagination without changing private persistence or broadcast semantics | 322 tests + compileall + diff check | `d7472b1` |
 | D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response; audit retains the nudge rationale | 324 tests + compileall + diff check | `5f430a5` + `41b823b` |
-| D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 326 tests + compileall + diff check | `288dde4` |
+| D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 327 tests + compileall + diff check | `288dde4` + `af854ad` |
+| D83 first-expression nudge evidence boundary | in_progress | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
