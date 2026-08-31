@@ -546,7 +546,7 @@ master
 | D61 JSON close lifecycle persistence | complete | restart-safe idempotent close snapshot and legacy Agent lifecycle normalization | 281 tests + compileall + diff check | `7965cf1` |
 | D62 replay public narrative artifacts | complete | replay response includes interventions, comments, and comment promotion provenance | 281 tests + compileall + diff check | `96aa8c4` |
 | D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture, namespaced IDs, and JSON persistence | 284 tests + compileall + diff check | `766cb50` |
-| D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 286 tests + compileall + diff check | `pending` |
+| D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 286 tests + compileall + diff check | `1d5520a` |
 
 ## 已知坑位（Running Gotchas）
 
