@@ -308,6 +308,18 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
         return project_state_for_viewer(state, participant_id)
 
+    async def broadcast_table_event(table_id: str, event: dict) -> None:
+        """Fan out a public event when the WebSocket adapter is installed."""
+        broadcaster = getattr(api.state, "table_broadcast", None)
+        if broadcaster is not None:
+            await broadcaster(table_id, event)
+
+    async def broadcast_table_state(table_id: str, state: TableState) -> None:
+        """Fan out the privacy-projected state after a REST mutation."""
+        broadcaster = getattr(api.state, "table_broadcast_state", None)
+        if broadcaster is not None:
+            await broadcaster(table_id, state)
+
     @api.post("/tables", response_model=TableState, status_code=status.HTTP_201_CREATED)
     def create_table(payload: CreateTableRequest) -> TableState:
         table_id = payload.table_id or uuid4().hex
@@ -704,7 +716,7 @@ def create_app(
         return projected(table_or_404(table_id), participant_id)
 
     @api.post("/tables/{table_id}/participants", response_model=TableState)
-    def add_participant(
+    async def add_participant(
         table_id: str,
         participant: ParticipantSeed,
         request: Request,
@@ -718,12 +730,19 @@ def create_app(
         if inviter_id is not None and inviter_id not in state.participants:
             raise HTTPException(status_code=403, detail="inviter must be a table participant")
         try:
-            return projected(repo.add_participant(table_id, participant))
+            committed = repo.add_participant(table_id, participant)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        await broadcast_table_event(table_id, {
+            "type": "participant_added",
+            "participant_id": participant.participant_id,
+            "state_version": committed.version,
+        })
+        await broadcast_table_state(table_id, committed)
+        return projected(committed)
 
     @api.post("/tables/{table_id}/participants/{participant_id}/leave", response_model=TableState)
-    def leave_table(
+    async def leave_table(
         table_id: str,
         participant_id: str,
         request: Request,
@@ -738,6 +757,12 @@ def create_app(
             state = repo.remove_participant(table_id, participant_id)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        await broadcast_table_event(table_id, {
+            "type": "participant_left",
+            "participant_id": participant_id,
+            "state_version": state.version,
+        })
+        await broadcast_table_state(table_id, state)
         return projected(state)
 
     @api.post("/tables/{table_id}/candidate-preview", response_model=TableCandidatePreview)
@@ -799,7 +824,7 @@ def create_app(
         )
 
     @api.post("/tables/{table_id}/comments", response_model=PeripheralComment)
-    def add_peripheral_comment(
+    async def add_peripheral_comment(
         table_id: str,
         payload: PeripheralCommentRequest,
         request: Request,
@@ -823,6 +848,11 @@ def create_app(
             saved, _created = repo.append_comment_once(comment)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        if _created:
+            await broadcast_table_event(table_id, {
+                "type": "comment_added",
+                "comment": saved.model_dump(mode="json"),
+            })
         return saved
 
     @api.get("/tables/{table_id}/comments", response_model=list[PeripheralComment])
@@ -1037,14 +1067,14 @@ def create_app(
         )
 
     @api.post("/tables/{table_id}/invitations", response_model=InvitationView, status_code=status.HTTP_201_CREATED)
-    def create_invitation(
+    async def create_invitation(
         table_id: str,
         payload: CreateInvitationRequest,
         request: Request,
         inviter_id: str = Query(..., min_length=1),
     ) -> InvitationView:
         require_request_identity(identity_resolver, request, inviter_id)
-        table_or_404(table_id)
+        state = table_or_404(table_id)
         try:
             invitation = repo.create_invitation(
                 table_id, inviter_id, payload.candidate, payload.reason
@@ -1053,7 +1083,13 @@ def create_app(
             raise HTTPException(status_code=403, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
-        return invitation_view(invitation)
+        view = invitation_view(invitation)
+        await broadcast_table_event(table_id, {
+            "type": "invitation_updated",
+            "invitation": view.model_dump(mode="json"),
+            "state_version": state.version,
+        })
+        return view
 
     @api.get("/tables/{table_id}/invitations", response_model=list[InvitationView])
     def get_invitations(
@@ -1073,7 +1109,7 @@ def create_app(
         "/tables/{table_id}/invitations/{invitation_id}/respond",
         response_model=InvitationResponse,
     )
-    def respond_invitation(
+    async def respond_invitation(
         table_id: str,
         invitation_id: str,
         payload: RespondInvitationRequest,
@@ -1081,7 +1117,12 @@ def create_app(
         participant_id: str = Query(..., min_length=1),
     ) -> InvitationResponse:
         require_request_identity(identity_resolver, request, participant_id)
-        table_or_404(table_id)
+        current_state = table_or_404(table_id)
+        existing_invitation = next(
+            (item for item in repo.invitations(table_id) if item.invitation_id == invitation_id),
+            None,
+        )
+        was_pending = existing_invitation is not None and existing_invitation.status.value == "pending"
         try:
             invitation, state = repo.respond_invitation(
                 table_id, invitation_id, participant_id, payload.accept
@@ -1091,8 +1132,22 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         projected_state = project_state_for_viewer(state, participant_id) if state is not None else None
+        view = invitation_view(invitation)
+        if was_pending:
+            await broadcast_table_event(table_id, {
+                "type": "invitation_updated",
+                "invitation": view.model_dump(mode="json"),
+                "state_version": state.version if state is not None else current_state.version,
+            })
+        if state is not None and was_pending:
+            await broadcast_table_event(table_id, {
+                "type": "participant_added",
+                "participant_id": participant_id,
+                "state_version": state.version,
+            })
+            await broadcast_table_state(table_id, state)
         return InvitationResponse(
-            invitation=invitation_view(invitation), state=projected_state
+            invitation=view, state=projected_state
         )
 
     def sync_decision(table_id: str, participant_id: str, signals: SyncUpgradeSignals) -> SyncUpgradeDecision:
@@ -1112,7 +1167,7 @@ def create_app(
         return sync_decision(table_id, participant_id, signals)
 
     @api.post("/tables/{table_id}/sync/upgrade", response_model=SyncUpgradeResponse)
-    def upgrade_to_sync(
+    async def upgrade_to_sync(
         table_id: str,
         signals: SyncUpgradeSignals,
         request: Request,
@@ -1120,16 +1175,24 @@ def create_app(
     ) -> SyncUpgradeResponse:
         require_request_identity(identity_resolver, request, participant_id)
         decision = sync_decision(table_id, participant_id, signals)
+        previous_state = table_or_404(table_id)
         if not decision.eligible:
             raise HTTPException(status_code=409, detail=decision.model_dump(mode="json"))
         try:
             state = repo.upgrade_to_sync(table_id)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        if state.version != previous_state.version:
+            await broadcast_table_event(table_id, {
+                "type": "table_mode_changed",
+                "mode": state.conversation.mode.value,
+                "state_version": state.version,
+            })
+            await broadcast_table_state(table_id, state)
         return SyncUpgradeResponse(decision=decision, state=projected(state, participant_id))
 
     @api.post("/tables/{table_id}/participants/{participant_id}/consent", response_model=TableState)
-    def set_participant_consent(
+    async def set_participant_consent(
         table_id: str,
         participant_id: str,
         payload: ParticipantConsentRequest,
@@ -1137,13 +1200,21 @@ def create_app(
         viewer_id: str = Query(..., min_length=1),
     ) -> TableState:
         require_request_identity(identity_resolver, request, viewer_id)
-        table_or_404(table_id)
+        previous_state = table_or_404(table_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
             state = repo.set_profile_consent(table_id, participant_id, payload.profile_shared)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        if state.version != previous_state.version:
+            await broadcast_table_event(table_id, {
+                "type": "participant_consent_changed",
+                "participant_id": participant_id,
+                "profile_shared": payload.profile_shared,
+                "state_version": state.version,
+            })
+            await broadcast_table_state(table_id, state)
         return projected(state, participant_id)
 
     @api.get("/tables/{table_id}/state", response_model=TableState)
@@ -1317,7 +1388,7 @@ def create_app(
         return feedback_summary(table_id, participant_id)
 
     @api.post("/tables/{table_id}/soft-expire", response_model=TableState)
-    def soft_expire_table(
+    async def soft_expire_table(
         table_id: str,
         payload: SoftExpireRequest,
         request: Request,
@@ -1332,10 +1403,17 @@ def create_app(
             expired = repo.soft_expire_table(table_id, payload.reason)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        if expired.version != state.version:
+            await broadcast_table_event(table_id, {
+                "type": "table_soft_expired",
+                "reason": expired.conversation.soft_expiry_reason,
+                "state_version": expired.version,
+            })
+            await broadcast_table_state(table_id, expired)
         return projected(expired, participant_id)
 
     @api.post("/tables/{table_id}/close", response_model=SharedBaseline)
-    def close_table(
+    async def close_table(
         table_id: str,
         request: Request,
         participant_id: str | None = Query(default=None, min_length=1),
@@ -1350,9 +1428,16 @@ def create_app(
         try:
             build_shared_baseline(state, turns=repo.turns(table_id))
             closed = repo.close_table(table_id)
-            return build_shared_baseline(closed, turns=repo.turns(table_id))
+            baseline = build_shared_baseline(closed, turns=repo.turns(table_id))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        if closed.version != state.version:
+            await broadcast_table_event(table_id, {
+                "type": "table_closed",
+                "state_version": closed.version,
+            })
+            await broadcast_table_state(table_id, closed)
+        return baseline
 
     @api.post(
         "/tables/{table_id}/recompose",
