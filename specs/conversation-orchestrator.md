@@ -492,6 +492,13 @@
 - **替代方案**: 继续对完整返回值做列表推导后切片、要求所有 adapter 自行截断、或超限直接拒绝；这些方案分别仍有资源风险、无法形成服务端边界、或会把合法前 `limit` 条结果误判为失败。
 - **代价**: source 适配器返回的第 `limit+1` 条及以后结果不会被读取；若未来需要分页，必须在 adapter 契约中增加显式 cursor，而不是放宽本入口上限。
 
+### ADR-68: 四维价值反馈自动沉淀行为事实
+
+- **决策**: `BehaviorEventType` 增加 `value_feedback_submitted`。参与者首次提交收桌后的四维价值反馈时，服务端在同一次内存锁/JSON 原子提交中写入反馈账本和一条稳定的 `{participant_id}:value-feedback:{table_id}` 私有事件，事件只携带最终关闭状态版本与固定摘要 `submitted`；同一参与者更新反馈只更新反馈账本，不重复生成事件。通用行为事件入口拒绝客户端直接提交 `table_closed` 或 `value_feedback_submitted`，两者只能由对应服务端路径生成。
+- **理由**: 产品行为层明确需要记录“反馈”，但反馈分数和备注属于私有回响，不应复制进画像事件或广播；把两本账本放在同一提交中，才能避免反馈已保存而行为飞轮缺少事实，或反之。
+- **替代方案**: 由前端额外 POST 一个行为事件、每次修改反馈都追加事件、或允许客户端直接伪造服务端事件；这些方案分别容易丢链路、制造重复行为或破坏数据可信度与隐私边界。
+- **代价**: 旧 JSON 快照缺少该事件时只在下一次真实反馈提交后补齐；未来若需要分析具体分数，必须建立另有授权的聚合指标，不扩展私有行为事件正文。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -578,7 +585,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
-行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；带身份的 REST/WS 收桌在同一仓储提交中生成稳定 `table_closed` 事件，旧的无身份 `close_table` 兼容入口只迁移桌状态；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
+行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；带身份的 REST/WS 收桌在同一仓储提交中生成稳定 `table_closed` 事件，旧的无身份 `close_table` 兼容入口只迁移桌状态；首次四维价值反馈在同一仓储提交中生成稳定 `value_feedback_submitted` 事件，更新反馈不重复生成；follow-up 与反馈事件只记录状态/动作摘要，不保存行动备注、反馈分数或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
 
 ### 数据模型 / 类型定义
 
@@ -689,7 +696,8 @@ master
                                                                                                                                                                                                                                                                                                                                    ←── D87 WebSocket inbound event rate limit
                                                                                                                                                                                                                                                                                                                                          ←── D88 table_closed behavior event
                                                                                                                                                                                                                                                                                                                                         ←── D89 atomic actor close behavior commit
-                                                                                                                                                                                                                                                                                                                                              ←── D90 bounded external source consumption
+                                                                                                                                                                                                                                                                                                                                             ←── D90 bounded external source consumption
+                                                                                                                                                                                                                                                                                                                                                   ←── D91 value feedback behavior event
 ```
 
 ## Progress Ledger
@@ -790,6 +798,7 @@ master
 | D88 table_closed behavior event | complete | Record actor-scoped close behavior from REST/WS close paths with stable idempotent event and JSON recovery | 347 tests + compileall + diff check | `ff9d394` |
 | D89 atomic actor close behavior commit | complete | Commit actor close state and private table_closed event together in memory/JSON repositories; REST/WS use the atomic actor path while legacy identity-less close remains compatible | 347 tests + compileall + diff check | `f59a6bc` |
 | D90 bounded external source consumption | complete | Consume at most the requested limit from candidate/content/personal source iterables before validation | 350 tests + compileall + diff check | `3a96bc5` |
+| D91 value feedback behavior event | complete | Atomically persist first value-feedback behavior with the private feedback upsert and reject client-forged server-generated event types | 351 tests + compileall + diff check | `5ec8e2e` |
 
 ## 已知坑位（Running Gotchas）
 
