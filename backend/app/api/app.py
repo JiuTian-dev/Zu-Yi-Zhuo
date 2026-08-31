@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from collections.abc import Sequence
 from typing import Literal
 from uuid import uuid4
 
@@ -276,6 +277,7 @@ def create_app(
     personal_context_source_timeout_seconds: float = 5.0,
     identity_resolver: IdentityResolver | None = None,
     moderator_resolver: ModeratorResolver | None = None,
+    websocket_allowed_origins: Sequence[str] | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -284,6 +286,16 @@ def create_app(
         raise ValueError("content_source_timeout_seconds must be positive")
     if personal_context_source_timeout_seconds <= 0:
         raise ValueError("personal_context_source_timeout_seconds must be positive")
+    raw_websocket_origins = (
+        os.getenv("WS_ALLOWED_ORIGINS", "")
+        if websocket_allowed_origins is None
+        else ",".join(websocket_allowed_origins)
+    )
+    allowed_websocket_origins = tuple(
+        origin.strip() for origin in raw_websocket_origins.split(",") if origin.strip()
+    )
+    if any(origin == "*" or "*" in origin for origin in allowed_websocket_origins):
+        raise ValueError("websocket_allowed_origins must not contain wildcards")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
@@ -304,7 +316,9 @@ def create_app(
         allow_methods=["DELETE", "GET", "PATCH", "POST", "OPTIONS"],
         allow_headers=["Accept", "Authorization", "Content-Type"],
     )
-    register_websocket_routes(api, repo, provider, identity_resolver)
+    register_websocket_routes(
+        api, repo, provider, identity_resolver, allowed_websocket_origins or None
+    )
 
     @api.get("/healthz")
     def healthz() -> dict[str, str]:

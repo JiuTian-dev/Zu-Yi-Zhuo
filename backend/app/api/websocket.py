@@ -1,7 +1,7 @@
 """Structured WebSocket stream for a conversation table."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -133,6 +133,7 @@ def register_websocket_routes(
     repository: InMemoryTableRepository,
     provider: LLMProvider | None = None,
     identity_resolver: IdentityResolver | None = None,
+    websocket_allowed_origins: Sequence[str] | None = None,
 ) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
 
@@ -188,6 +189,11 @@ def register_websocket_routes(
         participant_id: str = "",
         viewer_mode: Literal["participant", "observer", "commenter"] = "participant",
     ) -> None:
+        if websocket_allowed_origins is not None:
+            origin = websocket.headers.get("origin")
+            if origin not in websocket_allowed_origins:
+                await websocket.close(code=1008)
+                return
         await websocket.accept()
         if not participant_id.strip():
             await _send_error(websocket, "invalid_participant", "participant_id is required")

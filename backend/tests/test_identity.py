@@ -76,3 +76,47 @@ def test_injected_identity_resolver_cross_checks_participant_websocket_handshake
         }
         with pytest.raises(WebSocketDisconnect):
             websocket.receive_json()
+
+
+def test_websocket_origin_allowlist_rejects_cross_site_handshakes() -> None:
+    client = TestClient(create_app(
+        _repository(),
+        websocket_allowed_origins=["https://app.example.com"],
+    ))
+
+    with pytest.raises(WebSocketDisconnect) as rejected:
+        with client.websocket_connect(
+            "/ws/tables/identity-table?participant_id=p1",
+            headers={"Origin": "https://evil.example.com"},
+        ):
+            pass
+    assert rejected.value.code == 1008
+
+    with pytest.raises(WebSocketDisconnect) as missing:
+        with client.websocket_connect("/ws/tables/identity-table?participant_id=p1"):
+            pass
+    assert missing.value.code == 1008
+
+    with client.websocket_connect(
+        "/ws/tables/identity-table?participant_id=p1",
+        headers={"Origin": "https://app.example.com"},
+    ) as websocket:
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["type"] == "table_state_changed"
+
+
+def test_websocket_origin_allowlist_rejects_wildcards() -> None:
+    with pytest.raises(ValueError, match="must not contain wildcards"):
+        create_app(_repository(), websocket_allowed_origins=["*"])
+
+
+def test_websocket_origin_allowlist_can_be_loaded_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("WS_ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
+    client = TestClient(create_app(_repository()))
+
+    with client.websocket_connect(
+        "/ws/tables/identity-table?participant_id=p1",
+        headers={"Origin": "https://admin.example.com"},
+    ) as websocket:
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["type"] == "table_state_changed"
