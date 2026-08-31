@@ -1,6 +1,10 @@
-"""Small process-local repository used by the first HTTP integration slice."""
+"""Small repositories used by the first HTTP integration slice."""
 
 from collections.abc import Sequence
+import json
+import os
+from pathlib import Path
+import tempfile
 
 from app.domain import HumanTurn, ParticipantSeed, TableState
 from app.domain.schemas import ParticipantState
@@ -93,3 +97,95 @@ class InMemoryTableRepository:
         snapshot = TableState.model_validate(state.model_dump())
         self._states[table_id].append(snapshot)
         return snapshot.model_copy(deep=True)
+
+
+class JsonTableRepository(InMemoryTableRepository):
+    """A small, atomically-written JSON snapshot store for one-process deployments."""
+
+    def __init__(self, path: str | Path) -> None:
+        super().__init__()
+        self.path = Path(path)
+        if self.path.exists():
+            self._states, self._turns = self._load()
+
+    def create(
+        self, table_id: str, core_question: str, participants: Sequence[ParticipantSeed]
+    ) -> TableState:
+        if table_id in self._states:
+            raise ValueError(f"table already exists: {table_id}")
+        state = build_initial_state(table_id, core_question, participants)
+        states = {**self._states, table_id: [state]}
+        turns = {**self._turns, table_id: []}
+        self._commit(states, turns)
+        return state.model_copy(deep=True)
+
+    def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
+        committed = turn.model_copy(deep=True)
+        state = observe_turn(self.get(table_id), committed)
+        snapshot = TableState.model_validate(state.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        turns = {**self._turns, table_id: [*self._turns[table_id], committed]}
+        self._commit(states, turns)
+        return snapshot.model_copy(deep=True)
+
+    def _append(self, table_id: str, state: TableState) -> TableState:
+        snapshot = TableState.model_validate(state.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        self._commit(states, self._turns)
+        return snapshot.model_copy(deep=True)
+
+    def _commit(
+        self, states: dict[str, list[TableState]], turns: dict[str, list[HumanTurn]]
+    ) -> None:
+        payload = {
+            "tables": {
+                table_id: {
+                    "states": [state.model_dump(mode="json") for state in snapshots],
+                    "turns": [turn.model_dump(mode="json") for turn in turns[table_id]],
+                }
+                for table_id, snapshots in states.items()
+            }
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temp_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self.path.parent, prefix=f".{self.path.name}.",
+                suffix=".tmp", delete=False,
+            ) as handle:
+                temp_name = handle.name
+                json.dump(payload, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            Path(temp_name).replace(self.path)
+        finally:
+            if temp_name is not None:
+                Path(temp_name).unlink(missing_ok=True)
+        self._states, self._turns = states, turns
+
+    def _load(self) -> tuple[dict[str, list[TableState]], dict[str, list[HumanTurn]]]:
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError(f"invalid persistence file: {self.path}") from error
+        if not isinstance(payload, dict) or set(payload) != {"tables"} or not isinstance(payload["tables"], dict):
+            raise ValueError("invalid persistence file: expected {'tables': {...}}")
+        states: dict[str, list[TableState]] = {}
+        turns: dict[str, list[HumanTurn]] = {}
+        for table_id, table in payload["tables"].items():
+            if not isinstance(table_id, str) or not table_id or not isinstance(table, dict) or set(table) != {"states", "turns"}:
+                raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
+            try:
+                snapshots = [TableState.model_validate(item) for item in table["states"]]
+                messages = [HumanTurn.model_validate(item) for item in table["turns"]]
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"invalid persistence file: invalid data for table {table_id!r}") from error
+            if not snapshots or any(state.table_id != table_id for state in snapshots):
+                raise ValueError(f"invalid persistence file: incompatible states for table {table_id!r}")
+            if [state.version for state in snapshots] != list(range(len(snapshots))):
+                raise ValueError(f"invalid persistence file: incompatible versions for table {table_id!r}")
+            if [turn.turn_id for turn in messages] != sorted({turn.turn_id for turn in messages}):
+                raise ValueError(f"invalid persistence file: incompatible turns for table {table_id!r}")
+            states[table_id] = snapshots
+            turns[table_id] = messages
+        return states, turns
