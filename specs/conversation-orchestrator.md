@@ -296,6 +296,13 @@
 - **替代方案**: 继续依赖继承的内存 `_append`、启动时扫描并猜测关闭状态，或把收桌标记交给前端保存。
 - **代价**: V1 仍是单进程 JSON 仓储；多进程部署需要把同样的状态迁移下沉到数据库事务并加锁。
 
+### ADR-40: 回放响应同时返回公开叙事账本
+
+- **决策**: 扩展 `GET /tables/{id}/replay`，在原有 `messages + snapshots` 之外返回 `interventions`、`comments` 和 `comment_promotions`。这些记录均为桌级公开叙事或来源链；举报、个人授权和价值反馈等私有账本不进入回放。现有字段保持不变，新增列表默认兼容旧客户端。
+- **理由**: 重连和复盘不应要求前端再拼接多个接口才能恢复“人说了什么、Agent 做了什么、外围补充如何进入主桌”；统一响应也能让评论升级的来源证据可追溯。
+- **替代方案**: 继续只返回状态快照、由前端并发请求多个账本，或把举报/个人数据一并暴露在回放中。
+- **代价**: V1 返回完整桌级公开账本，不提供事件分页或时间窗口；后续高流量部署需按版本/游标分页。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -443,7 +450,8 @@ master
                                                                                                                                                                ←── D58 personal context consent and scope gate
                                                                                                                                                                        ←── D59 explicit peripheral comment promotion with provenance
                                                                                                                                                                              ←── D60 explicit AgentPresence lifecycle contract
-                                                                                                                                                                                    ←── D61 JSON close lifecycle persistence
+                                                                                                                                                                                   ←── D61 JSON close lifecycle persistence
+                                                                                                                                                                                          ←── D62 replay public narrative artifacts
 ```
 
 ## Progress Ledger
@@ -515,6 +523,7 @@ master
 | D59 explicit peripheral comment promotion | complete | member-triggered safe comment-to-core turn with provenance, privacy-aware fanout, and idempotent JSON persistence | 278 tests + compileall + diff check | `931783d` |
 | D60 explicit AgentPresence lifecycle contract | complete | stable public Agent identity outside human participants with safety/expiry/close status and legacy persistence defaults | 280 tests + compileall + diff check | `64b9463` |
 | D61 JSON close lifecycle persistence | complete | restart-safe idempotent close snapshot and legacy Agent lifecycle normalization | 281 tests + compileall + diff check | `7965cf1` |
+| D62 replay public narrative artifacts | in progress | replay response includes interventions, comments, and comment promotion provenance | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
