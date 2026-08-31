@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository, JsonTableRepository
-from app.domain import BehaviorEvent, FollowUpOutcome, HumanTurn, ParticipantSeed
+from app.domain import BehaviorEvent, FollowUpOutcome, HumanTurn, ParticipantSeed, ValueFeedback
 
 
 def _seed(participant_id: str) -> ParticipantSeed:
@@ -117,6 +117,45 @@ def test_server_generated_behavior_events_cannot_be_forged_through_generic_endpo
         )
         assert response.status_code == 409
         assert "dedicated server path" in response.json()["detail"]
+
+
+def test_repository_generic_behavior_writer_rejects_server_generated_events(tmp_path) -> None:
+    repositories = [
+        InMemoryTableRepository(),
+        JsonTableRepository(tmp_path / "trusted-events.json"),
+    ]
+    for repository in repositories:
+        repository.create("trusted-events", "Q", [_seed("p1"), _seed("p2")])
+        closed = repository.close_table("trusted-events")
+        for event_type in ("table_closed", "value_feedback_submitted"):
+            event = BehaviorEvent(
+                event_id=f"forged-{event_type}",
+                participant_id="p1",
+                event_type=event_type,
+                table_id="trusted-events",
+                state_version=closed.version,
+                detail="forged",
+            )
+            with pytest.raises(ValueError, match="dedicated repository path"):
+                repository.record_behavior_event(event)
+
+        saved, created = repository.record_table_closed_behavior("trusted-events", "p1")
+        retry, duplicate = repository.record_table_closed_behavior("trusted-events", "p1")
+        assert created is True and duplicate is False
+        assert saved == retry
+        assert saved.event_type == "table_closed"
+
+        feedback = repository.record_value_feedback(ValueFeedback(
+            table_id="trusted-events",
+            participant_id="p1",
+            state_version=closed.version,
+            cognitive_value=4,
+            relationship_value=4,
+            action_value=5,
+            emotional_value=3,
+            would_join_again=True,
+        ))
+        assert feedback.state_version == closed.version
 
 
 def test_server_generated_table_selection_is_open_scoped_and_idempotent() -> None:

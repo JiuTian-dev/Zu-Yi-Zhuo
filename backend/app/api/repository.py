@@ -622,13 +622,19 @@ class InMemoryTableRepository:
             raise ValueError("table_closed behavior requires a closed table")
         if participant_id not in state.participants:
             raise ValueError("close actor must be a table participant")
-        return self.record_behavior_event(
+        return self._record_behavior_event(
             _table_closed_behavior_event(table_id, participant_id, state.version)
         )
 
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
         """Persist one bounded product behavior signal with user-scoped idempotency."""
+        if event.event_type in {"table_closed", "value_feedback_submitted"}:
+            raise ValueError("server-generated behavior events require a dedicated repository path")
+        return self._record_behavior_event(event)
+
+    def _record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
+        """Persist a validated event for public or dedicated repository paths."""
         state = self.get(event.table_id)
         _validate_behavior_event_context(state, event)
         if event.state_version is not None and event.state_version > state.version:
@@ -1719,6 +1725,11 @@ class JsonTableRepository(InMemoryTableRepository):
 
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
+        if event.event_type in {"table_closed", "value_feedback_submitted"}:
+            raise ValueError("server-generated behavior events require a dedicated repository path")
+        return self._record_behavior_event(event)
+
+    def _record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
         state = self.get(event.table_id)
         _validate_behavior_event_context(state, event)
         if event.state_version is not None and event.state_version > state.version:
