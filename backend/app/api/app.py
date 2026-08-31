@@ -704,8 +704,19 @@ def create_app(
         return projected(table_or_404(table_id), participant_id)
 
     @api.post("/tables/{table_id}/participants", response_model=TableState)
-    def add_participant(table_id: str, participant: ParticipantSeed) -> TableState:
-        table_or_404(table_id)
+    def add_participant(
+        table_id: str,
+        participant: ParticipantSeed,
+        request: Request,
+        inviter_id: str | None = Query(default=None, min_length=1),
+    ) -> TableState:
+        state = table_or_404(table_id)
+        if identity_resolver is not None:
+            if inviter_id is None:
+                raise HTTPException(status_code=401, detail="inviter_id is required")
+            require_request_identity(identity_resolver, request, inviter_id)
+        if inviter_id is not None and inviter_id not in state.participants:
+            raise HTTPException(status_code=403, detail="inviter must be a table participant")
         try:
             return projected(repo.add_participant(table_id, participant))
         except ValueError as error:
@@ -1169,8 +1180,18 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @api.get("/tables/{table_id}/interventions", response_model=list[InterventionRecord])
-    def get_interventions(table_id: str) -> list[InterventionRecord]:
-        table_or_404(table_id)
+    def get_interventions(
+        table_id: str,
+        request: Request,
+        participant_id: str | None = Query(default=None, min_length=1),
+    ) -> list[InterventionRecord]:
+        state = table_or_404(table_id)
+        if identity_resolver is not None:
+            if participant_id is None:
+                raise HTTPException(status_code=401, detail="participant_id is required")
+            require_request_identity(identity_resolver, request, participant_id)
+        if participant_id is not None and participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
         return repo.interventions(table_id)
 
     def close_follow_ups(table_id: str, participant_id: str) -> tuple[TableState, list[FollowUpItem], dict[int, FollowUpOutcome]]:
@@ -1314,8 +1335,18 @@ def create_app(
         return projected(expired, participant_id)
 
     @api.post("/tables/{table_id}/close", response_model=SharedBaseline)
-    def close_table(table_id: str) -> SharedBaseline:
+    def close_table(
+        table_id: str,
+        request: Request,
+        participant_id: str | None = Query(default=None, min_length=1),
+    ) -> SharedBaseline:
         state = table_or_404(table_id)
+        if identity_resolver is not None:
+            if participant_id is None:
+                raise HTTPException(status_code=401, detail="participant_id is required")
+            require_request_identity(identity_resolver, request, participant_id)
+        if participant_id is not None and participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
         try:
             build_shared_baseline(state, turns=repo.turns(table_id))
             closed = repo.close_table(table_id)
@@ -1331,9 +1362,17 @@ def create_app(
     def recompose_table(
         table_id: str,
         payload: RecomposeTableRequest,
+        request: Request,
+        participant_id: str | None = Query(default=None, min_length=1),
     ) -> RecomposeTableResponse:
         """Create a new table from a closed table's evolved question and chosen seeds."""
         state = table_or_404(table_id)
+        if identity_resolver is not None:
+            if participant_id is None:
+                raise HTTPException(status_code=401, detail="participant_id is required")
+            require_request_identity(identity_resolver, request, participant_id)
+        if participant_id is not None and participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
         if not state.conversation.closed:
             raise HTTPException(status_code=409, detail="table is not closed")
         try:

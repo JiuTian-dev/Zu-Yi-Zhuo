@@ -39,12 +39,14 @@ python -m uvicorn app.main:app --reload
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
 - `POST /tables/{table_id}/safety/resolve` / `GET /tables/{table_id}/safety/resolutions`：仅对注入的 `moderator_resolver` 开放；可原子恢复 critical 暂停或移除一名成员，并读取不可变处置审计。未配置审核器时返回 503，不能用请求体自报 moderator。
-- `POST /tables/{table_id}/recompose`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。
+- `POST /tables/{table_id}/recompose?participant_id=...`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。生产注入 `identity_resolver` 后要求由当前桌成员发起。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `POST /tables/{table_id}/select?participant_id=...`：显式记录一次 open 桌选择；服务端生成稳定行为事件，不会自动入席或改变桌状态。
 - `POST /tables/{table_id}/relationships/{related_participant_id}/save?participant_id=...`：收桌后由成员本人保存一段关系；服务端校验双方同桌身份并生成稳定事件，不复制个人卡或好友图。
 - `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、关系保存、行动回响）；真人发言和行动结果由后端自动沉淀，事件不广播给同桌。
 - `DELETE /participants/{participant_id}/behavior-events?viewer_id=...`：本人清除自己的行为账本；不删除消息、桌状态、收桌产物或安全审计。
+
+生产注入 `identity_resolver` 后，`POST /tables/{table_id}/participants?inviter_id=...`、`POST /tables/{table_id}/close?participant_id=...` 和 `GET /tables/{table_id}/interventions?participant_id=...` 也必须通过当前桌成员身份校验；未注入时保留本地 Demo 的无 query 调用。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=commenter`：外围评论连接；只接受 `peripheral_comment`，评论可由核心成员通过 REST 显式促成。

@@ -385,7 +385,7 @@ POST /matches/confirm
 POST /opportunities/source-preview
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
-POST /tables/{id}/participants
+POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
 POST /tables/{id}/invitations
