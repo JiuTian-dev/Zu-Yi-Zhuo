@@ -1237,13 +1237,15 @@ def create_app(
     ) -> ReplayResponse:
         if participant_id is not None:
             require_request_identity(identity_resolver, request, participant_id)
-        table_or_404(table_id)
+        current_state = table_or_404(table_id)
+        if participant_id is not None and participant_id not in current_state.participants:
+            raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
         try:
             snapshots = repo.replay(table_id, from_version)
             return ReplayResponse(
                 table_id=table_id,
                 messages=repo.turns(table_id),
-                snapshots=[projected(item, participant_id) for item in snapshots],
+                snapshots=[project_state_for_viewer(item, participant_id) for item in snapshots],
                 interventions=repo.interventions(table_id),
                 comments=repo.comments(table_id),
                 comment_promotions=repo.comment_promotions(table_id),
