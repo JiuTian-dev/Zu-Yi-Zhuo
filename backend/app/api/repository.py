@@ -149,6 +149,8 @@ class InMemoryTableRepository:
             raise ValueError("intervention state must be the next snapshot for its table")
         if record.table_id != table_id or record.state_version != state.version:
             raise ValueError("intervention record must reference the new table state")
+        if record.action is Action.SILENCE:
+            raise ValueError("SILENCE interventions are not persisted")
         if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"intervention already exists: {record.intervention_id}")
         snapshot = TableState.model_validate(state.model_dump())
@@ -164,6 +166,8 @@ class InMemoryTableRepository:
             raise ValueError("table is closed")
         if record.table_id != table_id or record.state_version != latest.version:
             raise ValueError("intervention record must reference the current table state")
+        if record.action is Action.SILENCE:
+            raise ValueError("SILENCE interventions are not persisted")
         if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"intervention already exists: {record.intervention_id}")
         self._interventions[table_id].append(record.model_copy(deep=True))
@@ -174,6 +178,8 @@ class InMemoryTableRepository:
         self.get(table_id)
         if record.table_id != table_id:
             raise ValueError("intervention record must belong to the table")
+        if record.action is Action.SILENCE:
+            raise ValueError("SILENCE interventions are not persisted")
         for index, existing in enumerate(self._interventions[table_id]):
             if existing.intervention_id == record.intervention_id:
                 self._interventions[table_id][index] = record.model_copy(deep=True)
@@ -273,6 +279,8 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("table is closed")
         if record.table_id != table_id or record.state_version != latest.version:
             raise ValueError("intervention record must reference the current table state")
+        if record.action is Action.SILENCE:
+            raise ValueError("SILENCE interventions are not persisted")
         if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"intervention already exists: {record.intervention_id}")
         interventions = {
@@ -286,6 +294,8 @@ class JsonTableRepository(InMemoryTableRepository):
         self.get(table_id)
         if record.table_id != table_id:
             raise ValueError("intervention record must belong to the table")
+        if record.action is Action.SILENCE:
+            raise ValueError("SILENCE interventions are not persisted")
         if not any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"unknown intervention: {record.intervention_id}")
         interventions = {
@@ -338,6 +348,8 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("intervention state must be the next snapshot for its table")
         if record.table_id != table_id or record.state_version != state.version:
             raise ValueError("intervention record must reference the new table state")
+        if record.action is Action.SILENCE:
+            raise ValueError("SILENCE interventions are not persisted")
         if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"intervention already exists: {record.intervention_id}")
         snapshot = TableState.model_validate(state.model_dump())

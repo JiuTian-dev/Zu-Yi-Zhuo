@@ -162,6 +162,16 @@ def test_intervention_bundle_rejects_invalid_audit_without_committing_state() ->
     assert repository.get("bundle").version == 0
     assert repository.interventions("bundle") == []
 
+    with pytest.raises(ValueError, match="SILENCE"):
+        repository.append_intervention_record(
+            "bundle",
+            invalid_record.model_copy(update={
+                "action": Action.SILENCE,
+                "state_version": 0,
+                "intervention_id": "bundle:intervention:silence",
+            }),
+        )
+
 
 def test_json_intervention_bundle_recovers_state_and_audit_together(tmp_path) -> None:
     path = tmp_path / "bundle.json"
