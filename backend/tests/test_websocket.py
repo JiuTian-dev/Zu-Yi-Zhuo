@@ -274,6 +274,26 @@ def test_participant_events_only_accept_the_query_participant_id() -> None:
     assert "unknown participant" in error["detail"]
 
 
+def test_stale_socket_cannot_write_after_participant_leaves() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({"type": "participant_left", "participant_id": "p1"})
+        assert websocket.receive_json()["type"] == "table_state_changed"
+        version_after_leave = repository.get("table-ws").version
+
+        websocket.send_json({
+            "type": "human_message", "message_id": "stale-unsafe", "participant_id": "p1",
+            "text": "我会威胁你。", "client_ts": "2026-08-31T12:04:00Z",
+        })
+        error = websocket.receive_json()
+        assert error["type"] == "error"
+        assert error["code"] == "invalid_event"
+        assert "unknown participant" in error["detail"]
+        assert repository.get("table-ws").version == version_after_leave
+
+
 def test_legacy_human_message_is_a_structured_error_without_closing_connection() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

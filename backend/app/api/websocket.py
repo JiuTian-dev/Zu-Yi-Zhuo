@@ -219,6 +219,11 @@ def register_websocket_routes(
                         if event.participant_id != participant_id:
                             raise ValueError("participant_id must match the WebSocket query")
                         current_state = repository.get(table_id)
+                        # A participant can leave while an existing socket is still
+                        # connected.  Re-check membership before safety handling so
+                        # a stale connection cannot create a safety snapshot or turn.
+                        if event.participant_id not in current_state.participants:
+                            raise ValueError(f"unknown participant: {event.participant_id}")
                         if current_state.conversation.closed:
                             await _send_error(websocket, "table_closed", "table is already closed")
                             continue
