@@ -575,7 +575,7 @@ master
 | D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 287 tests + compileall + diff check | `70aaca1` |
 | D65 source full-lifecycle timeout | complete | candidate/content/personal command bridges enforce one timeout across process startup, stdin, drain, exit, and cleanup | 290 tests + compileall + diff check | `26abb0d` |
 | D66 server-generated table selection event | complete | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check | `0fb1bbc` |
-| D67 post-close relationship save event | in progress | closed-table member-only relationship save endpoint emits a stable self-scoped `relationship_saved` event without persistent social-graph writes | 292 tests + compileall + diff check pending | — |
+| D67 post-close relationship save event | complete | closed-table member-only relationship save endpoint emits a stable self-scoped `relationship_saved` event without persistent social-graph writes | 292 tests + compileall + diff check | `732ebde` |
 
 ## 已知坑位（Running Gotchas）
 
