@@ -499,6 +499,13 @@
 - **替代方案**: 由前端额外 POST 一个行为事件、每次修改反馈都追加事件、或允许客户端直接伪造服务端事件；这些方案分别容易丢链路、制造重复行为或破坏数据可信度与隐私边界。
 - **代价**: 旧 JSON 快照缺少该事件时只在下一次真实反馈提交后补齐；未来若需要分析具体分数，必须建立另有授权的聚合指标，不扩展私有行为事件正文。
 
+### ADR-69: 端到端 Demo 闭环验收固定为黑盒回归
+
+- **决策**: 增加一条不依赖内部仓储实现细节的黑盒回归，按产品最小成功旅程依次验证公开机会预览、匹配确认建桌、实时真人表达、带身份收桌、行动结果、关系保存和四维价值反馈；随后从同一 JSON 快照重启仓储，验证桌状态、收桌产物、行为账本和反馈聚合仍可读取。测试只使用现有 REST/WebSocket 契约，不新增 Demo 专用生产接口或脚本。
+- **理由**: 现有测试按能力分散覆盖，无法证明“2–3 人完成找问题 → 组桌 → 入席 → 对话 → 收束 → 结果”这一产品验收链条在真实持久化边界上连通；把黑盒旅程固定下来，可以在前端接入或替换适配器时快速发现接口断线，同时保留后端模块可独立演进。
+- **替代方案**: 只依赖各模块单元测试、写一份不可执行的手工清单、或新增仅供演示的聚合接口；这些方案分别无法证明连线、容易随实现漂移、或扩大正式 API 面积。
+- **代价**: 回归测试需要同时维护 REST、WebSocket 和 JSON 重启的最小样例；它不替代各模块边界测试，也不声称覆盖外部知乎授权 source 的真实网络行为。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -697,7 +704,8 @@ master
                                                                                                                                                                                                                                                                                                                                          ←── D88 table_closed behavior event
                                                                                                                                                                                                                                                                                                                                         ←── D89 atomic actor close behavior commit
                                                                                                                                                                                                                                                                                                                                              ←── D90 bounded external source consumption
-                                                                                                                                                                                                                                                                                                                                                   ←── D91 value feedback behavior event
+                                                                                                                                                                                                                                                                                                                                            ←── D91 value feedback behavior event
+                                                                                                                                                                                                                                                                                                                                                   ←── D92 end-to-end demo journey smoke
 ```
 
 ## Progress Ledger
@@ -799,6 +807,7 @@ master
 | D89 atomic actor close behavior commit | complete | Commit actor close state and private table_closed event together in memory/JSON repositories; REST/WS use the atomic actor path while legacy identity-less close remains compatible | 347 tests + compileall + diff check | `f59a6bc` |
 | D90 bounded external source consumption | complete | Consume at most the requested limit from candidate/content/personal source iterables before validation | 350 tests + compileall + diff check | `3a96bc5` |
 | D91 value feedback behavior event | complete | Atomically persist first value-feedback behavior with the private feedback upsert and reject client-forged server-generated event types | 351 tests + compileall + diff check | `5ec8e2e` |
+| D92 end-to-end demo journey smoke | in_progress | Black-box opportunity → match → WebSocket turn → close → follow-up/relationship/feedback journey with JSON restart recovery | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
