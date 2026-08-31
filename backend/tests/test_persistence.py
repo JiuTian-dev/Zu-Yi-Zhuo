@@ -133,3 +133,57 @@ def test_in_memory_repository_serializes_competing_consent_writes() -> None:
     state = repository.get("concurrent")
     assert state.version == 2
     assert all(person.profile_shared for person in state.participants.values())
+
+
+def test_intervention_bundle_rejects_invalid_audit_without_committing_state() -> None:
+    from app.api.repository import InMemoryTableRepository
+
+    repository = InMemoryTableRepository()
+    repository.create("bundle", "Q", flagship_participants)
+    next_state = repository.get("bundle").model_copy(update={"version": 1})
+    invalid_record = InterventionRecord(
+        action=Action.PROBE,
+        text="请补充一条现场证据。",
+        visual_hint={"kind": "probe"},
+        evidence_turns=[1],
+        state_version=2,
+        confidence=.8,
+        intervention_id="bundle:intervention:2",
+        table_id="bundle",
+        reasons_to_speak=[EvidenceStatement(text="有现场证据", evidence_turns=[1])],
+        latency_ms=0,
+        model="test",
+        token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+    )
+
+    with pytest.raises(ValueError, match="new table state"):
+        repository.append_intervention_bundle("bundle", next_state, invalid_record)
+
+    assert repository.get("bundle").version == 0
+    assert repository.interventions("bundle") == []
+
+
+def test_json_intervention_bundle_recovers_state_and_audit_together(tmp_path) -> None:
+    path = tmp_path / "bundle.json"
+    repository = JsonTableRepository(path)
+    repository.create("bundle", "Q", flagship_participants)
+    next_state = repository.get("bundle").model_copy(update={"version": 1})
+    record = InterventionRecord(
+        action=Action.PROBE,
+        text="请补充一条现场证据。",
+        visual_hint={"kind": "probe"},
+        evidence_turns=[1],
+        state_version=1,
+        confidence=.8,
+        intervention_id="bundle:intervention:1",
+        table_id="bundle",
+        reasons_to_speak=[EvidenceStatement(text="有现场证据", evidence_turns=[1])],
+        latency_ms=0,
+        model="test",
+        token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+    )
+
+    repository.append_intervention_bundle("bundle", next_state, record)
+    restored = JsonTableRepository(path)
+    assert restored.get("bundle").version == 1
+    assert restored.interventions("bundle") == [record]

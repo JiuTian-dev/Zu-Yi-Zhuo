@@ -238,10 +238,10 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             action = generate_host_event(state, route, grounding_card)
                             agent_turn_id = f"{table_id}:agent:{state.version + 1}"
                             final_state = record_intervention(state, route, agent_turn_id)
-                            state = repository.append_intervention_state(table_id, final_state)
-                            action = action.model_copy(update={"state_version": state.version})
-                            repository.append_intervention_record(
-                                table_id, _build_intervention_record(table_id, state, route, action)
+                            action = action.model_copy(update={"state_version": final_state.version})
+                            record = _build_intervention_record(table_id, final_state, route, action)
+                            state = repository.append_intervention_bundle(
+                                table_id, final_state, record
                             )
 
                         await broadcast(table_id, {

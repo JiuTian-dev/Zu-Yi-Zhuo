@@ -138,6 +138,25 @@ class InMemoryTableRepository:
         return self._append(table_id, state)
 
     @_synchronized
+    def append_intervention_bundle(
+        self, table_id: str, state: TableState, record: InterventionRecord
+    ) -> TableState:
+        """Commit an intervention snapshot and its audit record together."""
+        latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
+        if state.table_id != table_id or state.version != latest.version + 1:
+            raise ValueError("intervention state must be the next snapshot for its table")
+        if record.table_id != table_id or record.state_version != state.version:
+            raise ValueError("intervention record must reference the new table state")
+        if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
+            raise ValueError(f"intervention already exists: {record.intervention_id}")
+        snapshot = TableState.model_validate(state.model_dump())
+        self._states[table_id].append(snapshot)
+        self._interventions[table_id].append(record.model_copy(deep=True))
+        return snapshot.model_copy(deep=True)
+
+    @_synchronized
     def append_intervention_record(self, table_id: str, record: InterventionRecord) -> None:
         """Persist one explainable non-SILENCE action without changing table state."""
         latest = self.get(table_id)
@@ -305,6 +324,29 @@ class JsonTableRepository(InMemoryTableRepository):
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         self._commit(states, self._turns, self._trusted_grounding_cards)
+        return snapshot.model_copy(deep=True)
+
+    @_synchronized
+    def append_intervention_bundle(
+        self, table_id: str, state: TableState, record: InterventionRecord
+    ) -> TableState:
+        """Persist the state and matching audit record in one JSON snapshot."""
+        latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
+        if state.table_id != table_id or state.version != latest.version + 1:
+            raise ValueError("intervention state must be the next snapshot for its table")
+        if record.table_id != table_id or record.state_version != state.version:
+            raise ValueError("intervention record must reference the new table state")
+        if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
+            raise ValueError(f"intervention already exists: {record.intervention_id}")
+        snapshot = TableState.model_validate(state.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        interventions = {
+            **self._interventions,
+            table_id: [*self._interventions[table_id], record.model_copy(deep=True)],
+        }
+        self._commit(states, self._turns, self._trusted_grounding_cards, interventions)
         return snapshot.model_copy(deep=True)
 
     @_synchronized
