@@ -380,6 +380,13 @@
 - **替代方案**: 前端定时轮询、让每个 REST 路由各自维护推送逻辑、或把完整 Table State 广播后由客户端过滤；这些方案分别增加延迟、产生事件漂移或有隐私泄露风险。
 - **代价**: REST 路由改为异步并依赖可选的进程内广播钩子；跨进程部署仍需替换为共享消息总线，但事件契约保持不变。
 
+### ADR-52: REST 收桌沿用 close_started 生命周期事件
+
+- **决策**: REST `POST /tables/{table_id}/close` 在尝试构建收桌底稿前，先向同桌连接广播 `close_started`；证据不足或底稿构建失败时只保留该开始提示，不写入关闭状态，也不发送 `table_closed`。成功后继续广播 `table_closed` 与投影状态，响应契约保持 `SharedBaseline`。
+- **理由**: WebSocket 与 REST 是同一桌的两种入口，旁听者和其他在线客户端需要知道收桌已经开始；开始提示不能被误解为已关闭，最终状态仍由版本化迁移确认。
+- **替代方案**: 只在成功后广播、或把失败细节广播给全桌；前者造成在线 UI 无反馈，后者会泄露内部底稿错误并破坏统一错误边界。
+- **代价**: REST 收桌失败时客户端会看到一次没有后续 `table_closed` 的开始事件，必须以响应状态和最终 `table_state_changed` 判断结果。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -638,6 +645,7 @@ master
 | D72 controlled safety resolution lifecycle | complete | moderator-only, atomic resume/remove path for critical safety pauses with persisted resolution audit and realtime projection | 302 tests + compileall + diff check | `22ce4d8` + `8184d30` |
 | D73 production member boundary for privileged REST | complete | identity-resolver-backed member checks for close, direct seat addition, recomposition, and intervention audit reads while preserving development compatibility | 304 tests + compileall + diff check | `c705f5e` + `e27400c` |
 | D74 REST mutation realtime fanout parity | complete | REST seat/invitation/mode/consent/leave/expiry/close/comment writes emit versioned public events and projected state through the existing WebSocket broadcaster; idempotent no-op writes stay silent | 311 tests + compileall + diff check | `de21989` + `ed7da41` + `cbedbb4` |
+| D75 REST close lifecycle parity | in progress | REST close emits `close_started` before artifact generation, then `table_closed` and projected state only after an evidence-backed atomic close | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
