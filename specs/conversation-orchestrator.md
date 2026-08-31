@@ -345,6 +345,13 @@
 - **替代方案**: 只在 API 层做一次校验、允许所有事件作为客户端埋点，或把行为事件完全从持久化文件中排除。
 - **代价**: 旧 JSON 中不符合新上下文规则的行为账本需要人工清理或迁移；未来真实账号接入后仍需把成员身份绑定到会话认证。
 
+### ADR-47: 行为账本支持本人清除但不回删事实账本
+
+- **决策**: 增加 self-scoped `DELETE /participants/{id}/behavior-events?viewer_id={id}`，原子删除该参与者的行为事件列表；不删除真人消息、Table State、收桌卡、举报或干预审计。后续新发言/行动仍可自动产生新事件，JSON 仓储与内存仓储保持一致。
+- **理由**: 行为层是用于画像和推荐的敏感个人轨迹，撤回授权后应有明确的本地删除能力；同时对话事实和安全审计属于桌级/运营账本，不能因为用户清除画像事件而被回删或破坏回放。
+- **替代方案**: 只让前端隐藏行为记录、级联删除所有桌历史，或保留事件但标记为“已删除”继续暴露元数据。
+- **代价**: V1 采用整份个人行为账本清除，不支持按事件或时间范围选择；生产环境需把删除操作接入真实账号、审计和保留策略。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -379,6 +386,7 @@ GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 POST /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 GET  /participants/{participant_id}/behavior-events?viewer_id={participant_id}
+DELETE /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 POST /tables/{id}/select?participant_id={viewer_id}
 POST /tables/{id}/relationships/{related_participant_id}/save?participant_id={viewer_id}
 POST /tables/{id}/comments?author_id={author_id}
@@ -419,7 +427,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
-行为层边界：行为事件只能由本人 `viewer_id` 写入或读取；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；事件不广播给同桌、不进入 Table State。
+行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
 
 ### 数据模型 / 类型定义
 
@@ -506,7 +514,8 @@ master
                                                                                                                                                                                                            ←── D65 source full-lifecycle timeout
                                                                                                                                                                                                                  ←── D66 server-generated table selection event
                                                                                                                                                                                                                        ←── D67 post-close relationship save event
-                                                                                                                                                                                                                              ←── D68 behavior event context validation
+                                                                                                                                                                                                                             ←── D68 behavior event context validation
+                                                                                                                                                                                                                                    ←── D69 self-scoped behavior ledger erasure
 ```
 
 ## Progress Ledger
@@ -585,6 +594,7 @@ master
 | D66 server-generated table selection event | complete | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check | `0fb1bbc` |
 | D67 post-close relationship save event | complete | closed-table member-only relationship save endpoint emits a stable self-scoped `relationship_saved` event without persistent social-graph writes | 292 tests + compileall + diff check | `732ebde` |
 | D68 behavior event context validation | complete | behavior events enforce type-specific table membership/lifecycle rules in memory, API, and JSON reload | 294 tests + compileall + diff check | `0b87fcc` |
+| D69 self-scoped behavior ledger erasure | in progress | authenticated-by-viewer delete clears only the caller's behavior events with atomic JSON persistence and no table-history deletion | pending | — |
 
 ## 已知坑位（Running Gotchas）
 

@@ -464,6 +464,13 @@ class InMemoryTableRepository:
         return [item.model_copy(deep=True) for item in self._behavior_events.get(participant_id, [])]
 
     @_synchronized
+    def clear_behavior_events(self, participant_id: str) -> bool:
+        """Clear one participant's private behavior ledger without touching table facts."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        return self._behavior_events.pop(participant_id, None) is not None
+
+    @_synchronized
     def relationship_memories(self, participant_id: str) -> list[RelationshipMemory]:
         """Derive self-only relationship reminders from closed table snapshots."""
         if not participant_id.strip():
@@ -1312,6 +1319,23 @@ class JsonTableRepository(InMemoryTableRepository):
             self._personal_context_consents, behavior_events=rows,
         )
         return event.model_copy(deep=True), True
+
+    @_synchronized
+    def clear_behavior_events(self, participant_id: str) -> bool:
+        """Atomically clear one participant's private behavior ledger."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        if participant_id not in self._behavior_events:
+            return False
+        behavior_events = {**self._behavior_events}
+        behavior_events.pop(participant_id)
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards, self._interventions,
+            self._invitations, self._follow_up_outcomes, self._value_feedback,
+            self._comments, self._no_match, self._safety_reports,
+            self._personal_context_consents, behavior_events=behavior_events,
+        )
+        return True
 
     @_synchronized
     def respond_invitation(

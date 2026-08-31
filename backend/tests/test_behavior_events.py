@@ -306,3 +306,39 @@ def test_json_rejects_behavior_event_with_incompatible_table_context(tmp_path) -
 
     with pytest.raises(ValueError, match="behavior event context"):
         JsonTableRepository(path)
+
+
+def test_behavior_ledger_erasure_is_self_scoped_and_preserves_table_facts(tmp_path) -> None:
+    path = tmp_path / "erase-behavior.json"
+    repository = JsonTableRepository(path)
+    repository.create("erase-table", "Q", [_seed("p1"), _seed("p2")])
+    client = TestClient(create_app(repository))
+
+    selected = client.post("/tables/erase-table/select?participant_id=p1")
+    assert selected.status_code == 201
+    assert client.post("/tables/erase-table/select?participant_id=p2").status_code == 201
+    repository.append_turn(
+        "erase-table",
+        HumanTurn(turn_id=1, participant_id="p1", text="事实消息仍需保留。"),
+    )
+    version = repository.get("erase-table").version
+
+    assert client.delete(
+        "/participants/p1/behavior-events?viewer_id=other"
+    ).status_code == 403
+    assert client.delete(
+        "/participants/p1/behavior-events?viewer_id=p1"
+    ).status_code == 204
+    assert client.delete(
+        "/participants/p1/behavior-events?viewer_id=p1"
+    ).status_code == 204
+
+    assert client.get(
+        "/participants/p1/behavior-events?viewer_id=p1"
+    ).json() == []
+    assert len(client.get(
+        "/participants/p2/behavior-events?viewer_id=p2"
+    ).json()) == 1
+    assert repository.get("erase-table").version == version
+    assert len(repository.turns("erase-table")) == 1
+    assert JsonTableRepository(path).behavior_events("p1") == []

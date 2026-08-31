@@ -415,6 +415,23 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+    @api.delete(
+        "/participants/{participant_id}/behavior-events",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def clear_behavior_events(
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> None:
+        """Let a participant erase only their private behavior ledger."""
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            repo.clear_behavior_events(participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return None
+
     @api.put(
         "/participants/{participant_id}/personal-context/consent",
         response_model=PersonalContextConsent,
