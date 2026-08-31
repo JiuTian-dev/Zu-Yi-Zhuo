@@ -506,6 +506,13 @@
 - **替代方案**: 只依赖各模块单元测试、写一份不可执行的手工清单、或新增仅供演示的聚合接口；这些方案分别无法证明连线、容易随实现漂移、或扩大正式 API 面积。
 - **代价**: 回归测试需要同时维护 REST、WebSocket 和 JSON 重启的最小样例；它不替代各模块边界测试，也不声称覆盖外部知乎授权 source 的真实网络行为。
 
+### ADR-70: 可信行为事件边界下沉到仓储通用写入口
+
+- **决策**: 内存与 JSON 仓储的通用 `record_behavior_event` 入口拒绝 `table_closed` 和 `value_feedback_submitted`；这两类事件只能由专用的收桌/反馈写路径生成。专用收桌路径在同一仓储锁或 JSON 原子提交中继续写入 `table_closed`，反馈路径继续与反馈账本原子写入 `value_feedback_submitted`。HTTP 层现有的 409 拒绝保持不变。
+- **理由**: API 层校验不能替代仓储边界：内部适配器、脚本或未来新路由若直接调用通用仓储方法，仍不应能伪造只能由服务端事实产生的行为信号；把规则放到两种仓储实现的共同入口，可以让内存、JSON 和后续数据库实现共享同一可信契约。
+- **替代方案**: 只依赖路由层拦截、让调用方传入布尔开关、或允许通用入口写入后再异步纠正；这些方案分别容易被绕过、扩大伪造面、或留下不可信的中间快照。
+- **代价**: 仓储需要区分通用行为写入和两个专用事实写入；未来新增服务端生成事件时必须同步加入仓储边界测试。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -705,7 +712,8 @@ master
                                                                                                                                                                                                                                                                                                                                         ←── D89 atomic actor close behavior commit
                                                                                                                                                                                                                                                                                                                                              ←── D90 bounded external source consumption
                                                                                                                                                                                                                                                                                                                                             ←── D91 value feedback behavior event
-                                                                                                                                                                                                                                                                                                                                                   ←── D92 end-to-end demo journey smoke
+                                                                                                                                                                                                                                                                                                                                                  ←── D92 end-to-end demo journey smoke
+                                                                                                                                                                                                                                                                                                                                                        ←── D93 repository behavior trust boundary
 ```
 
 ## Progress Ledger
@@ -808,6 +816,7 @@ master
 | D90 bounded external source consumption | complete | Consume at most the requested limit from candidate/content/personal source iterables before validation | 350 tests + compileall + diff check | `3a96bc5` |
 | D91 value feedback behavior event | complete | Atomically persist first value-feedback behavior with the private feedback upsert and reject client-forged server-generated event types | 351 tests + compileall + diff check | `5ec8e2e` |
 | D92 end-to-end demo journey smoke | complete | Black-box opportunity → match → WebSocket turn → close → follow-up/relationship/feedback journey with JSON restart recovery | 352 tests + compileall + diff check | `c7820a4` |
+| D93 repository behavior trust boundary | complete | Generic in-memory/JSON behavior writes reject server-generated close/feedback events while dedicated paths remain valid | 353 tests + compileall + diff check | `761a8d6` |
 
 ## 已知坑位（Running Gotchas）
 
