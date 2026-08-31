@@ -226,6 +226,13 @@
 - **替代方案**: 让前端本地保存评分、把反馈追加成真人消息，或直接公开每个人的分数与备注。
 - **代价**: V1 只提供自填量表与匿名均值，不能替代真实内测；后续若需要实验分组或时间序列，应在账本上增加显式 feedback ID/批次。
 
+### ADR-30: 静默旁听是只读连接，不占核心席位
+
+- **决策**: WebSocket 增加 `viewer_mode=observer` 查询参数。旁听者使用自选 `participant_id` 作为连接标识，但不需要出现在桌内席位；连接建立后只接收经过全量隐私投影的公开状态和桌面事件，并允许请求同样经过投影的 debug state。旁听连接拒绝真人发言、入席/离席、资料同意和收桌等写事件，且不会写入 Table State、turn、邀请或反馈账本；默认 `viewer_mode=participant` 的现有协议保持不变。
+- **理由**: 产品需要让外围评论和静默听众先观察“正在形成的桌”，又不能把旁听误当作第五席或让未入席者看到私有画像；在 WebSocket 层做只读边界能复用实时广播而不引入伪参与者。
+- **替代方案**: 旁听者直接创建临时 ParticipantState、只在前端本地模拟旁听，或把所有状态原样广播后交给客户端过滤。
+- **代价**: V1 旁听只读，不提供外围评论写入口；后续评论若落地，应单独建公共评论账本并继续复用旁听身份边界。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -257,7 +264,7 @@ POST /tables/{id}/close
 POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
-WS   /ws/tables/{table_id}?participant_id={participant_id}
+WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer}
 ```
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
@@ -340,6 +347,7 @@ master
                                                                                                     ←── D49 dynamic candidate replenishment preview
                                                                                                            ←── D50 content signal source bridge
                                                                                                                   ←── D51 post-close value feedback ledger
+                                                                                                                         ←── D52 read-only observer WebSocket
 ```
 
 ## Progress Ledger
@@ -401,6 +409,7 @@ master
 | D49 dynamic candidate replenishment preview | complete | member-scoped, source-backed recommendations for current role gaps without automatic seat or invitation writes | 236 tests + compileall + diff check | `9884bee` |
 | D50 content signal source bridge | complete | bounded authorized public-content source feeding the existing opportunity detector without table or invitation writes | 242 tests + compileall + diff check | `573d2cf` |
 | D51 post-close value feedback ledger | complete | self-scoped post-close four-dimension value feedback with JSON persistence and member-only aggregate summary | 247 tests + compileall + diff check | `72bfed9` |
+| D52 read-only observer WebSocket | complete | observer-mode public projection with no seat, turn, invitation, consent, or close mutations | 249 tests + compileall + diff check | `918a5af` |
 
 ## 已知坑位（Running Gotchas）
 
