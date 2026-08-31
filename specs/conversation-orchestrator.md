@@ -762,7 +762,7 @@ master
 | D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
 | D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
 | D86 self-scoped invitation preference update | complete | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | 341 tests + compileall + diff check | `72655e5` |
-| D87 WebSocket inbound event rate limit | in_progress | Add per-connection sliding-window event limit with structured retry response and runtime configuration | pending | — |
+| D87 WebSocket inbound event rate limit | complete | Add per-connection sliding-window event limit with structured retry response and runtime configuration | 345 tests + compileall + diff check | `ecd174d` |
 
 ## 已知坑位（Running Gotchas）
 
