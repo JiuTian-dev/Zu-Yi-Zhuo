@@ -268,6 +268,13 @@
 - **替代方案**: 前端直接携带 token 调知乎、把个人收藏原文永久落盘，或把个人信号广播给同桌。
 - **代价**: V1 只提供 viewer 自己的预览，不自动创建桌、不自动公开个人画像；正式 OAuth scope、刷新和撤权由外部适配器负责，后续可把预览作为机会检测的私有输入。
 
+### ADR-36: 个人 source 必须先通过服务端 scope 授权闸门
+
+- **决策**: 增加全局 `PersonalContextConsent` 账本和本人自证的授权/撤回接口。预览请求必须声明 `profile`、`follows`、`favorites`、`public_content` 中的一个或多个 scope，且全部包含在当前授权中；撤回后立即拒绝 source 调用。授权只记录 scope，不记录 token 或个人信号；外部适配器仍负责真实 OAuth 授权、刷新和平台撤权。
+- **理由**: 产品要求个人数据由用户授权并可撤回；把 scope 检查放在服务端能阻止前端绕过 UI 直接读取个人层，也让关注/收藏等敏感范围清晰可审计。
+- **替代方案**: 只让前端勾选但服务端不校验、每次请求携带布尔 `consented`，或把 OAuth token 存进桌仓储。
+- **代价**: V1 仍使用开发态 `viewer_id` 自证，生产环境需替换为真正会话身份；撤回只删除本服务授权状态，平台侧撤权由 adapter 完成。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -308,6 +315,9 @@ GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
 POST /tables/{id}/safety-reports?reporter_id={reporter_id}
 GET  /tables/{id}/safety-reports?reporter_id={reporter_id}
 POST /personal-context/source-preview?viewer_id={viewer_id}
+PUT  /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}
+DELETE /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}
+GET  /participants/{participant_id}/personal-context/consent?viewer_id={participant_id}
 WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
@@ -332,6 +342,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
+个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 
 ### 数据模型 / 类型定义
 
@@ -400,7 +411,8 @@ master
                                                                                                                                      ←── D54 evolved-question table recompose
                                                                                                                                           ←── D55 global no-match preference boundary
                                                                                                                                                 ←── D56 safety report ledger and privacy boundary
-                                                                                                                                                        ←── D57 authorized personal context source boundary
+                                                                                                                                                       ←── D57 authorized personal context source boundary
+                                                                                                                                                               ←── D58 personal context consent and scope gate
 ```
 
 ## Progress Ledger
@@ -468,6 +480,7 @@ master
 | D55 global no-match preference boundary | complete | self-scoped persistent no-match ledger, symmetric invitation rejection and candidate-preview filtering | 261 tests + compileall + diff check | `201d72c` |
 | D56 safety report ledger and privacy boundary | complete | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | 265 tests + compileall + diff check | `3f82db6` |
 | D57 authorized personal context source boundary | complete | server-side OAuth/CLI/MCP adapter seam with viewer-only ephemeral personal preview | 271 tests + compileall + diff check | `9d33685` |
+| D58 personal context consent and scope gate | complete | self-scoped persistent scope consent, revoke path, and preview enforcement | 273 tests + compileall + diff check | `4e5cc42` |
 
 ## 已知坑位（Running Gotchas）
 

@@ -18,6 +18,7 @@ python -m uvicorn app.main:app --reload
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；不创建桌。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
 - `POST /personal-context/source-preview?viewer_id=...`：调用服务端注入的用户授权个人 source，生成本人可见的兴趣/表达主题预览；不创建桌、不广播、不落盘。
+- `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
 - `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
@@ -91,7 +92,7 @@ python -m uvicorn app.main:app
 ```
 
 个人授权层可额外设置 `PERSONAL_CONTEXT_SOURCE_COMMAND` 接入服务端 OAuth/CLI/MCP wrapper。stdin 为
-`{"viewer_id":"...","query":"...","limit":20}`，stdout 返回个人信号数组或 `{"signals":[...]}`；每条信号必须符合
+`{"viewer_id":"...","scopes":["favorites"],"query":"...","limit":20}`，stdout 返回个人信号数组或 `{"signals":[...]}`；每条信号必须符合
 `PersonalContextSignal` 且 `owner_id` 必须等于请求 viewer。后端不会接收或打印 access token，也不会把个人信号写入桌状态：
 
 ```powershell
@@ -99,7 +100,7 @@ $env:PERSONAL_CONTEXT_SOURCE_COMMAND = '["D:\\adapters\\zhihu-personal-context.e
 python -m uvicorn app.main:app
 ```
 
-个人 source 超时、退出失败、输出过大、JSON 不合法或 owner 不匹配时统一 fail-closed 为 502；未配置时返回 503。
+个人 source 预览必须先有本人已授予且覆盖请求 scope 的 consent；撤回后立即返回 403。source 超时、退出失败、输出过大、JSON 不合法或 owner 不匹配时统一 fail-closed 为 502；未配置时返回 503。
 
 动态补位预览会过滤现有参与者、已被邀请过的候选人以及明确选择 `none` 的候选人；返回的 `open_seats`、`role_gaps`
 和候选理由只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。
