@@ -1,6 +1,6 @@
 # 组一桌 Conversation Orchestrator 后端
 
-这是单桌闭环的 FastAPI 后端：真人消息进入后，系统维护 evidence-first Table State，经过安全检查、silence-first Gate、六动作 Router 和 Host，写入可回放的状态快照与 InterventionRecord。
+这是单桌闭环的 FastAPI 后端：真人消息进入后，系统维护 evidence-first Table State，经过安全检查、silence-first Gate、六动作 Router 和 Host，写入可回放的状态快照与 InterventionRecord。每张桌还公开携带固定的“圆桌 Agent”角色；它不占真人席位，但会随安全暂停、软过期和收桌进入对应生命周期。
 
 ## 本地运行
 
@@ -53,7 +53,7 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 
 桌默认异步。同步升级请求需要 `wants_continue=true`、`sync_extra_value=true`，且至少两位成员已经有
 高参与度证据；`discussion_quality`、`external_attention`、`public_value` 只会作为可解释加分信号。
-桌最多 5 个席位；少于 4 人的桌可以先建立并通过追加参与者或接受邀请逐步补齐，满桌后新入席会返回 409。
+真人桌最多 5 个席位，圆桌 Agent 作为独立的第六个公开角色不计入上限；少于 4 人的桌可以先建立并通过追加参与者或接受邀请逐步补齐，满桌后新入席会返回 409。
 
 软过期是可回放的幂等状态迁移：请求需要桌内成员身份和非空原因，状态会记录 `soft_expiry_reason`。
 软过期后拒绝新消息、成员变更、邀请、同步升级、主持/安全快照和来源卡片写入，WebSocket 返回
