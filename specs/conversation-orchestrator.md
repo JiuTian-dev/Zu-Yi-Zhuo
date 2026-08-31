@@ -534,6 +534,13 @@
 - **替代方案**: 只让前端暂存 signal ID、把完整 source 内容写进桌状态、或每次回放重新调用外部 source；这些方案分别不可审计、造成数据膨胀/过期和外部依赖漂移。
 - **代价**: ID 只提供来源定位，不保证外部内容永久存在；未来如需展示历史摘要，应另建带保留策略的公开 source snapshot，而不是放宽 Table State 的内容边界。
 
+### ADR-74: 机会预览返回有界公开证据投影
+
+- **决策**: `OpportunityPreview` 增加可选 `source_signals`，最多返回 20 条经 `ContentSignal` 校验的公开信号摘要（类型、标题、摘要、来源引用、公开作者和公开立场、互动量）。该投影只存在于机会预览响应，不写入 `TableState`、匹配理由或个人资料；空列表从 JSON 响应中省略，保持旧客户端兼容。
+- **理由**: 仅返回 `signal_ids` 会让用户无法在第一次预览中判断“为什么这道题值得成桌”，也无法让评委核对未完成性证据。公开摘要能支撑即时解释，同时通过字段上限和原有长度校验控制响应体。
+- **替代方案**: 让前端自行携带并拼接原始信号、把完整来源永久复制进桌状态、或只继续展示 ID；这些方案分别不可信/易丢失、扩大数据生命周期和响应面、或缺少可读解释。
+- **代价**: 预览返回的是当次 source 的公开快照，不承诺外部内容永久可用；若未来需要重启后展示摘要，仍应另建带保留策略的公开 source snapshot，而不是扩大 Table State。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -648,6 +655,7 @@ BehaviorEvent(event_id, participant_id, event_type, table_id,
               state_version?, related_participant_id?, detail?)
 ParticipantSeed(..., public_signal_ids?<=20)
 MatchReason(participant_id, reason, evidence_terms, evidence_signal_ids?<=5)
+OpportunityPreview(..., source_signals?<=20)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -846,6 +854,7 @@ master
 | D94 REST mutation rate limit | complete | Configurable per-process sliding-window limit for REST write methods with 429/Retry-After responses and preserved read/WS behavior | 357 tests + compileall + diff check | `59bcec0` |
 | D95 public match signal attribution | complete | Carry bounded public signal IDs from opportunity candidates into explainable match reasons without leaking private profile data or persisting source details in table state | 357 tests + compileall + diff check | `fa185bb` |
 | D96 persisted public source lineage | complete | Persist bounded origin signal IDs on table creation/match confirmation with candidate-source validation and JSON/replay recovery | 360 tests + compileall + diff check | `a5d75a0` |
+| D97 public opportunity evidence projection | complete | Return bounded public source signals in opportunity previews for immediate explanation without copying them into table state | 360 tests + compileall + diff check | `2ca1ad6` |
 
 ## 已知坑位（Running Gotchas）
 

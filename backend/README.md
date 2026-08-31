@@ -15,7 +15,7 @@ python -m uvicorn app.main:app --reload
 - `GET /healthz`：进程存活探针。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
-- `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，不创建桌。
+- `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
 - `POST /personal-context/source-preview?viewer_id=...`：调用服务端注入的用户授权个人 source，生成本人可见的兴趣/表达主题预览；不创建桌、不广播、不落盘。
 - `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。
@@ -144,7 +144,9 @@ python -m uvicorn app.main:app
 机会预览只接受公开 source signal（问题/回答/文章标题、摘要、公开作者角色和公开立场），信号数量最多 20、
 至少覆盖 2 位作者。输出的 `signal_ids` 和 `unfinishedness` 可回溯到原始来源；候选人仍需经过
 `/matches/preview` 的席位与邀请偏好校验后才能建桌。确认匹配或直接建桌时可选持久化最多 20 个公开
-`origin_signal_ids`，回放和 JSON 重启会保留这些 ID；服务端不会保存来源标题、摘要、私有立场或 token。
+`origin_signal_ids`，回放和 JSON 重启会保留这些 ID；桌状态不会保存来源标题、摘要、私有立场或 token。
+机会预览响应中的 `source_signals` 是本次请求的公开安全投影（含 `title`、`excerpt`、`source_ref`、公开作者信息和互动量），
+同样受 `ContentSignal` 字段长度与 20 条上限约束；它不会被复制进桌状态。
 
 Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`，可用逗号分隔的 `CORS_ORIGINS` 覆盖。
 
