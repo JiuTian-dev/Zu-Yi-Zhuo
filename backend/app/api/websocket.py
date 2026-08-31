@@ -6,7 +6,15 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
 from app.domain import Action, HumanTurn, SafetyLevel, TableState
-from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety, generate_host_event, record_intervention
+from app.orchestrator import (
+    build_personal_card,
+    build_shared_baseline,
+    decide_intervention,
+    enforce_safety,
+    evaluate_safety,
+    generate_host_event,
+    record_intervention,
+)
 
 from .repository import InMemoryTableRepository
 
@@ -37,6 +45,10 @@ class _ParticipantLeft(_ClientEvent):
 
 class _RequestDebugState(_ClientEvent):
     type: Literal["request_debug_state"]
+
+
+class _RequestClose(_ClientEvent):
+    type: Literal["request_close"]
 
 
 def _state_event(state: TableState) -> dict:
@@ -113,7 +125,11 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                     gate, route = decide_intervention(state)
                     if gate.should_speak:
                         if route.action is not Action.SILENCE:
-                            action = generate_host_event(state, route)
+                            grounding_card = (
+                                repository.take_trusted_grounding_card(table_id)
+                                if route.action is Action.GROUND else None
+                            )
+                            action = generate_host_event(state, route, grounding_card)
                             agent_turn_id = f"{table_id}:agent:{state.version + 1}"
                             final_state = record_intervention(state, route, agent_turn_id)
                             state = repository.append_intervention_state(table_id, final_state)
@@ -138,6 +154,13 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                                 "route": route.model_dump(mode="json"),
                             }
                         )
+                    if action is not None and action.action is Action.GROUND and grounding_card is not None:
+                        await websocket.send_json({
+                            "type": "grounding_card",
+                            "table_id": table_id,
+                            "state_version": state.version,
+                            **grounding_card.model_dump(mode="json"),
+                        })
                     await websocket.send_json(_state_event(state))
                 elif payload["type"] == "participant_joined":
                     event = _ParticipantJoined.model_validate(payload)
@@ -155,6 +178,30 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                 elif payload["type"] == "request_debug_state":
                     _RequestDebugState.model_validate(payload)
                     await websocket.send_json(_state_event(repository.get(table_id)))
+                elif payload["type"] == "request_close":
+                    _RequestClose.model_validate(payload)
+                    state = repository.get(table_id)
+                    if participant_id not in state.participants:
+                        raise ValueError(f"unknown participant: {participant_id}")
+                    await websocket.send_json({
+                        "type": "close_started",
+                        "table_id": table_id,
+                        "state_version": state.version,
+                        "reason": "participant_requested_close",
+                    })
+                    try:
+                        baseline = build_shared_baseline(state, turns=repository.turns(table_id))
+                        personal_card = build_personal_card(state, participant_id)
+                    except ValueError as error:
+                        await _send_error(websocket, "close_artifact_unavailable", str(error))
+                        continue
+                    await websocket.send_json({
+                        "type": "close_artifact_ready",
+                        "table_id": table_id,
+                        "state_version": state.version,
+                        "shared_baseline": baseline.model_dump(mode="json"),
+                        "personal_card": personal_card.model_dump(mode="json"),
+                    })
                 else:
                     await _send_error(websocket, "unknown_event", f"unsupported event type: {payload['type']}")
             except ValidationError:

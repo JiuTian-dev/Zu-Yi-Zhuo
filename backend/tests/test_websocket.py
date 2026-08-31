@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
+from app.domain import Action, GateDecision, GroundingCard, RouteDecision
 
 
 def _client_with_table() -> tuple[TestClient, InMemoryTableRepository]:
@@ -155,3 +157,107 @@ def test_unsafe_message_is_intercepted_before_turn_replay_or_host_action() -> No
     assert debug["state"]["version"] == event["state"]["version"]
     assert debug["state"]["conversation"]["safety_level"] == "critical"
     assert debug["state"]["conversation"]["state"] == "safety_paused"
+
+
+def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "msg-close", "participant_id": "p1",
+            "text": "我亲历过采购试点，预算和责任需要澄清。", "client_ts": "2026-08-31T12:05:00Z",
+        })
+        [websocket.receive_json() for _ in range(3)]
+        websocket.send_json({"type": "request_close"})
+        started = websocket.receive_json()
+        artifact = websocket.receive_json()
+
+    assert started == {
+        "type": "close_started", "table_id": "table-ws", "state_version": 4,
+        "reason": "participant_requested_close",
+    }
+    assert artifact["type"] == "close_artifact_ready"
+    assert artifact["table_id"] == artifact["shared_baseline"]["table_id"] == "table-ws"
+    assert artifact["state_version"] == artifact["shared_baseline"]["state_version"] == 4
+    assert artifact["personal_card"]["participant_id"] == "p1"
+    assert "personal_cards" not in artifact
+
+
+def test_request_close_for_unknown_query_participant_does_not_leak_personal_card() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=ghost") as websocket:
+        websocket.send_json({"type": "request_close"})
+        error = websocket.receive_json()
+
+    assert error["type"] == "error"
+    assert error["code"] == "invalid_event"
+    assert "unknown participant" in error["detail"]
+
+
+def test_request_close_without_evidence_returns_structured_error() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({"type": "request_close"})
+        assert websocket.receive_json()["type"] == "close_started"
+        error = websocket.receive_json()
+
+    assert error["type"] == "error"
+    assert error["code"] == "close_artifact_unavailable"
+    assert "evidence" in error["detail"]
+
+
+def test_demo_grounding_card_is_emitted_only_for_a_ground_action() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    repository.set_trusted_grounding_card("table-ws", GroundingCard(
+        title="采购流程研究", excerpt="试点与正式采购由不同责任链承接。",
+        source_ref="demo:zhihu:answer:42",
+    ))
+    decision = (GateDecision(should_speak=True, evidence_turns=[1], reasons_to_speak=["test ground"], confidence=.9),
+                RouteDecision(action=Action.GROUND, evidence_turns=[1], confidence=.9))
+
+    with patch("app.api.websocket.decide_intervention", return_value=decision):
+        with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+            websocket.send_json({
+                "type": "grounding_card",
+                "card": {
+                    "title": "伪造标题", "excerpt": "伪造摘要", "source_ref": "fake:source",
+                },
+            })
+            assert websocket.receive_json()["code"] == "unknown_event"
+            websocket.send_json({
+                "type": "human_message", "message_id": "msg-ground", "participant_id": "p1",
+                "text": "这个事实需要核对。", "client_ts": "2026-08-31T12:06:00Z",
+            })
+            assert websocket.receive_json()["type"] == "message_committed"
+            action = websocket.receive_json()
+            card = websocket.receive_json()
+            assert websocket.receive_json()["type"] == "table_state_changed"
+
+    assert action["action"] == "GROUND"
+    assert card == {
+        "type": "grounding_card", "table_id": "table-ws", "state_version": action["state_version"],
+        "title": "采购流程研究", "excerpt": "试点与正式采购由不同责任链承接。",
+        "source_ref": "demo:zhihu:answer:42",
+    }
+
+
+def test_client_grounding_card_is_unknown_even_when_its_source_is_empty() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "grounding_card",
+            "card": {"title": "标题", "excerpt": "摘要", "source_ref": ""},
+        })
+        error = websocket.receive_json()
+
+    assert error["type"] == "error"
+    assert error["code"] == "unknown_event"

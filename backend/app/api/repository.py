@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 
-from app.domain import HumanTurn, ParticipantSeed, TableState
+from app.domain import GroundingCard, HumanTurn, ParticipantSeed, TableState
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
@@ -17,6 +17,7 @@ class InMemoryTableRepository:
     def __init__(self) -> None:
         self._states: dict[str, list[TableState]] = {}
         self._turns: dict[str, list[HumanTurn]] = {}
+        self._trusted_grounding_cards: dict[str, GroundingCard] = {}
 
     def create(
         self, table_id: str, core_question: str, participants: Sequence[ParticipantSeed]
@@ -92,6 +93,19 @@ class InMemoryTableRepository:
     def turns(self, table_id: str) -> list[HumanTurn]:
         self.get(table_id)
         return [turn.model_copy(deep=True) for turn in self._turns[table_id]]
+
+    def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
+        """Stage one validated demo-injected source for the table's next GROUND action."""
+        self.get(table_id)
+        if not all(value.strip() for value in (card.title, card.excerpt, card.source_ref)):
+            raise ValueError("grounding card title, excerpt, and source_ref must be non-empty")
+        self._trusted_grounding_cards[table_id] = card.model_copy(deep=True)
+
+    def take_trusted_grounding_card(self, table_id: str) -> GroundingCard | None:
+        """Consume the staged source so it cannot be silently reused for later claims."""
+        self.get(table_id)
+        card = self._trusted_grounding_cards.pop(table_id, None)
+        return card.model_copy(deep=True) if card is not None else None
 
     def _append(self, table_id: str, state: TableState) -> TableState:
         snapshot = TableState.model_validate(state.model_dump())
