@@ -85,11 +85,41 @@ def test_public_table_events_are_broadcast_to_other_connections() -> None:
 
     assert sender_message == observer_message
     assert sender_action == observer_action
-    assert sender_state == observer_state
     assert observer_message["type"] == "message_committed"
     assert observer_message["message"]["participant_id"] == "p1"
     assert observer_action["type"] == "agent_action"
     assert observer_state["type"] == "table_state_changed"
+    assert sender_state["state"]["participants"]["p1"]["declared_position"] == "先看现实约束"
+    assert observer_state["state"]["participants"]["p1"]["declared_position"] is None
+    assert observer_state["state"]["participants"]["p1"]["unused_relevant_experience"] == []
+
+
+def test_websocket_consent_is_self_scoped_and_updates_peer_projection() -> None:
+    client, _ = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as owner:
+        with client.websocket_connect("/ws/tables/table-ws?participant_id=p2") as peer:
+            owner.send_json({
+                "type": "participant_consent", "participant_id": "p1", "profile_shared": True,
+            })
+            assert owner.receive_json() == peer.receive_json() == {
+                "type": "participant_consent_changed", "participant_id": "p1", "profile_shared": True,
+            }
+            owner_state = owner.receive_json()
+            peer_state = peer.receive_json()
+            assert owner_state["state"]["participants"]["p1"]["declared_position"] == "先看现实约束"
+            assert peer_state["state"]["participants"]["p1"]["declared_position"] == "先看现实约束"
+
+            owner.send_json({
+                "type": "participant_consent", "participant_id": "p2", "profile_shared": True,
+            })
+            error = owner.receive_json()
+
+    assert error["type"] == "error"
+    assert error["code"] == "invalid_event"
+    assert "participant_id must match" in error["detail"]
 
 
 def test_debug_join_unknown_event_and_silence_are_structured() -> None:

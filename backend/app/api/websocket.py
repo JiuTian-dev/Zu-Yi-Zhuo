@@ -1,5 +1,6 @@
 """Structured WebSocket stream for a conversation table."""
 
+from collections.abc import Callable
 from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -16,6 +17,7 @@ from app.orchestrator import (
     record_intervention,
 )
 
+from .privacy import project_state_for_viewer
 from .repository import InMemoryTableRepository
 
 
@@ -44,6 +46,12 @@ class _ParticipantLeft(_ClientEvent):
     participant_id: str = Field(min_length=1)
 
 
+class _ParticipantConsent(_ClientEvent):
+    type: Literal["participant_consent"]
+    participant_id: str = Field(min_length=1)
+    profile_shared: bool
+
+
 class _RequestDebugState(_ClientEvent):
     type: Literal["request_debug_state"]
 
@@ -69,24 +77,33 @@ async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
 def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
 
-    connections: dict[str, set[WebSocket]] = {}
+    connections: dict[str, dict[WebSocket, str]] = {}
 
-    async def broadcast(table_id: str, payload: dict) -> None:
+    async def _broadcast(table_id: str, factory: Callable[[str], dict]) -> None:
         """Fan out public table events and discard peers that already closed."""
-        peers = tuple(connections.get(table_id, ()))
+        peers = tuple(connections.get(table_id, {}).items())
         stale: list[WebSocket] = []
-        for peer in peers:
+        for peer, viewer_id in peers:
             try:
-                await peer.send_json(payload)
+                await peer.send_json(factory(viewer_id))
             except (OSError, RuntimeError, WebSocketDisconnect):
                 stale.append(peer)
         if stale:
             current = connections.get(table_id)
             if current is not None:
                 for peer in stale:
-                    current.discard(peer)
+                    current.pop(peer, None)
                 if not current:
                     connections.pop(table_id, None)
+
+    async def broadcast(table_id: str, payload: dict) -> None:
+        await _broadcast(table_id, lambda _viewer_id: payload)
+
+    async def broadcast_state(table_id: str, state: TableState) -> None:
+        await _broadcast(
+            table_id,
+            lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id)),
+        )
 
     @api.websocket("/ws/tables/{table_id}")
     async def table_events(websocket: WebSocket, table_id: str, participant_id: str = "") -> None:
@@ -102,7 +119,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
             await websocket.close(code=1008)
             return
 
-        connections.setdefault(table_id, set()).add(websocket)
+        connections.setdefault(table_id, {})[websocket] = participant_id
         try:
             while True:
                 try:
@@ -131,11 +148,16 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             state = repository.append_safety_state(
                                 table_id, enforce_safety(repository.get(table_id), safety)
                             )
-                            await broadcast(table_id, {
-                                "type": "safety_enforced",
-                                "decision": safety.model_dump(mode="json"),
-                                "state": state.model_dump(mode="json"),
-                            })
+                            await _broadcast(
+                                table_id,
+                                lambda viewer_id: {
+                                    "type": "safety_enforced",
+                                    "decision": safety.model_dump(mode="json"),
+                                    "state": project_state_for_viewer(
+                                        state, viewer_id
+                                    ).model_dump(mode="json"),
+                                },
+                            )
                             continue
 
                         turn = HumanTurn(turn_id=turn_id, participant_id=participant_id, text=event.text)
@@ -177,7 +199,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                                 "state_version": state.version,
                                 **grounding_card.model_dump(mode="json"),
                             })
-                        await broadcast(table_id, _state_event(state))
+                        await broadcast_state(table_id, state)
                     elif payload["type"] == "participant_joined":
                         event = _ParticipantJoined.model_validate(payload)
                         if event.participant_id != participant_id:
@@ -185,16 +207,31 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                         state = repository.get(table_id)
                         if event.participant_id not in state.participants:
                             raise ValueError(f"unknown participant: {event.participant_id}")
-                        await broadcast(table_id, _state_event(state))
+                        await broadcast_state(table_id, state)
                     elif payload["type"] == "participant_left":
                         event = _ParticipantLeft.model_validate(payload)
                         if event.participant_id != participant_id:
                             raise ValueError("participant_id must match the WebSocket query")
                         state = repository.remove_participant(table_id, event.participant_id)
-                        await broadcast(table_id, _state_event(state))
+                        await broadcast_state(table_id, state)
+                    elif payload["type"] == "participant_consent":
+                        event = _ParticipantConsent.model_validate(payload)
+                        if event.participant_id != participant_id:
+                            raise ValueError("participant_id must match the WebSocket query")
+                        state = repository.set_profile_consent(
+                            table_id, participant_id, event.profile_shared
+                        )
+                        await broadcast(table_id, {
+                            "type": "participant_consent_changed",
+                            "participant_id": participant_id,
+                            "profile_shared": event.profile_shared,
+                        })
+                        await broadcast_state(table_id, state)
                     elif payload["type"] == "request_debug_state":
                         _RequestDebugState.model_validate(payload)
-                        await websocket.send_json(_state_event(repository.get(table_id)))
+                        await websocket.send_json(_state_event(
+                            project_state_for_viewer(repository.get(table_id), participant_id)
+                        ))
                     elif payload["type"] == "request_close":
                         _RequestClose.model_validate(payload)
                         state = repository.get(table_id)
@@ -228,7 +265,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
         finally:
             peers = connections.get(table_id)
             if peers is not None:
-                peers.discard(websocket)
+                peers.pop(websocket, None)
                 if not peers:
                     connections.pop(table_id, None)
 
