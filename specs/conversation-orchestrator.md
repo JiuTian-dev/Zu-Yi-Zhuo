@@ -112,7 +112,7 @@ WS   /ws/tables/{table_id}?participant_id={participant_id}
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
 
-Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`。
+Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
@@ -197,6 +197,7 @@ master
 | D16 matching confirmation | complete | `POST /matches/confirm` recomputes and commits the selected seats into a new table while returning the public match plan and redacted initial state | 162 tests + compileall + API contract check | `4d4e49a` |
 | D17 close state migration | complete | evidence-backed close marks table closed and rejects later human messages; repeated close is idempotent | 162 tests + compileall + close regression | `f5a09de` |
 | D18 intervention audit log | complete | non-SILENCE Host actions are persisted with evidence/confidence/metadata; JSON restart recovery and `GET /tables/{id}/interventions` query are covered; SILENCE creates no record | 163 tests + compileall + audit persistence regression | `5b942c7` |
+| D19 reflection writeback | complete | after two post-intervention human turns, deterministic ReflectionResult is attached to the audit record and broadcast as `intervention_reflected` | 164 tests + compileall + reflection regression | `ba110cb` |
 
 ## 已知坑位（Running Gotchas）
 
