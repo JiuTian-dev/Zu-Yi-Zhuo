@@ -54,7 +54,7 @@ python -m uvicorn app.main:app --reload
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=commenter`：外围评论连接；只接受 `peripheral_comment`，评论可由核心成员通过 REST 显式促成。
 - 参与者 WebSocket 可发送 `request_nudge`：当首条真人表达暂未获得自然回应时，请求一次基于最近真人 turn 的轻量 `PROBE`；空桌、critical 暂停、软过期、收桌或两轮冷却内会返回结构化错误，递话会像普通主持动作一样广播并写入审计。
-- `POST /tables/{table_id}/nudge?participant_id=...`：REST 调度同一份冷启动递话能力；与 WebSocket `request_nudge` 共用 evidence、生命周期、安全、冷却、Host 生成和审计写回规则，成功响应包含 `gate`、`route`、`action` 和按请求人投影的 `state`。
+- `POST /tables/{table_id}/nudge?participant_id=...`：REST 调度同一份冷启动递话能力；与 WebSocket `request_nudge` 共用 evidence、生命周期、安全、冷却、Host 生成和审计写回规则，且只接受最近发言者的第一次表达。成功响应包含 `gate`、`route`、`action` 和按请求人投影的 `state`。
 
 通过 REST 完成补位、邀请接受、同步升级、同意变更、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`table_closed`），再发送按 viewer 隐私投影的 `table_state_changed`。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
 REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
