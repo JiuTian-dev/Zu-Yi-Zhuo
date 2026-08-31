@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 import re
+
 from app.domain import Action, AgentActionEvent, DisagreementType, GroundingCard, RouteDecision, SafetyLevel, TableState
+from app.providers import LLMProvider, call_text
 _BANNED = ("检测到", "根据分析", "作为AI")
+_SOURCE_CLAIMS = ("来源", "研究表明", "数据显示", "据报道", "链接")
 def _compact(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
@@ -164,4 +167,64 @@ def generate_host_event(
     )
 
 
-__all__ = ("generate_host_event", "GroundingCard")
+def _provider_text_is_safe(value: str | None) -> bool:
+    """Keep provider output as wording only, never as an ungrounded claim."""
+
+    if not isinstance(value, str):
+        return False
+    text = _compact(value)
+    if not text or len(text) > 120:
+        return False
+    if any(term in text for term in (*_BANNED, *_SOURCE_CLAIMS)):
+        return False
+    if re.search(r"https?://|www\.", text, flags=re.IGNORECASE):
+        return False
+    return True
+
+
+async def generate_host_event_with_provider(
+    state: TableState,
+    route: RouteDecision,
+    grounding_card: GroundingCard | None = None,
+    provider: LLMProvider | None = None,
+) -> AgentActionEvent:
+    """Optionally rewrite deterministic Host wording through a text provider.
+
+    Gate/Router/Safety and all event metadata remain deterministic.  The model
+    receives only the public question, current subquestion and deterministic
+    draft; it never receives the full TableState or private participant data.
+    Grounding is always rendered from the trusted card and is never model-made.
+    """
+
+    event = generate_host_event(state, route, grounding_card)
+    if provider is None or event.action in {Action.SILENCE, Action.GROUND}:
+        return event
+    if not _provider_text_is_safe(event.text):
+        return event
+
+    subquestion = state.current_subquestion or "（尚未形成新的子问题）"
+    messages = [{
+        "role": "user",
+        "content": (
+            f"原问题：{state.core_question}\n"
+            f"当前子问题：{subquestion}\n"
+            f"动作：{event.action.value}\n"
+            f"确定性草稿：{event.text}"
+        ),
+    }]
+    result = await call_text(
+        provider,
+        task=(
+            "你是中文圆桌主持人。只改写给参与者看的这句话，保留原意和称呼。"
+            "只输出一句自然、克制的话，不要解释过程，不要新增事实、来源、链接、身份或承诺。"
+        ),
+        messages=messages,
+        fallback_text=event.text,
+        config={"max_output_tokens": 96, "temperature": 0.2},
+    )
+    if not _provider_text_is_safe(result.value):
+        return event
+    return event.model_copy(update={"text": _compact(result.value)})
+
+
+__all__ = ("generate_host_event", "generate_host_event_with_provider", "GroundingCard")

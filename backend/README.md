@@ -46,15 +46,19 @@ Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`�
 
 ## 可选模型 provider
 
-默认演示不调用外部模型。需要接入 OpenAI Responses 时安装可选依赖，并在应用代码中注入 `OpenAIResponsesProvider`：
+默认演示不调用外部模型，`CONVERSATION_PROVIDER` 未设置或为 `deterministic` 时不产生外部请求。
+需要接入 OpenAI Responses 时安装可选依赖并设置运行时变量：
 
 ```powershell
 python -m pip install -e ".[openai]"
+$env:CONVERSATION_PROVIDER = "openai"
 $env:OPENAI_API_KEY = "..."
 $env:OPENAI_MODEL = "gpt-4o-mini"
 ```
 
-provider 会把结构化结果交给现有的 Pydantic/一次重试/安全回退边界；没有密钥或 SDK 时会显式失败，不会让半成品 Host 事件进入桌面。
+provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案；Gate、Safety、Router、状态证据、目标人和 GROUND 来源不交给模型决定。
+模型只收到公开问题、当前子问题和确定性草稿，不会收到完整 Table State 或未同意的个人资料。输出为空、超出 120 字、包含系统腔/来源声称/链接或调用失败时自动回退到确定性草稿。
+没有密钥或 SDK 时，`CONVERSATION_PROVIDER=openai` 会在启动阶段显式失败；默认 deterministic 模式不需要 OpenAI 依赖。
 
 ## 身份与隐私边界
 

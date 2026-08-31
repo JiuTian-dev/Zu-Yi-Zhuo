@@ -16,9 +16,10 @@ from app.orchestrator import (
     enforce_safety,
     evaluate_reflection,
     evaluate_safety,
-    generate_host_event,
+    generate_host_event_with_provider,
     record_intervention,
 )
+from app.providers import LLMProvider
 
 from .privacy import project_state_for_viewer
 from .repository import InMemoryTableRepository
@@ -78,8 +79,9 @@ def _build_intervention_record(
     state: TableState,
     route,
     action: AgentActionEvent,
+    model: str = "deterministic-demo",
 ) -> InterventionRecord:
-    """Create a deterministic audit entry from the committed host event."""
+    """Create an audit entry from the committed, validated Host event."""
     evidence = list(action.evidence_turns or route.evidence_turns)
     reasons = list(state.intervention.reasons_to_speak)
     if not reasons:
@@ -91,7 +93,7 @@ def _build_intervention_record(
         reasons_to_speak=reasons,
         reasons_to_stay_silent=list(state.intervention.reasons_to_stay_silent),
         latency_ms=0,
-        model="deterministic-demo",
+        model=model,
         token_usage=TokenUsage(input_tokens=0, output_tokens=0),
     )
 
@@ -135,7 +137,11 @@ async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
     await websocket.send_json({"type": "error", "code": code, "detail": detail})
 
 
-def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository) -> None:
+def register_websocket_routes(
+    api: FastAPI,
+    repository: InMemoryTableRepository,
+    provider: LLMProvider | None = None,
+) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
 
     connections: dict[str, dict[WebSocket, str]] = {}
@@ -259,11 +265,19 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                                 repository.take_trusted_grounding_card(table_id)
                                 if route.action is Action.GROUND else None
                             )
-                            action = generate_host_event(state, route, grounding_card)
+                            action = await generate_host_event_with_provider(
+                                state, route, grounding_card, provider
+                            )
                             agent_turn_id = f"{table_id}:agent:{state.version + 1}"
                             final_state = record_intervention(state, route, agent_turn_id)
                             action = action.model_copy(update={"state_version": final_state.version})
-                            record = _build_intervention_record(table_id, final_state, route, action)
+                            model_name = str(
+                                getattr(provider, "model", None)
+                                or (type(provider).__name__ if provider is not None else "deterministic-demo")
+                            )
+                            record = _build_intervention_record(
+                                table_id, final_state, route, action, model=model_name
+                            )
                             state = repository.append_intervention_bundle(
                                 table_id, final_state, record
                             )

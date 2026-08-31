@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
 from app.orchestrator import build_shared_baseline, evaluate_sync_upgrade
+from app.providers import LLMProvider
 
 from .repository import InMemoryTableRepository
 from .privacy import project_state_for_viewer
@@ -78,11 +79,15 @@ class MatchedTableResponse(BaseModel):
     state: TableState
 
 
-def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
+def create_app(
+    repository: InMemoryTableRepository | None = None,
+    provider: LLMProvider | None = None,
+) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
+    api.state.provider = provider
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -94,7 +99,7 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type", "Accept"],
     )
-    register_websocket_routes(api, repo)
+    register_websocket_routes(api, repo, provider)
 
     @api.get("/healthz")
     def healthz() -> dict[str, str]:

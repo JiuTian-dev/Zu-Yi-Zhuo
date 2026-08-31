@@ -6,14 +6,26 @@ from app.api.repository import InMemoryTableRepository
 from app.domain import Action, GateDecision, GroundingCard, RouteDecision
 
 
-def _client_with_table() -> tuple[TestClient, InMemoryTableRepository]:
+class _HostProvider:
+    model = "test-host"
+
+    def __init__(self, text: str):
+        self.text_value = text
+        self.calls = 0
+
+    async def text(self, task, messages, config=None):
+        self.calls += 1
+        return self.text_value
+
+
+def _client_with_table(provider=None) -> tuple[TestClient, InMemoryTableRepository]:
     repository = InMemoryTableRepository()
     repository.create(
         "table-ws",
         "企业为什么难以采用 AI？",
         [],
     )
-    return TestClient(create_app(repository)), repository
+    return TestClient(create_app(repository, provider)), repository
 
 
 def _participant(participant_id: str, role: str = "产品") -> dict:
@@ -26,6 +38,28 @@ def _participant(participant_id: str, role: str = "产品") -> dict:
             {"text": "采购试点的现场经验", "source_ref": "本人经历"}
         ],
     }
+
+
+def test_injected_provider_rewrites_host_text_but_keeps_action_and_audit() -> None:
+    provider = _HostProvider("先把预算验收的具体边界说清，再继续比较。")
+    client, repository = _client_with_table(provider)
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "provider-1", "participant_id": "p1",
+            "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
+        })
+        assert websocket.receive_json()["type"] == "message_committed"
+        action = websocket.receive_json()
+        changed = websocket.receive_json()
+
+    assert provider.calls == 1
+    assert action["action"] == "PASS"
+    assert action["text"] == provider.text_value
+    assert changed["state"]["intervention"]["last_action"] == "PASS"
+    assert repository.interventions("table-ws")[0].model == "test-host"
 
 
 def test_human_message_commits_contract_and_persists_host_intervention() -> None:

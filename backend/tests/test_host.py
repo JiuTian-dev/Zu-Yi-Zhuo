@@ -1,10 +1,19 @@
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 
 from app.demo import SCENARIOS, flagship_participants
 from app.domain import Action, DisagreementType, GroundingCard, RouteDecision
 from app.domain.schemas import Disagreement
-from app.orchestrator import build_initial_state, enforce_safety, evaluate_safety, generate_host_event, observe_turn
+from app.orchestrator import (
+    build_initial_state,
+    enforce_safety,
+    evaluate_safety,
+    generate_host_event,
+    generate_host_event_with_provider,
+    observe_turn,
+)
 
 
 QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
@@ -19,6 +28,65 @@ def state_after(name: str):
 
 def decision(action: Action, evidence: list[int] | None = None, target: str | None = None):
     return RouteDecision(action=action, evidence_turns=evidence or [1], target_participant_id=target, confidence=.73)
+
+
+class _HostProvider:
+    def __init__(self, value: str | Exception):
+        self.value = value
+        self.calls = []
+
+    async def text(self, task, messages, config=None):
+        self.calls.append((task, messages, config))
+        if isinstance(self.value, Exception):
+            raise self.value
+        return self.value
+
+
+def test_provider_rewrites_only_safe_host_wording_and_receives_public_context() -> None:
+    state = state_after("pass")
+    provider = _HostProvider("先把预算验收的具体边界说清，再决定谁来承担。")
+
+    event = asyncio.run(generate_host_event_with_provider(
+        state, decision(Action.PROBE, [1]), provider=provider
+    ))
+
+    assert event.action is Action.PROBE
+    assert event.text == "先把预算验收的具体边界说清，再决定谁来承担。"
+    prompt = provider.calls[0][1][0]["content"]
+    assert state.core_question in prompt
+    assert "declared_position" not in prompt
+    assert "unused_relevant_experience" not in prompt
+
+
+@pytest.mark.parametrize("value", [
+    "根据分析，这里需要继续讨论。",
+    "这是一句" * 70,
+    "研究表明，预算验收应该这样做。",
+])
+def test_provider_jargon_claims_or_overlong_text_fall_back_to_deterministic(value: str) -> None:
+    state = state_after("natural")
+    deterministic = generate_host_event(state, decision(Action.PROBE, [1]))
+    provider = _HostProvider(value)
+
+    event = asyncio.run(generate_host_event_with_provider(
+        state, decision(Action.PROBE, [1]), provider=provider
+    ))
+
+    assert event.text == deterministic.text
+    assert len(event.text) <= 120
+
+
+def test_provider_failure_falls_back_and_grounding_never_calls_provider() -> None:
+    state = state_after("natural")
+    provider = _HostProvider(RuntimeError("timeout"))
+    route = decision(Action.GROUND, [1])
+    card = GroundingCard(title="可信卡", excerpt="现场可核对内容", source_ref="demo:1")
+
+    event = asyncio.run(generate_host_event_with_provider(state, route, card, provider))
+
+    assert event.action is Action.GROUND
+    assert provider.calls == []
+    assert card.source_ref in event.text
 
 
 @pytest.mark.parametrize("action", list(Action))

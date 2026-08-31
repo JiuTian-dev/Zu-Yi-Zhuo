@@ -121,6 +121,13 @@
 - **替代方案**: 只在前端保存偏好，或让邀请方覆盖候选人的选择。
 - **代价**: 候选资料和旧 JSON 都增加一个有默认值的枚举字段；真实用户设置接入后需要把该字段映射到资料源。
 
+### ADR-15: Provider 只改写主持话，不改变决策
+
+- **决策**: 可选 LLM provider 只接收公开问题、当前子问题和确定性 Host 草稿，并只改写 `PASS / PROBE / REFRAME / CLOSE` 的文本；Gate、Safety、Router、状态迁移、证据、目标人和 GROUND 来源仍由确定性代码控制。
+- **理由**: 让 AI 具备自然表达能力，同时把模型漂移限制在可校验的文案层；隐私字段、来源事实和主持动作不能被模型越权生成。
+- **替代方案**: 让模型直接决定动作或把完整 Table State 发给模型。
+- **代价**: provider 调用失败、超长、系统腔或来源声称会回退到确定性草稿；真实 provider 仍需要外部密钥、额度和延迟治理。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -206,8 +213,9 @@ master
                                 ←── D05 Reflection + Close
                                             ←── D06 FastAPI + WebSocket + replay
                                                   ←── D07 persistence + integration QA
-                                                        ←── D08 provider adapter + fail-closed calls
+                                                              ←── D08 provider adapter + fail-closed calls
                                                               ←── D11 runtime entrypoint + configurable persistence
+                                                                    ←── D36 provider-backed Host wording boundary
 ```
 
 ## Progress Ledger
@@ -253,6 +261,7 @@ master
 | D33 async-to-sync upgrade | complete | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | 184 tests + compileall + diff check | `5f9d3f7` + `fb82f8b` |
 | D34 public table discovery | complete | list open tables with privacy-projected state and optional closed-table inclusion | 185 tests + compileall + diff check | `bc7f9be` |
 | D35 roundtable invite preference | complete | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | 187 tests + compileall + diff check | `008a984` |
+| D36 optional Host wording provider | in progress | provider-injected Host wording with public-context prompt, bounded output validation, deterministic fallback, and explicit runtime selection | 193 tests + compileall + diff check pending | — |
 
 ## 已知坑位（Running Gotchas）
 
