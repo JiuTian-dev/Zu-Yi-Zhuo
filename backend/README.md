@@ -21,6 +21,7 @@ python -m uvicorn app.main:app --reload
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级。
+- `GET /tables/{table_id}/close-artifacts?participant_id=...`：收桌后重新取得共享基线和当前参与者的个人回响卡。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：实时消息、主持动作、状态和关闭产物。
 
 WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相同 ID 和内容会返回

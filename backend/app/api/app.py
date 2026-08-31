@@ -7,9 +7,9 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
+from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, PersonalCard, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
-from app.orchestrator import build_shared_baseline, evaluate_sync_upgrade
+from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
 from app.providers import LLMProvider
 
 from .repository import InMemoryTableRepository
@@ -87,6 +87,15 @@ class MatchedTableResponse(BaseModel):
 
     plan: MatchPlan
     state: TableState
+
+
+class CloseArtifactsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    table_id: str
+    state_version: int
+    shared_baseline: SharedBaseline
+    personal_card: PersonalCard
 
 
 def create_app(
@@ -350,6 +359,29 @@ def create_app(
             return build_shared_baseline(closed, turns=repo.turns(table_id))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.get("/tables/{table_id}/close-artifacts", response_model=CloseArtifactsResponse)
+    def get_close_artifacts(
+        table_id: str,
+        participant_id: str = Query(..., min_length=1),
+    ) -> CloseArtifactsResponse:
+        """Rebuild the evidence-backed close card after reconnect/restart."""
+        state = table_or_404(table_id)
+        if not state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is not closed")
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
+        try:
+            baseline = build_shared_baseline(state, turns=repo.turns(table_id))
+            personal = build_personal_card(state, participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return CloseArtifactsResponse(
+            table_id=table_id,
+            state_version=state.version,
+            shared_baseline=baseline,
+            personal_card=personal,
+        )
 
     return api
 

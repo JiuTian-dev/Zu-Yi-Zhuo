@@ -142,6 +142,13 @@
 - **替代方案**: 后端直接抓取知乎网页/内部接口，或把外部 source 输出未经校验交给匹配。
 - **代价**: 正式 source 尚需平台授权和适配器实现；source 故障/格式错误会返回 502，不能自动降级成未经授权的候选。
 
+### ADR-18: 收桌卡可从证据快照重建
+
+- **决策**: 增加 `GET /tables/{id}/close-artifacts?participant_id=...`，仅对已关闭且已知参与者返回共享基线和该参与者个人卡；卡片从不可变状态快照与真人消息重建，不额外复制个人资料。
+- **理由**: WebSocket 是实时投递，不应成为收桌产物的唯一存储；断线、重启后仍要能恢复“问题进化 / 共识 / 行动 / 个人回响”。
+- **替代方案**: 只在关闭瞬间推送一次，或把全体个人卡写进公共快照。
+- **代价**: 重建逻辑必须保持确定性；未来若允许人工编辑收桌卡，需要另设版本化 artifact 存储。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -162,6 +169,7 @@ POST /tables/{id}/sync/upgrade?participant_id={participant_id}
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
 GET  /tables/{id}/interventions
+GET  /tables/{id}/close-artifacts?participant_id={participant_id}
 POST /tables/{id}/close
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
@@ -178,6 +186,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
+收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 
 ### 数据模型 / 类型定义
 
@@ -280,6 +289,7 @@ master
 | D36 optional Host wording provider | complete | provider-injected Host wording with public-context prompt, bounded output validation, deterministic fallback, and explicit runtime selection | 196 tests + compileall + diff check | `a04655e` |
 | D37 five-seat table capacity | complete | repository-level five-seat cap for create/add/invite/accept paths with in-memory and JSON parity | 199 tests + compileall + diff check | `cd6e518` |
 | D38 candidate source adapter boundary | complete | injectable CLI/MCP/OAuth-compatible candidate source, normalized source-preview endpoint, and privacy-safe failure responses | 203 tests + compileall + diff check | `e9bfcdf` |
+| D39 reconnectable close artifacts | in progress | evidence-backed close-artifacts REST recovery with participant-scoped personal card | 205 tests + compileall + diff check pending | — |
 
 ## 已知坑位（Running Gotchas）
 

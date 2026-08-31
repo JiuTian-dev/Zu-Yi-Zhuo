@@ -48,6 +48,32 @@ def test_table_lifecycle_returns_serializable_snapshots_and_close_artifact() -> 
         repository.append_turn("t-api", HumanTurn(turn_id=2, participant_id="p1", text="不应再写入"))
 
 
+def test_close_artifacts_can_be_retrieved_after_close() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={"table_id": "artifact-api", "core_question": "如何开始？"})
+    client.post("/tables/artifact-api/participants", json=participant("p1"))
+    repository.append_turn(
+        "artifact-api", HumanTurn(turn_id=1, participant_id="p1", text="我会先做一次小范围试点。")
+    )
+    assert client.post("/tables/artifact-api/close").status_code == 200
+
+    response = client.get("/tables/artifact-api/close-artifacts?participant_id=p1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["table_id"] == "artifact-api"
+    assert payload["state_version"] == payload["shared_baseline"]["state_version"] == payload["personal_card"]["state_version"]
+    assert payload["personal_card"]["participant_id"] == "p1"
+    assert payload["shared_baseline"]["collective_next_steps"][0]["is_commitment"] is True
+
+
+def test_close_artifacts_require_closed_table_and_known_participant() -> None:
+    client, _ = client_and_repo()
+    client.post("/tables", json={"table_id": "open-artifact", "core_question": "Q", "participants": [participant("p1")]})
+    assert client.get("/tables/open-artifact/close-artifacts?participant_id=p1").status_code == 409
+    assert client.get("/tables/open-artifact/close-artifacts?participant_id=ghost").status_code == 409
+
+
 def test_table_directory_defaults_to_open_public_projections() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={
