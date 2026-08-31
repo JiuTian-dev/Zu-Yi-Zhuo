@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
+from app.domain import Action, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -40,6 +40,7 @@ class InMemoryTableRepository:
         self._follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         self._value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         self._comments: dict[str, list[PeripheralComment]] = {}
+        self._comment_promotions: dict[str, list[CommentPromotion]] = {}
         self._no_match: dict[str, set[str]] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
@@ -65,6 +66,7 @@ class InMemoryTableRepository:
         self._follow_up_outcomes[table_id] = {}
         self._value_feedback[table_id] = {}
         self._comments[table_id] = []
+        self._comment_promotions[table_id] = []
         self._safety_reports[table_id] = []
         return state.model_copy(deep=True)
 
@@ -318,6 +320,67 @@ class InMemoryTableRepository:
     def comments(self, table_id: str) -> list[PeripheralComment]:
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._comments[table_id]]
+
+    @_synchronized
+    def promote_comment_once(
+        self,
+        table_id: str,
+        comment_id: str,
+        promoter_id: str,
+        *,
+        expected_state_version: int | None = None,
+    ) -> tuple[CommentPromotion, TableState, bool]:
+        """Promote one comment into a responsible core-member turn atomically."""
+        current = self.get(table_id)
+        if current.conversation.closed:
+            raise ValueError("table is closed")
+        if current.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        existing = next(
+            (item for item in self._comment_promotions[table_id] if item.comment_id == comment_id),
+            None,
+        )
+        if existing is not None:
+            if existing.promoter_id != promoter_id:
+                raise ValueError("comment_id is already promoted by another participant")
+            return existing.model_copy(deep=True), current, False
+        if promoter_id not in current.participants:
+            raise PermissionError("promoter must be a table participant")
+        if expected_state_version is not None and current.version != expected_state_version:
+            raise ValueError("table changed; retry comment promotion")
+        comment = next(
+            (item for item in self._comments[table_id] if item.comment_id == comment_id),
+            None,
+        )
+        if comment is None:
+            raise KeyError(f"unknown comment: {comment_id}")
+        turn_id = max((item.turn_id for item in self._turns[table_id]), default=0) + 1
+        message_id = f"{table_id}:comment:{comment_id}"
+        turn = HumanTurn(
+            turn_id=turn_id,
+            participant_id=promoter_id,
+            text=comment.text,
+            message_id=message_id,
+            source_comment_id=comment.comment_id,
+        )
+        state = observe_turn(current, turn)
+        promotion = CommentPromotion(
+            promotion_id=f"{table_id}:comment-promotion:{comment_id}",
+            table_id=table_id,
+            comment_id=comment.comment_id,
+            promoter_id=promoter_id,
+            turn_id=turn.turn_id,
+            state_version=state.version,
+            message_id=message_id,
+        )
+        self._turns[table_id].append(turn)
+        self._comment_promotions[table_id].append(promotion)
+        return promotion.model_copy(deep=True), self._append(table_id, state), True
+
+    @_synchronized
+    def comment_promotions(self, table_id: str) -> list[CommentPromotion]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._comment_promotions[table_id]]
 
     @_synchronized
     def relationship_memories(self, participant_id: str) -> list[RelationshipMemory]:
@@ -664,6 +727,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._follow_up_outcomes,
                 self._value_feedback,
                 self._comments,
+                self._comment_promotions,
                 self._no_match,
                 self._safety_reports,
                 self._personal_context_consents,
@@ -690,10 +754,12 @@ class JsonTableRepository(InMemoryTableRepository):
         outcomes = {**self._follow_up_outcomes, table_id: {}}
         feedback = {**self._value_feedback, table_id: {}}
         comments = {**self._comments, table_id: []}
+        comment_promotions = {**self._comment_promotions, table_id: []}
         reports = {**self._safety_reports, table_id: []}
         self._commit(
             states, turns, self._trusted_grounding_cards, interventions, invitations,
             outcomes, feedback, comments, self._no_match, reports,
+            comment_promotions=comment_promotions,
         )
         return state.model_copy(deep=True)
 
@@ -982,6 +1048,76 @@ class JsonTableRepository(InMemoryTableRepository):
         return [item.model_copy(deep=True) for item in self._comments[table_id]]
 
     @_synchronized
+    def promote_comment_once(
+        self,
+        table_id: str,
+        comment_id: str,
+        promoter_id: str,
+        *,
+        expected_state_version: int | None = None,
+    ) -> tuple[CommentPromotion, TableState, bool]:
+        current = self.get(table_id)
+        if current.conversation.closed:
+            raise ValueError("table is closed")
+        if current.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        existing = next(
+            (item for item in self._comment_promotions[table_id] if item.comment_id == comment_id),
+            None,
+        )
+        if existing is not None:
+            if existing.promoter_id != promoter_id:
+                raise ValueError("comment_id is already promoted by another participant")
+            return existing.model_copy(deep=True), current, False
+        if promoter_id not in current.participants:
+            raise PermissionError("promoter must be a table participant")
+        if expected_state_version is not None and current.version != expected_state_version:
+            raise ValueError("table changed; retry comment promotion")
+        comment = next(
+            (item for item in self._comments[table_id] if item.comment_id == comment_id),
+            None,
+        )
+        if comment is None:
+            raise KeyError(f"unknown comment: {comment_id}")
+        turn_id = max((item.turn_id for item in self._turns[table_id]), default=0) + 1
+        message_id = f"{table_id}:comment:{comment_id}"
+        turn = HumanTurn(
+            turn_id=turn_id,
+            participant_id=promoter_id,
+            text=comment.text,
+            message_id=message_id,
+            source_comment_id=comment.comment_id,
+        )
+        state = observe_turn(current, turn)
+        promotion = CommentPromotion(
+            promotion_id=f"{table_id}:comment-promotion:{comment_id}",
+            table_id=table_id,
+            comment_id=comment.comment_id,
+            promoter_id=promoter_id,
+            turn_id=turn.turn_id,
+            state_version=state.version,
+            message_id=message_id,
+        )
+        states = {**self._states, table_id: [*self._states[table_id], TableState.model_validate(state.model_dump())]}
+        turns = {**self._turns, table_id: [*self._turns[table_id], turn]}
+        promotions = {
+            **self._comment_promotions,
+            table_id: [*self._comment_promotions[table_id], promotion.model_copy(deep=True)],
+        }
+        self._commit(
+            states, turns, self._trusted_grounding_cards, self._interventions,
+            self._invitations, self._follow_up_outcomes, self._value_feedback,
+            self._comments, self._no_match, self._safety_reports,
+            self._personal_context_consents, comment_promotions=promotions,
+        )
+        return promotion.model_copy(deep=True), states[table_id][-1].model_copy(deep=True), True
+
+    @_synchronized
+    def comment_promotions(self, table_id: str) -> list[CommentPromotion]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._comment_promotions[table_id]]
+
+    @_synchronized
     def respond_invitation(
         self, table_id: str, invitation_id: str, participant_id: str, accept: bool
     ) -> tuple[Invitation, TableState | None]:
@@ -1152,6 +1288,7 @@ class JsonTableRepository(InMemoryTableRepository):
         no_match: dict[str, set[str]] | None = None,
         safety_reports: dict[str, list[SafetyReport]] | None = None,
         personal_context_consents: dict[str, PersonalContextConsent] | None = None,
+        comment_promotions: dict[str, list[CommentPromotion]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1165,6 +1302,11 @@ class JsonTableRepository(InMemoryTableRepository):
             personal_context_consents
             if personal_context_consents is not None
             else self._personal_context_consents
+        )
+        promotion_rows = (
+            comment_promotions
+            if comment_promotions is not None
+            else self._comment_promotions
         )
         payload = {
             "tables": {
@@ -1184,6 +1326,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "comments": [
                         item.model_dump(mode="json")
                         for item in comment_rows[table_id]
+                    ],
+                    "comment_promotions": [
+                        item.model_dump(mode="json")
+                        for item in promotion_rows[table_id]
                     ],
                     "safety_reports": [
                         item.model_dump(mode="json")
@@ -1237,6 +1383,10 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in comment_rows.items()
         }
+        self._comment_promotions = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in promotion_rows.items()
+        }
         self._trusted_grounding_cards = {
             table_id: card.model_copy(deep=True) for table_id, card in cards.items()
         }
@@ -1262,6 +1412,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, dict[int, FollowUpOutcome]],
         dict[str, dict[str, ValueFeedback]],
         dict[str, list[PeripheralComment]],
+        dict[str, list[CommentPromotion]],
         dict[str, set[str]],
         dict[str, list[SafetyReport]],
         dict[str, PersonalContextConsent],
@@ -1284,6 +1435,7 @@ class JsonTableRepository(InMemoryTableRepository):
         follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         comments: dict[str, list[PeripheralComment]] = {}
+        comment_promotions: dict[str, list[CommentPromotion]] = {}
         safety_reports: dict[str, list[SafetyReport]] = {}
         for table_id, table in payload["tables"].items():
             table_keys = set(table) if isinstance(table, dict) else set()
@@ -1293,7 +1445,7 @@ class JsonTableRepository(InMemoryTableRepository):
                         {
                             "states", "turns", "interventions", "invitations",
                             "follow_up_outcomes", "value_feedback", "comments",
-                            "safety_reports",
+                            "comment_promotions", "safety_reports",
                         }
                     )):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
@@ -1317,6 +1469,10 @@ class JsonTableRepository(InMemoryTableRepository):
                 if not isinstance(raw_comments, list):
                     raise ValueError("comments must be an array")
                 comment_rows = [PeripheralComment.model_validate(item) for item in raw_comments]
+                raw_promotions = table.get("comment_promotions", [])
+                if not isinstance(raw_promotions, list):
+                    raise ValueError("comment_promotions must be an array")
+                promotions = [CommentPromotion.model_validate(item) for item in raw_promotions]
                 raw_reports = table.get("safety_reports", [])
                 if not isinstance(raw_reports, list):
                     raise ValueError("safety_reports must be an array")
@@ -1364,6 +1520,36 @@ class JsonTableRepository(InMemoryTableRepository):
             comment_ids = [item.comment_id for item in comment_rows]
             if len(set(comment_ids)) != len(comment_ids):
                 raise ValueError(f"invalid persistence file: duplicate comments for table {table_id!r}")
+            promotion_ids = [item.promotion_id for item in promotions]
+            promotion_comment_ids = [item.comment_id for item in promotions]
+            if (
+                len(set(promotion_ids)) != len(promotion_ids)
+                or len(set(promotion_comment_ids)) != len(promotion_comment_ids)
+                or any(
+                    item.table_id != table_id
+                    or item.comment_id not in comment_ids
+                    or item.state_version <= 0
+                    or item.state_version > snapshots[-1].version
+                    or item.turn_id not in {turn.turn_id for turn in messages}
+                    or not any(item.promoter_id in snapshot.participants for snapshot in snapshots)
+                    for item in promotions
+                )
+            ):
+                raise ValueError(f"invalid persistence file: incompatible comment promotions for table {table_id!r}")
+            comments_by_id = {item.comment_id: item for item in comment_rows}
+            turns_by_id = {item.turn_id: item for item in messages}
+            for promotion in promotions:
+                promoted_turn = turns_by_id.get(promotion.turn_id)
+                source_comment = comments_by_id.get(promotion.comment_id)
+                if (
+                    promoted_turn is None
+                    or source_comment is None
+                    or promoted_turn.participant_id != promotion.promoter_id
+                    or promoted_turn.message_id != promotion.message_id
+                    or promoted_turn.source_comment_id != promotion.comment_id
+                    or promoted_turn.text != source_comment.text
+                ):
+                    raise ValueError(f"invalid persistence file: broken comment promotion provenance for table {table_id!r}")
             if any(
                 report.table_id != table_id
                 or report.state_version < 0
@@ -1387,6 +1573,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 item.participant_id: item for item in feedback
             }
             comments[table_id] = comment_rows
+            comment_promotions[table_id] = promotions
             self_reports = reports
             safety_reports[table_id] = self_reports
         raw_cards = payload.get("trusted_grounding_cards", {})
@@ -1433,4 +1620,4 @@ class JsonTableRepository(InMemoryTableRepository):
             if consent.viewer_id != viewer_id:
                 raise ValueError("invalid persistence file: personal context viewer mismatch")
             consents[viewer_id] = consent
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, no_match, safety_reports, consents
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, consents
