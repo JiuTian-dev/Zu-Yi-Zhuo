@@ -331,6 +331,13 @@
 - **替代方案**: 继续让前端直接 POST 任意 `table_selected` 事件、在 `GET /tables` 时隐式记录选择，或选择时自动加入桌。
 - **代价**: V1 只支持 open 桌的显式选择，不记录浏览/曝光；正式认证接入后需把 `participant_id` 替换为会话主体。
 
+### ADR-45: 关系保存只在收桌后按成员身份落账
+
+- **决策**: 增加 `POST /tables/{id}/relationships/{related_participant_id}/save?participant_id={viewer_id}`。服务端要求桌已关闭、viewer 与 target 都曾属于该桌且两者不同，再生成稳定的 `relationship_saved` 行为事件；接口不复制个人卡、不修改 Table State 或关系记忆派生源。重复保存复用行为账本幂等规则。
+- **理由**: 产品中的“加好友/继续连接”必须建立在真实桌内关系和收桌后的主动选择上，不能由前端任意写入陌生人关系。把保存动作限制在已结束桌并复用 self-scoped 行为账本，能让后续画像知道用户主动选择过谁，同时保持关系记忆只读、无社交图漂移。
+- **替代方案**: 继续接受任意 `relationship_saved` JSON、在对话中自动生成关系，或把关系保存直接写入长期好友图。
+- **代价**: V1 只记录保存动作，不提供好友请求/取消保存或跨平台同步；正式社交能力接入时应在此事件旁新增授权关系服务。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -366,6 +373,7 @@ GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_i
 POST /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 GET  /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 POST /tables/{id}/select?participant_id={viewer_id}
+POST /tables/{id}/relationships/{related_participant_id}/save?participant_id={viewer_id}
 POST /tables/{id}/comments?author_id={author_id}
 GET  /tables/{id}/comments
 POST /tables/{id}/comments/{comment_id}/promote?participant_id={member_id}
@@ -489,7 +497,8 @@ master
                                                                                                                                                                                                 ←── D63 product behavior event ledger
                                                                                                                                                                                                       ←── D64 follow-up behavior event wiring
                                                                                                                                                                                                            ←── D65 source full-lifecycle timeout
-                                                                                                                                                                                                                  ←── D66 server-generated table selection event
+                                                                                                                                                                                                                 ←── D66 server-generated table selection event
+                                                                                                                                                                                                                        ←── D67 post-close relationship save event
 ```
 
 ## Progress Ledger
@@ -566,6 +575,7 @@ master
 | D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 287 tests + compileall + diff check | `70aaca1` |
 | D65 source full-lifecycle timeout | complete | candidate/content/personal command bridges enforce one timeout across process startup, stdin, drain, exit, and cleanup | 290 tests + compileall + diff check | `26abb0d` |
 | D66 server-generated table selection event | complete | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check | `0fb1bbc` |
+| D67 post-close relationship save event | in progress | closed-table member-only relationship save endpoint emits a stable self-scoped `relationship_saved` event without persistent social-graph writes | 292 tests + compileall + diff check pending | — |
 
 ## 已知坑位（Running Gotchas）
 

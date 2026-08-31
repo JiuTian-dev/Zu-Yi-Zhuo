@@ -91,6 +91,46 @@ def test_server_generated_table_selection_is_open_scoped_and_idempotent() -> Non
     assert client.post("/tables/selection-table/select?participant_id=viewer").status_code == 409
 
 
+def test_relationship_save_is_closed_member_scoped_and_idempotent() -> None:
+    repository = _repository("relationship-save")
+    client = TestClient(create_app(repository))
+
+    assert client.post(
+        "/tables/relationship-save/relationships/p2/save?participant_id=p1"
+    ).status_code == 409
+    repository.append_turn(
+        "relationship-save",
+        HumanTurn(turn_id=1, participant_id="p1", text="我会先做一次小范围试点。"),
+    )
+    closed = repository.close_table("relationship-save")
+
+    first = client.post(
+        "/tables/relationship-save/relationships/p2/save?participant_id=p1"
+    )
+    retry = client.post(
+        "/tables/relationship-save/relationships/p2/save?participant_id=p1"
+    )
+    assert first.status_code == retry.status_code == 201
+    assert first.json() == retry.json() == {
+        "event_id": "relationship-save:relationship:p1:p2",
+        "participant_id": "p1",
+        "event_type": "relationship_saved",
+        "table_id": "relationship-save",
+        "state_version": closed.version,
+        "related_participant_id": "p2",
+        "detail": "saved",
+    }
+    assert client.post(
+        "/tables/relationship-save/relationships/p2/save?participant_id=outsider"
+    ).status_code == 403
+    assert client.post(
+        "/tables/relationship-save/relationships/unknown/save?participant_id=p1"
+    ).status_code == 404
+    assert client.post(
+        "/tables/relationship-save/relationships/p1/save?participant_id=p1"
+    ).status_code == 409
+
+
 def test_human_turn_automatically_creates_behavior_event() -> None:
     repository = _repository("behavior-auto")
     state, created = repository.append_message_once(

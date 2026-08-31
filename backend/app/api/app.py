@@ -317,6 +317,40 @@ def create_app(
         return repo.relationship_memories(participant_id)
 
     @api.post(
+        "/tables/{table_id}/relationships/{related_participant_id}/save",
+        response_model=BehaviorEvent,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def save_relationship(
+        table_id: str,
+        related_participant_id: str,
+        participant_id: str = Query(..., min_length=1),
+    ) -> BehaviorEvent:
+        """Record a member's explicit post-close relationship choice."""
+        state = table_or_404(table_id)
+        if not state.conversation.closed:
+            raise HTTPException(status_code=409, detail="relationship save requires a closed table")
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if related_participant_id not in state.participants:
+            raise HTTPException(status_code=404, detail=f"unknown participant: {related_participant_id}")
+        if participant_id == related_participant_id:
+            raise HTTPException(status_code=409, detail="participant cannot save a relationship with themselves")
+        try:
+            event, _created = repo.record_behavior_event(BehaviorEvent(
+                event_id=f"{table_id}:relationship:{participant_id}:{related_participant_id}",
+                participant_id=participant_id,
+                event_type="relationship_saved",
+                table_id=table_id,
+                state_version=state.version,
+                related_participant_id=related_participant_id,
+                detail="saved",
+            ))
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return event
+
+    @api.post(
         "/participants/{participant_id}/behavior-events",
         response_model=BehaviorEvent,
         status_code=status.HTTP_201_CREATED,
