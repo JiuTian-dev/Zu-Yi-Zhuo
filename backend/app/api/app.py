@@ -19,7 +19,7 @@ from app.domain.schemas import EvidenceStatement
 
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
-from .websocket import DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
+from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
@@ -285,6 +285,7 @@ def create_app(
     moderator_resolver: ModeratorResolver | None = None,
     websocket_allowed_origins: Sequence[str] | None = None,
     websocket_max_frame_bytes: int | None = None,
+    websocket_max_events_per_minute: int | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -314,6 +315,20 @@ def create_app(
         raise ValueError("websocket_max_frame_bytes must be a positive integer") from error
     if max_websocket_frame_bytes <= 0:
         raise ValueError("websocket_max_frame_bytes must be a positive integer")
+    raw_event_limit = (
+        os.getenv(
+            "WS_MAX_EVENTS_PER_MINUTE",
+            str(DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE),
+        )
+        if websocket_max_events_per_minute is None
+        else str(websocket_max_events_per_minute)
+    )
+    try:
+        max_websocket_events_per_minute = int(raw_event_limit)
+    except ValueError as error:
+        raise ValueError("websocket_max_events_per_minute must be a positive integer") from error
+    if max_websocket_events_per_minute <= 0:
+        raise ValueError("websocket_max_events_per_minute must be a positive integer")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
@@ -341,6 +356,7 @@ def create_app(
         identity_resolver,
         allowed_websocket_origins or None,
         max_websocket_frame_bytes,
+        max_websocket_events_per_minute,
     )
 
     @api.get("/healthz")

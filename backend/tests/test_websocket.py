@@ -54,6 +54,32 @@ def test_oversized_websocket_frame_closes_with_message_too_big() -> None:
     assert disconnected.value.code == 1009
 
 
+def test_websocket_event_rate_limit_returns_retry_hint_without_closing_connection() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("rate-limited", "Q", [])
+    client = TestClient(create_app(
+        repository,
+        websocket_max_events_per_minute=1,
+    ))
+    assert client.post("/tables/rate-limited/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/rate-limited?participant_id=p1") as websocket:
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["type"] == "table_state_changed"
+
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "rate_limited",
+            "detail": "too many WebSocket events; retry later",
+            "retry_after_seconds": 60,
+        }
+
+        # The connection remains usable; the next event is still rejected by the same window.
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["code"] == "rate_limited"
+
+
 def test_overlong_human_text_is_rejected_without_persistence() -> None:
     client, repository = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

@@ -160,3 +160,19 @@ def test_websocket_frame_limit_can_be_loaded_from_environment(monkeypatch) -> No
 def test_websocket_frame_limit_rejects_non_positive_values() -> None:
     with pytest.raises(ValueError, match="positive integer"):
         create_app(_repository(), websocket_max_frame_bytes=0)
+
+
+def test_websocket_event_rate_limit_can_be_loaded_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("WS_MAX_EVENTS_PER_MINUTE", "1")
+    client = TestClient(create_app(_repository()))
+
+    with client.websocket_connect("/ws/tables/identity-table?participant_id=p1") as websocket:
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["type"] == "table_state_changed"
+        websocket.send_json({"type": "request_debug_state"})
+        assert websocket.receive_json()["code"] == "rate_limited"
+
+
+def test_websocket_event_rate_limit_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        create_app(_repository(), websocket_max_events_per_minute=0)

@@ -1,7 +1,10 @@
 """Structured WebSocket stream for a conversation table."""
 
 import asyncio
+from collections import deque
 import json
+import math
+import time
 from collections.abc import Callable, Sequence
 from typing import Literal
 
@@ -29,13 +32,48 @@ from .repository import InMemoryTableRepository
 from .identity import IdentityResolver, websocket_identity_error
 
 DEFAULT_MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024
+DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE = 120
+WEBSOCKET_EVENT_WINDOW_SECONDS = 60.0
 
 
 class _FrameTooLarge(ValueError):
     """Raised before JSON parsing when a client frame exceeds the protocol bound."""
 
 
-async def _receive_json_bounded(websocket: WebSocket, max_frame_bytes: int) -> object:
+class _RateLimited(ValueError):
+    """Raised before JSON parsing when one connection exceeds its event budget."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__("websocket event rate limit exceeded")
+
+
+class _ConnectionEventRateLimiter:
+    """Sliding-window limiter isolated to one WebSocket connection."""
+
+    def __init__(self, max_events_per_minute: int) -> None:
+        self.max_events_per_minute = max_events_per_minute
+        self._timestamps: deque[float] = deque()
+
+    def consume(self) -> None:
+        now = time.monotonic()
+        cutoff = now - WEBSOCKET_EVENT_WINDOW_SECONDS
+        while self._timestamps and self._timestamps[0] <= cutoff:
+            self._timestamps.popleft()
+        if len(self._timestamps) >= self.max_events_per_minute:
+            retry_after = max(
+                1,
+                math.ceil(self._timestamps[0] + WEBSOCKET_EVENT_WINDOW_SECONDS - now),
+            )
+            raise _RateLimited(retry_after)
+        self._timestamps.append(now)
+
+
+async def _receive_json_bounded(
+    websocket: WebSocket,
+    max_frame_bytes: int,
+    rate_limiter: _ConnectionEventRateLimiter | None = None,
+) -> object:
     """Receive one text JSON frame without parsing an oversized payload."""
     message = await websocket.receive()
     if message["type"] == "websocket.disconnect":
@@ -45,6 +83,8 @@ async def _receive_json_bounded(websocket: WebSocket, max_frame_bytes: int) -> o
         raise ValueError("event must be a text JSON frame")
     if len(text.encode("utf-8")) > max_frame_bytes:
         raise _FrameTooLarge
+    if rate_limiter is not None:
+        rate_limiter.consume()
     return json.loads(text)
 
 
@@ -150,8 +190,17 @@ def _reflect_latest_intervention(repository, table_id: str, state: TableState) -
     return repository.update_intervention_record(table_id, updated)
 
 
-async def _send_error(websocket: WebSocket, code: str, detail: str) -> None:
-    await websocket.send_json({"type": "error", "code": code, "detail": detail})
+async def _send_error(
+    websocket: WebSocket,
+    code: str,
+    detail: str,
+    *,
+    retry_after_seconds: int | None = None,
+) -> None:
+    payload = {"type": "error", "code": code, "detail": detail}
+    if retry_after_seconds is not None:
+        payload["retry_after_seconds"] = retry_after_seconds
+    await websocket.send_json(payload)
 
 
 def register_websocket_routes(
@@ -161,10 +210,13 @@ def register_websocket_routes(
     identity_resolver: IdentityResolver | None = None,
     websocket_allowed_origins: Sequence[str] | None = None,
     max_frame_bytes: int = DEFAULT_MAX_WEBSOCKET_FRAME_BYTES,
+    max_events_per_minute: int = DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE,
 ) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
     if max_frame_bytes <= 0:
         raise ValueError("max_frame_bytes must be a positive integer")
+    if max_events_per_minute <= 0:
+        raise ValueError("max_events_per_minute must be a positive integer")
 
     connections: dict[str, dict[WebSocket, str]] = {}
     table_locks: dict[str, asyncio.Lock] = {}
@@ -253,18 +305,29 @@ def register_websocket_routes(
 
         connection_viewer_id = participant_id if viewer_mode == "participant" else ""
         connections.setdefault(table_id, {})[websocket] = connection_viewer_id
+        rate_limiter = _ConnectionEventRateLimiter(max_events_per_minute)
         if viewer_mode in {"observer", "commenter"}:
             await websocket.send_json(_state_event(project_state_for_viewer(state, None)))
         table_lock = table_locks.setdefault(table_id, asyncio.Lock())
         try:
             while True:
                 try:
-                    payload = await _receive_json_bounded(websocket, max_frame_bytes)
+                    payload = await _receive_json_bounded(
+                        websocket, max_frame_bytes, rate_limiter
+                    )
                 except WebSocketDisconnect:
                     return
                 except _FrameTooLarge:
                     await websocket.close(code=1009)
                     return
+                except _RateLimited as error:
+                    await _send_error(
+                        websocket,
+                        "rate_limited",
+                        "too many WebSocket events; retry later",
+                        retry_after_seconds=error.retry_after_seconds,
+                    )
+                    continue
                 except (TypeError, ValueError):
                     await _send_error(websocket, "invalid_event", "event must be a JSON object")
                     continue
