@@ -122,6 +122,7 @@
 POST /tables
 POST /matches/preview
 POST /matches/confirm
+GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
 POST /tables/{id}/participants
 POST /tables/{id}/invitations
@@ -145,6 +146,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
+发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 
 ### 数据模型 / 类型定义
 
@@ -241,6 +243,7 @@ master
 | D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 178 tests + compileall + diff check | `eef2924` |
 | D32 invitation lifecycle | complete | persistent pending/accepted/declined invitations with candidate-scoped response and redacted preview | 181 tests + compileall + diff check | `fe05845` + `78ae2fb` |
 | D33 async-to-sync upgrade | complete | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | 184 tests + compileall + diff check | `5f9d3f7` + `fb82f8b` |
+| D34 public table discovery | in progress | list open tables with privacy-projected state and optional closed-table inclusion | pending | pending |
 
 ## 已知坑位（Running Gotchas）
 

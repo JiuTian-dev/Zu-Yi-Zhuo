@@ -123,6 +123,16 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
+    @api.get("/tables", response_model=list[TableState])
+    def list_tables(
+        participant_id: str | None = Query(default=None),
+        include_closed: bool = Query(default=False),
+    ) -> list[TableState]:
+        return [
+            project_state_for_viewer(state, participant_id)
+            for state in repo.list_tables(include_closed=include_closed)
+        ]
+
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:
         return build_match_plan(payload)

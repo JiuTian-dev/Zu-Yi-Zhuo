@@ -48,6 +48,35 @@ def test_table_lifecycle_returns_serializable_snapshots_and_close_artifact() -> 
         repository.append_turn("t-api", HumanTurn(turn_id=2, participant_id="p1", text="不应再写入"))
 
 
+def test_table_directory_defaults_to_open_public_projections() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "open-table",
+        "core_question": "公开问题",
+        "participants": [{
+            **participant("p1"),
+            "declared_position": "桌内私有立场",
+            "relevant_experience": [{"text": "桌内经历", "source_ref": "private:1"}],
+        }],
+    })
+    client.post("/tables", json={
+        "table_id": "closed-table", "core_question": "另一个问题", "participants": [participant("p2")],
+    })
+    repository.append_turn("closed-table", HumanTurn(turn_id=1, participant_id="p2", text="我亲历过一次试点。"))
+    repository.close_table("closed-table")
+
+    open_tables = client.get("/tables")
+    assert open_tables.status_code == 200
+    assert [item["table_id"] for item in open_tables.json()] == ["open-table"]
+    assert open_tables.json()[0]["participants"]["p1"]["declared_position"] is None
+    assert open_tables.json()[0]["participants"]["p1"]["unused_relevant_experience"] == []
+
+    all_tables = client.get("/tables?include_closed=true&participant_id=p2").json()
+    assert {item["table_id"] for item in all_tables} == {"open-table", "closed-table"}
+    assert next(item for item in all_tables if item["table_id"] == "open-table")["participants"]["p1"]["declared_position"] is None
+    assert next(item for item in all_tables if item["table_id"] == "closed-table")["conversation"]["closed"] is True
+
+
 def test_api_rejects_unknown_tables_duplicate_participants_and_empty_close() -> None:
     client, _ = client_and_repo()
     assert client.get("/tables/missing").status_code == 404

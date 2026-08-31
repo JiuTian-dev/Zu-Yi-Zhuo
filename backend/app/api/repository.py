@@ -57,6 +57,14 @@ class InMemoryTableRepository:
             raise KeyError(f"unknown table: {table_id}") from error
 
     @_synchronized
+    def list_tables(self, include_closed: bool = False) -> list[TableState]:
+        """Return isolated latest snapshots for the public table directory."""
+        states = [snapshots[-1] for snapshots in self._states.values() if snapshots]
+        if not include_closed:
+            states = [state for state in states if not state.conversation.closed]
+        return [state.model_copy(deep=True) for state in states]
+
+    @_synchronized
     def add_participant(self, table_id: str, seed: ParticipantSeed) -> TableState:
         state = self.get(table_id)
         if state.conversation.closed:
