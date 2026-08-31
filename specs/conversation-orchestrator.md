@@ -198,6 +198,7 @@ master
 | D17 close state migration | complete | evidence-backed close marks table closed and rejects later human messages; repeated close is idempotent | 162 tests + compileall + close regression | `f5a09de` |
 | D18 intervention audit log | complete | non-SILENCE Host actions are persisted with evidence/confidence/metadata; JSON restart recovery and `GET /tables/{id}/interventions` query are covered; SILENCE creates no record | 163 tests + compileall + audit persistence regression | `5b942c7` |
 | D19 reflection writeback | complete | after two post-intervention human turns, deterministic ReflectionResult is attached to the audit record and broadcast as `intervention_reflected` | 164 tests + compileall + reflection regression | `ba110cb` |
+| D20 match explanation privacy | complete | private position/experience may influence selection internally but public match reasons expose only role-derived terms; regression checks no private text leaks | 164 tests + compileall + redaction regression | `81e6539` |
 
 ## 已知坑位（Running Gotchas）
 
