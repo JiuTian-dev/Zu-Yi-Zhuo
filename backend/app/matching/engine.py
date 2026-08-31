@@ -155,5 +155,6 @@ def recommend_candidates(
             role=candidate.role,
             reason=reason,
             evidence_terms=overlap,
+            evidence_signal_ids=candidate.public_signal_ids[:5],
         ))
     return recommendations

@@ -45,7 +45,10 @@ def _table(client: TestClient, table_id: str = "candidate-table") -> None:
 
 
 def test_candidate_preview_returns_gap_aware_recommendations_without_mutation() -> None:
-    source = _Source([_candidate("p3", "实践者"), _candidate("p4", "产品经理")])
+    source = _Source([
+        {**_candidate("p3", "实践者"), "public_signal_ids": ["s3"]},
+        {**_candidate("p4", "产品经理"), "public_signal_ids": ["s4", "s5"]},
+    ])
     client = TestClient(create_app(candidate_source=source))
     _table(client)
 
@@ -61,6 +64,10 @@ def test_candidate_preview_returns_gap_aware_recommendations_without_mutation() 
     assert "实践者" in payload["role_gaps"]
     assert [item["participant_id"] for item in payload["candidates"]] == ["p3", "p4"]
     assert payload["candidates"][0]["reason"]
+    assert payload["candidates"][0]["evidence_signal_ids"] == ["s3"]
+    assert payload["candidates"][1]["evidence_signal_ids"] == ["s4", "s5"]
+    assert "relevant_experience" not in payload["candidates"][0]
+    assert "source_ref" not in payload["candidates"][0]
     assert source.calls == [("AI 采购如何真正落地？", 2)]
     assert client.get("/tables/candidate-table").json()["version"] == 0
     assert client.get("/tables/candidate-table/invitations?participant_id=p1").json() == []
