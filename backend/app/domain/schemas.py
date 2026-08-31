@@ -274,6 +274,7 @@ class InterventionState(ContractModel):
 
 class TableState(ContractModel):
     table_id: str = Field(min_length=1)
+    origin_table_id: str | None = Field(default=None, min_length=1)
     version: int = Field(ge=0)
     core_question: str = Field(min_length=1)
     current_subquestion: str | None = None
@@ -292,6 +293,8 @@ class TableState(ContractModel):
     def participant_keys_match_ids(self) -> "TableState":
         if any(key != participant.participant_id for key, participant in self.participants.items()):
             raise ValueError("participant map keys must match participant_id")
+        if self.origin_table_id == self.table_id:
+            raise ValueError("origin_table_id must differ from table_id")
         if self.conversation.safety_level is SafetyLevel.CRITICAL and not self.conversation.risk_flags:
             raise ValueError("critical safety requires risk_flags with turn evidence")
         if self.conversation.soft_expired and self.conversation.state not in {"soft_expired", "closed"}:

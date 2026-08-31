@@ -14,6 +14,7 @@ from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
 from app.providers import LLMProvider
+from app.domain.schemas import EvidenceStatement
 
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
@@ -139,6 +140,23 @@ class PeripheralCommentRequest(BaseModel):
     comment_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=500)
+
+
+class RecomposeTableRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    table_id: str | None = Field(default=None, min_length=1)
+    participants: list[ParticipantSeed] = Field(min_length=2, max_length=5)
+
+
+class RecomposeTableResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_table_id: str
+    source_state_version: int = Field(ge=0)
+    new_table_id: str
+    evolved_question: EvidenceStatement
+    state: TableState
 
 
 class SoftExpireRequest(BaseModel):
@@ -699,6 +717,38 @@ def create_app(
             return build_shared_baseline(closed, turns=repo.turns(table_id))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.post(
+        "/tables/{table_id}/recompose",
+        response_model=RecomposeTableResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def recompose_table(
+        table_id: str,
+        payload: RecomposeTableRequest,
+    ) -> RecomposeTableResponse:
+        """Create a new table from a closed table's evolved question and chosen seeds."""
+        state = table_or_404(table_id)
+        if not state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is not closed")
+        try:
+            baseline = build_shared_baseline(state, turns=repo.turns(table_id))
+            new_table_id = payload.table_id or uuid4().hex
+            new_state = repo.create(
+                new_table_id,
+                baseline.evolved_question.text,
+                payload.participants,
+                origin_table_id=table_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return RecomposeTableResponse(
+            source_table_id=table_id,
+            source_state_version=state.version,
+            new_table_id=new_table_id,
+            evolved_question=baseline.evolved_question,
+            state=projected(new_state),
+        )
 
     @api.get("/tables/{table_id}/close-artifacts", response_model=CloseArtifactsResponse)
     def get_close_artifacts(

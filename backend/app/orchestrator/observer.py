@@ -10,7 +10,12 @@ TECH = ("技术", "模型", "精度", "延迟", "架构")
 BUYING = ("采购", "预算", "招标", "责任", "供应商")
 CONTRIBUTION = ("亲历", "数据", "试点", "案例", "经验")
 
-def build_initial_state(table_id: str, core_question: str, participants: Sequence[ParticipantSeed]) -> TableState:
+def build_initial_state(
+    table_id: str,
+    core_question: str,
+    participants: Sequence[ParticipantSeed],
+    origin_table_id: str | None = None,
+) -> TableState:
     mapped = {seed.participant_id: ParticipantState(
         participant_id=seed.participant_id, display_name=seed.display_name, role=seed.role, declared_position=seed.declared_position,
         unused_relevant_experience=seed.relevant_experience,
@@ -20,7 +25,7 @@ def build_initial_state(table_id: str, core_question: str, participants: Sequenc
     if len(mapped) != len(participants):
         raise ValueError("participant_id must be unique")
     return TableState(
-        table_id=table_id, version=0, core_question=core_question, phase=Phase.OPENING,
+        table_id=table_id, origin_table_id=origin_table_id, version=0, core_question=core_question, phase=Phase.OPENING,
         momentum=Level.LOW, close_readiness=Level.LOW, participants=mapped,
         conversation=ConversationState(state="active", safety_level=SafetyLevel.NORMAL),
         intervention=InterventionState(confidence=1.0),
