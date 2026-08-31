@@ -207,7 +207,7 @@ master
 | D26 WebSocket identity handshake | complete | unknown `participant_id` is rejected before registration or state delivery with a structured error and close code 1008 | 173 tests + compileall + diff check | `4cc808e` |
 | D27 Host profile-consent boundary | complete | PASS wording cites private experience only after explicit `profile_shared`; unconsented broadcasts retain public role context and redact experience text | 174 tests + privacy regression | `7277585` |
 | D28 backend handoff guide | complete | runtime/install/configuration, WebSocket and privacy boundaries, optional provider usage, and verified commands documented in `backend/README.md` | documentation review + 174-test baseline | `0336a0d` |
-| D29 SILENCE audit invariant | complete | all repository audit-write paths reject `SILENCE`, preserving the rule that silence produces no intervention record | 175 tests + compileall + diff check | `e00c379` |
+| D29 SILENCE audit invariant | complete | all repository audit-write paths reject `SILENCE`, preserving the rule that silence produces no intervention record | 174 tests + compileall + diff check | `e00c379` |
 
 ## 已知坑位（Running Gotchas）
 
