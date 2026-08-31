@@ -60,3 +60,22 @@
 - 桌内：谁在说（光）、谁缺失（第五席）、Agent 何时介入（六动作语义）全部可读；至少一次问题推进与一次动态补位。
 - 收桌出现公共底稿 + 个人卡；回响页完成「问题长出下一桌」。
 - 全程键盘可达、reduced-motion 可用、非 WebGL 环境有 DOM 兜底；`pnpm check` + `pnpm build` 零错误。
+
+## 7. 执行账本（2026-09-01，分支 codex/frontend-v2）
+
+| Diff | 提交 | 验证 |
+|---|---|---|
+| D1 Hallway 首页 | `12bce02` + `055763c`（修复 UseCanvas portal 不传播 props → hallwayState 外部驱动） | 浏览器实测：一屏一桌、信标切桌、世界随桌切换（uniform 进度 0→1→swap）、零 console 错误 |
+| D2 Lobby + 旁听 | `9ede417` | 浏览器实测：CTA→Lobby（6 席位/预览台词/推荐理由）→旁听→seated（is-listening）；join 路径→seated 后 join sheet 自动开→入席成功 |
+| D3 WS 真讨论 | `cf65105` | 真后端（uvicorn :8000 + Vite 代理）实测：剧本台词经 4 条木偶连接进入 orchestrator，`message_committed`/`agent_action`/`table_state_changed` 驱动 HUD；主持人 GROUND「落在桌面」+ 问题推进「允许自己停下之后…」；真人入席发言→主持人 PROBE；后端不可达自动降级 mock |
+| D4 收桌卡 + 回响 | `ffc5799` | 真后端实测：request_close→close_started→close_artifact_ready→收桌卡（公共底稿+个人卡+回响）全渲染 |
+| D5 环境音 | `9fa73f1` | Web Audio 程序化合成（山谷：风/水/鸟鸣；默认关闭）；tsc+build 绿 |
+| D6 场景升级 | `7d500a4` | 深度重打光（深度梯度法线+指针跟随主光，亮度 ±7%）+ 淡光束；tsc+build 绿；**视觉确认待面板可见时补** |
+| 回归 | — | 390×844：无横向溢出、thumb 上置、HUD 全部入屏、seated/退回/焦点还原路径通（焦点还原在隐藏标签页受 rAF 节流限制，可见状态沿用既有已验证模式） |
+
+运行方式：前端 `npx vite --port 5173`；后端 `cd backend && python -m uvicorn app.main:app --port 8000`（未启动则前端自动进入 mock 演示模式）。
+
+遗留（按优先级）：
+1. D6 光束/重打光的视觉确认（等待浏览器面板可见，必要时调 uIntensity）。
+2. 主持人六动作的差异化视觉（现统一用 PASS 姿态 + 文案标签区分）。
+3. 剧本对话节奏打磨与收桌时机（close_readiness 达标提示）。
