@@ -352,6 +352,13 @@
 - **替代方案**: 只让前端隐藏行为记录、级联删除所有桌历史，或保留事件但标记为“已删除”继续暴露元数据。
 - **代价**: V1 采用整份个人行为账本清除，不支持按事件或时间范围选择；生产环境需把删除操作接入真实账号、审计和保留策略。
 
+### ADR-48: 自作用域身份支持可注入解析器
+
+- **决策**: `create_app(..., identity_resolver=...)` 接受一个服务端身份解析器；未注入时保持现有开发态 `viewer_id/participant_id` 自证契约，注入后所有本人读写的 REST 路由和参与者 WebSocket 握手都要求解析出的主体与路径/查询主体一致，缺失身份返回 401，主体不一致返回 403。解析器只返回已认证的内部主体 ID，不接收或持久化知乎 access token。
+- **理由**: V1 需要让前端先跑通，但生产部署不能把查询参数当作认证；可注入边界把真实会话、JWT、反向代理或 OAuth adapter 留在部署层，同时让隐私、举报、行为账本和离桌等入口共享同一身份校验规则。
+- **替代方案**: 在每个路由重复解析 token、把 token 存入 JSON 仓储，或直接把开发态参数当作生产认证。
+- **代价**: 仓库不内置某个平台的 token 校验；部署者必须提供同步解析器，并为跨域客户端允许所需认证 header。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -516,7 +523,8 @@ master
                                                                                                                                                                                                                        ←── D67 post-close relationship save event
                                                                                                                                                                                                                              ←── D68 behavior event context validation
                                                                                                                                                                                                                                    ←── D69 self-scoped behavior ledger erasure
-                                                                                                                                                                                                                                          ←── D70 frontend-compatible runtime contract smoke
+                                                                                                                                                                                                                                         ←── D70 frontend-compatible runtime contract smoke
+                                                                                                                                                                                                                                                ←── D71 injectable authenticated identity boundary
 ```
 
 ## Progress Ledger
@@ -597,6 +605,7 @@ master
 | D68 behavior event context validation | complete | behavior events enforce type-specific table membership/lifecycle rules in memory, API, and JSON reload | 294 tests + compileall + diff check | `0b87fcc` |
 | D69 self-scoped behavior ledger erasure | complete | authenticated-by-viewer delete clears only the caller's behavior events with atomic JSON persistence and no table-history deletion | 295 tests + compileall + diff check | `b72bf33` |
 | D70 frontend-compatible runtime contract smoke | complete | backend regression locks the actual valley demo flow: create table, add fifth viewer seat, exchange a human WebSocket turn, and recover a viewer-scoped close artifact | 296 tests + compileall + diff check + live ASGI smoke | `d831038` |
+| D71 injectable authenticated identity boundary | in progress | optional server-side identity resolver enforces authenticated subject equality on self-scoped REST routes and participant WebSocket handshakes while preserving the default development query contract | pending | — |
 
 ## 已知坑位（Running Gotchas）
 

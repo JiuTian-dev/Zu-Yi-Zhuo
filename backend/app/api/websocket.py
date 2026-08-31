@@ -23,6 +23,7 @@ from app.providers import LLMProvider
 
 from .privacy import project_state_for_viewer
 from .repository import InMemoryTableRepository
+from .identity import IdentityResolver, websocket_identity_error
 
 
 class _ClientEvent(BaseModel):
@@ -149,6 +150,7 @@ def register_websocket_routes(
     api: FastAPI,
     repository: InMemoryTableRepository,
     provider: LLMProvider | None = None,
+    identity_resolver: IdentityResolver | None = None,
 ) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
 
@@ -207,6 +209,18 @@ def register_websocket_routes(
         await websocket.accept()
         if not participant_id.strip():
             await _send_error(websocket, "invalid_participant", "participant_id is required")
+            await websocket.close(code=1008)
+            return
+        identity_error = websocket_identity_error(
+            identity_resolver, websocket, participant_id
+        )
+        if identity_error is not None:
+            detail = (
+                "authenticated subject does not match participant_id"
+                if identity_error == "identity_mismatch"
+                else "authentication required"
+            )
+            await _send_error(websocket, identity_error, detail)
             await websocket.close(code=1008)
             return
         try:

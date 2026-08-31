@@ -5,7 +5,7 @@ import os
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Path, Query, status
+from fastapi import FastAPI, HTTPException, Path, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -19,6 +19,7 @@ from app.domain.schemas import EvidenceStatement
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
+from .identity import IdentityResolver, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 
@@ -241,6 +242,7 @@ def create_app(
     content_source_timeout_seconds: float = 5.0,
     personal_context_source: PersonalContextSource | None = None,
     personal_context_source_timeout_seconds: float = 5.0,
+    identity_resolver: IdentityResolver | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -256,6 +258,7 @@ def create_app(
     api.state.candidate_source = candidate_source
     api.state.content_source = content_source
     api.state.personal_context_source = personal_context_source
+    api.state.identity_resolver = identity_resolver
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -265,9 +268,9 @@ def create_app(
         allow_origins=origins,
         allow_credentials=False,
         allow_methods=["DELETE", "GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "Accept"],
+        allow_headers=["Accept", "Authorization", "Content-Type"],
     )
-    register_websocket_routes(api, repo, provider)
+    register_websocket_routes(api, repo, provider, identity_resolver)
 
     @api.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -298,9 +301,12 @@ def create_app(
 
     @api.get("/tables", response_model=list[TableState])
     def list_tables(
+        request: Request,
         participant_id: str | None = Query(default=None),
         include_closed: bool = Query(default=False),
     ) -> list[TableState]:
+        if participant_id is not None:
+            require_request_identity(identity_resolver, request, participant_id)
         return [
             project_state_for_viewer(state, participant_id)
             for state in repo.list_tables(include_closed=include_closed)
@@ -309,9 +315,11 @@ def create_app(
     @api.get("/participants/{participant_id}/relationship-memory", response_model=list[RelationshipMemory])
     def get_relationship_memory(
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> list[RelationshipMemory]:
         """Return evidence-backed old-table reminders only to the participant themselves."""
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.relationship_memories(participant_id)
@@ -324,9 +332,11 @@ def create_app(
     def save_relationship(
         table_id: str,
         related_participant_id: str,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> BehaviorEvent:
         """Record a member's explicit post-close relationship choice."""
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if not state.conversation.closed:
             raise HTTPException(status_code=409, detail="relationship save requires a closed table")
@@ -358,9 +368,11 @@ def create_app(
     def record_behavior_event(
         participant_id: str,
         payload: BehaviorEventRequest,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> BehaviorEvent:
         """Record a bounded product behavior signal for the participant themself."""
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -380,9 +392,11 @@ def create_app(
     )
     def select_table(
         table_id: str,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> BehaviorEvent:
         """Record an explicit open-table selection without mutating membership."""
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if state.conversation.closed:
             raise HTTPException(status_code=409, detail="table is closed")
@@ -406,8 +420,10 @@ def create_app(
     )
     def get_behavior_events(
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> list[BehaviorEvent]:
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -421,9 +437,11 @@ def create_app(
     )
     def clear_behavior_events(
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> None:
         """Let a participant erase only their private behavior ledger."""
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -439,8 +457,10 @@ def create_app(
     def grant_personal_context_consent(
         participant_id: str,
         payload: PersonalContextConsentRequest,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> PersonalContextConsent:
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -456,8 +476,10 @@ def create_app(
     )
     def revoke_personal_context_consent(
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> None:
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -471,8 +493,10 @@ def create_app(
     )
     def get_personal_context_consent(
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> PersonalContextConsent:
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         consent = repo.personal_context_consent(participant_id)
@@ -488,9 +512,11 @@ def create_app(
     def set_no_match_preference(
         participant_id: str,
         blocked_participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> NoMatchPreference:
         """Let a participant opt out of future matching with one person."""
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -505,8 +531,10 @@ def create_app(
     def remove_no_match_preference(
         participant_id: str,
         blocked_participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> None:
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -520,8 +548,10 @@ def create_app(
     )
     def get_no_match_preferences(
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> list[NoMatchPreference]:
+        require_request_identity(identity_resolver, request, viewer_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         try:
@@ -561,9 +591,11 @@ def create_app(
     @api.post("/personal-context/source-preview", response_model=PersonalContextPreview)
     async def preview_personal_context(
         payload: PersonalContextSourceRequest,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> PersonalContextPreview:
         """Preview viewer-owned context without persisting or broadcasting it."""
+        require_request_identity(identity_resolver, request, viewer_id)
         consent = repo.personal_context_consent(viewer_id)
         if consent is None:
             raise HTTPException(status_code=403, detail="personal context consent required")
@@ -645,7 +677,13 @@ def create_app(
         return MatchedTableResponse(plan=plan, state=projected(state))
 
     @api.get("/tables/{table_id}", response_model=TableState)
-    def get_table(table_id: str, participant_id: str | None = Query(default=None)) -> TableState:
+    def get_table(
+        table_id: str,
+        request: Request,
+        participant_id: str | None = Query(default=None),
+    ) -> TableState:
+        if participant_id is not None:
+            require_request_identity(identity_resolver, request, participant_id)
         return projected(table_or_404(table_id), participant_id)
 
     @api.post("/tables/{table_id}/participants", response_model=TableState)
@@ -660,9 +698,11 @@ def create_app(
     def leave_table(
         table_id: str,
         participant_id: str,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> TableState:
         """Let a participant leave without deleting the table's prior history."""
+        require_request_identity(identity_resolver, request, viewer_id)
         table_or_404(table_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
@@ -676,9 +716,11 @@ def create_app(
     async def preview_table_candidates(
         table_id: str,
         payload: CandidatePreviewRequest,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> TableCandidatePreview:
         """Recommend candidates for an open seat without mutating membership or invitations."""
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if participant_id not in state.participants:
             raise HTTPException(status_code=403, detail="participant_id must be a table participant")
@@ -732,8 +774,10 @@ def create_app(
     def add_peripheral_comment(
         table_id: str,
         payload: PeripheralCommentRequest,
+        request: Request,
         author_id: str = Query(..., min_length=1),
     ) -> PeripheralComment:
+        require_request_identity(identity_resolver, request, author_id)
         state = table_or_404(table_id)
         if state.conversation.closed:
             raise HTTPException(status_code=409, detail="table is closed")
@@ -764,10 +808,12 @@ def create_app(
     )
     async def promote_peripheral_comment(
         table_id: str,
+        request: Request,
         comment_id: str = Path(..., min_length=1),
         participant_id: str = Query(..., min_length=1),
     ) -> CommentPromotionResponse:
         """Let a core member explicitly and safely bring one comment into the table."""
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if participant_id not in state.participants:
             raise HTTPException(status_code=403, detail="promoter must be a table participant")
@@ -860,9 +906,11 @@ def create_app(
     def submit_safety_report(
         table_id: str,
         payload: SafetyReportRequest,
+        request: Request,
         reporter_id: str = Query(..., min_length=1),
     ) -> SafetyReport:
         """Collect a private member report for controlled moderation review."""
+        require_request_identity(identity_resolver, request, reporter_id)
         state = table_or_404(table_id)
         if reporter_id not in state.participants:
             raise HTTPException(status_code=403, detail="reporter must be a table participant")
@@ -883,8 +931,10 @@ def create_app(
     @api.get("/tables/{table_id}/safety-reports", response_model=list[SafetyReport])
     def get_safety_reports(
         table_id: str,
+        request: Request,
         reporter_id: str = Query(..., min_length=1),
     ) -> list[SafetyReport]:
+        require_request_identity(identity_resolver, request, reporter_id)
         state = table_or_404(table_id)
         if reporter_id not in state.participants:
             raise HTTPException(status_code=403, detail="reporter must be a table participant")
@@ -906,8 +956,10 @@ def create_app(
     def create_invitation(
         table_id: str,
         payload: CreateInvitationRequest,
+        request: Request,
         inviter_id: str = Query(..., min_length=1),
     ) -> InvitationView:
+        require_request_identity(identity_resolver, request, inviter_id)
         table_or_404(table_id)
         try:
             invitation = repo.create_invitation(
@@ -922,8 +974,10 @@ def create_app(
     @api.get("/tables/{table_id}/invitations", response_model=list[InvitationView])
     def get_invitations(
         table_id: str,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> list[InvitationView]:
+        require_request_identity(identity_resolver, request, participant_id)
         table_or_404(table_id)
         return [
             invitation_view(invitation)
@@ -939,8 +993,10 @@ def create_app(
         table_id: str,
         invitation_id: str,
         payload: RespondInvitationRequest,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> InvitationResponse:
+        require_request_identity(identity_resolver, request, participant_id)
         table_or_404(table_id)
         try:
             invitation, state = repo.respond_invitation(
@@ -965,16 +1021,20 @@ def create_app(
     def preview_sync_upgrade(
         table_id: str,
         signals: SyncUpgradeSignals,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> SyncUpgradeDecision:
+        require_request_identity(identity_resolver, request, participant_id)
         return sync_decision(table_id, participant_id, signals)
 
     @api.post("/tables/{table_id}/sync/upgrade", response_model=SyncUpgradeResponse)
     def upgrade_to_sync(
         table_id: str,
         signals: SyncUpgradeSignals,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> SyncUpgradeResponse:
+        require_request_identity(identity_resolver, request, participant_id)
         decision = sync_decision(table_id, participant_id, signals)
         if not decision.eligible:
             raise HTTPException(status_code=409, detail=decision.model_dump(mode="json"))
@@ -989,8 +1049,10 @@ def create_app(
         table_id: str,
         participant_id: str,
         payload: ParticipantConsentRequest,
+        request: Request,
         viewer_id: str = Query(..., min_length=1),
     ) -> TableState:
+        require_request_identity(identity_resolver, request, viewer_id)
         table_or_404(table_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
@@ -1001,15 +1063,24 @@ def create_app(
         return projected(state, participant_id)
 
     @api.get("/tables/{table_id}/state", response_model=TableState)
-    def get_state(table_id: str, participant_id: str | None = Query(default=None)) -> TableState:
+    def get_state(
+        table_id: str,
+        request: Request,
+        participant_id: str | None = Query(default=None),
+    ) -> TableState:
+        if participant_id is not None:
+            require_request_identity(identity_resolver, request, participant_id)
         return projected(table_or_404(table_id), participant_id)
 
     @api.get("/tables/{table_id}/replay", response_model=ReplayResponse)
     def get_replay(
         table_id: str,
+        request: Request,
         from_version: int | None = Query(default=None, ge=0),
         participant_id: str | None = Query(default=None),
     ) -> ReplayResponse:
+        if participant_id is not None:
+            require_request_identity(identity_resolver, request, participant_id)
         table_or_404(table_id)
         try:
             snapshots = repo.replay(table_id, from_version)
@@ -1045,8 +1116,10 @@ def create_app(
     @api.get("/tables/{table_id}/follow-ups", response_model=list[FollowUpStatusResponse])
     def get_follow_ups(
         table_id: str,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> list[FollowUpStatusResponse]:
+        require_request_identity(identity_resolver, request, participant_id)
         _state, items, outcomes = close_follow_ups(table_id, participant_id)
         return [
             FollowUpStatusResponse(
@@ -1063,10 +1136,12 @@ def create_app(
     )
     def report_follow_up_outcome(
         table_id: str,
+        request: Request,
         follow_up_index: int = Path(..., ge=0),
         payload: FollowUpOutcomeRequest = ...,
         participant_id: str = Query(..., min_length=1),
     ) -> FollowUpStatusResponse:
+        require_request_identity(identity_resolver, request, participant_id)
         _state, items, outcomes = close_follow_ups(table_id, participant_id)
         if follow_up_index >= len(items):
             raise HTTPException(status_code=404, detail="unknown follow-up item")
@@ -1118,8 +1193,10 @@ def create_app(
     def submit_value_feedback(
         table_id: str,
         payload: ValueFeedbackRequest,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> ValueFeedback:
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if not state.conversation.closed:
             raise HTTPException(status_code=409, detail="table is not closed")
@@ -1139,17 +1216,21 @@ def create_app(
     @api.get("/tables/{table_id}/feedback", response_model=FeedbackSummary)
     def get_value_feedback(
         table_id: str,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> FeedbackSummary:
+        require_request_identity(identity_resolver, request, participant_id)
         return feedback_summary(table_id, participant_id)
 
     @api.post("/tables/{table_id}/soft-expire", response_model=TableState)
     def soft_expire_table(
         table_id: str,
         payload: SoftExpireRequest,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> TableState:
         """Hide a stale table from discovery while preserving its history and close path."""
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if participant_id not in state.participants:
             raise HTTPException(status_code=403, detail="participant_id must be a table participant")
@@ -1204,9 +1285,11 @@ def create_app(
     @api.get("/tables/{table_id}/close-artifacts", response_model=CloseArtifactsResponse)
     def get_close_artifacts(
         table_id: str,
+        request: Request,
         participant_id: str = Query(..., min_length=1),
     ) -> CloseArtifactsResponse:
         """Rebuild the evidence-backed close card after reconnect/restart."""
+        require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
         if not state.conversation.closed:
             raise HTTPException(status_code=409, detail="table is not closed")
