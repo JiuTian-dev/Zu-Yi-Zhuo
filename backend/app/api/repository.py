@@ -52,7 +52,7 @@ def _validate_behavior_event_context(state: TableState, event: BehaviorEvent) ->
         return
     if event.participant_id not in state.participants:
         raise ValueError("behavior participant must be a table participant")
-    if event.event_type in {"follow_up_outcome", "table_closed"} and not state.conversation.closed:
+    if event.event_type in {"follow_up_outcome", "table_closed", "value_feedback_submitted"} and not state.conversation.closed:
         raise ValueError("closed-table behavior events require a closed table")
     if event.event_type == "relationship_saved":
         if not state.conversation.closed:
@@ -72,6 +72,20 @@ def _table_closed_behavior_event(
         table_id=table_id,
         state_version=state_version,
         detail="closed",
+    )
+
+
+def _value_feedback_behavior_event(
+    table_id: str, participant_id: str, state_version: int
+) -> BehaviorEvent:
+    """Build the stable private behavior signal for a first value reflection."""
+    return BehaviorEvent(
+        event_id=f"{participant_id}:value-feedback:{table_id}",
+        participant_id=participant_id,
+        event_type="value_feedback_submitted",
+        table_id=table_id,
+        state_version=state_version,
+        detail="submitted",
     )
 
 
@@ -478,7 +492,22 @@ class InMemoryTableRepository:
             raise ValueError("value feedback must reference the current closed state")
         if feedback.participant_id not in state.participants:
             raise ValueError(f"unknown participant: {feedback.participant_id}")
+        behavior_event = _value_feedback_behavior_event(
+            feedback.table_id, feedback.participant_id, state.version
+        )
+        existing_event = next(
+            (
+                item
+                for item in self._behavior_events.get(feedback.participant_id, [])
+                if item.event_id == behavior_event.event_id
+            ),
+            None,
+        )
+        if existing_event is not None and existing_event.model_dump(mode="json") != behavior_event.model_dump(mode="json"):
+            raise ValueError("event_id already belongs to a different behavior event")
         self._value_feedback[feedback.table_id][feedback.participant_id] = feedback.model_copy(deep=True)
+        if existing_event is None:
+            self._behavior_events.setdefault(feedback.participant_id, []).append(behavior_event)
         return feedback.model_copy(deep=True)
 
     @_synchronized
@@ -1529,6 +1558,19 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("value feedback must reference the current closed state")
         if feedback.participant_id not in state.participants:
             raise ValueError(f"unknown participant: {feedback.participant_id}")
+        behavior_event = _value_feedback_behavior_event(
+            feedback.table_id, feedback.participant_id, state.version
+        )
+        existing_event = next(
+            (
+                item
+                for item in self._behavior_events.get(feedback.participant_id, [])
+                if item.event_id == behavior_event.event_id
+            ),
+            None,
+        )
+        if existing_event is not None and existing_event.model_dump(mode="json") != behavior_event.model_dump(mode="json"):
+            raise ValueError("event_id already belongs to a different behavior event")
         rows = {
             **self._value_feedback,
             feedback.table_id: {
@@ -1536,9 +1578,19 @@ class JsonTableRepository(InMemoryTableRepository):
                 feedback.participant_id: feedback.model_copy(deep=True),
             },
         }
+        behavior_events = self._behavior_events
+        if existing_event is None:
+            behavior_events = {
+                **self._behavior_events,
+                feedback.participant_id: [
+                    *self._behavior_events.get(feedback.participant_id, []),
+                    behavior_event,
+                ],
+            }
         self._commit(
             self._states, self._turns, self._trusted_grounding_cards,
             self._interventions, self._invitations, self._follow_up_outcomes, rows,
+            behavior_events=behavior_events,
         )
         return feedback.model_copy(deep=True)
 

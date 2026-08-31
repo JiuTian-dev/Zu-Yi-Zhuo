@@ -632,6 +632,7 @@ BehaviorEventType = Literal[
     "relationship_saved",
     "follow_up_outcome",
     "table_closed",
+    "value_feedback_submitted",
 ]
 
 
@@ -648,7 +649,7 @@ class BehaviorEvent(ContractModel):
 
     @model_validator(mode="after")
     def event_context_is_bounded(self) -> "BehaviorEvent":
-        if self.event_type in {"human_message", "follow_up_outcome", "table_closed"} and self.state_version is None:
+        if self.event_type in {"human_message", "follow_up_outcome", "table_closed", "value_feedback_submitted"} and self.state_version is None:
             raise ValueError("state_version is required for table behavior events")
         if self.event_type == "relationship_saved" and self.related_participant_id is None:
             raise ValueError("relationship_saved requires related_participant_id")

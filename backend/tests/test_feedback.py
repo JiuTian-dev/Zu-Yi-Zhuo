@@ -48,6 +48,14 @@ def test_post_close_feedback_is_self_scoped_and_summary_is_anonymous() -> None:
     assert submitted.status_code == 200
     assert submitted.json()["participant_id"] == "p1"
     assert submitted.json()["state_version"] == repository.get("feedback-table").version
+    assert [event.model_dump(mode="json") for event in repository.behavior_events("p1")] == [{
+        "event_id": "p1:value-feedback:feedback-table",
+        "participant_id": "p1",
+        "event_type": "value_feedback_submitted",
+        "table_id": "feedback-table",
+        "state_version": 1,
+        "detail": "submitted",
+    }]
     summary = client.get("/tables/feedback-table/feedback?participant_id=p2")
     assert summary.status_code == 200
     assert summary.json() == {
@@ -76,6 +84,7 @@ def test_feedback_can_be_updated_without_double_counting() -> None:
 
     assert first.status_code == updated.status_code == 200
     assert len(repository.value_feedback("feedback-table")) == 1
+    assert len(repository.behavior_events("p1")) == 1
     summary = client.get("/tables/feedback-table/feedback?participant_id=p1").json()
     assert summary["response_count"] == 1
     assert summary["cognitive_average"] == 2.0
@@ -123,6 +132,9 @@ def test_json_repository_persists_and_reloads_value_feedback(tmp_path) -> None:
     reloaded = JsonTableRepository(path)
 
     assert reloaded.value_feedback("persist-feedback") == [saved]
+    assert [event.event_type for event in reloaded.behavior_events("p1")] == [
+        "value_feedback_submitted"
+    ]
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["tables"]["persist-feedback"]["value_feedback"][0]["participant_id"] == "p1"
 

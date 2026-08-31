@@ -100,6 +100,25 @@ def test_behavior_event_context_rejects_non_members_and_open_table_relationships
     assert relationship.status_code == 409
 
 
+def test_server_generated_behavior_events_cannot_be_forged_through_generic_endpoint() -> None:
+    repository = _repository("server-events")
+    client = TestClient(create_app(repository))
+
+    for event_type in ("table_closed", "value_feedback_submitted"):
+        response = client.post(
+            "/participants/p1/behavior-events?viewer_id=p1",
+            json={
+                "event_id": f"forged-{event_type}",
+                "event_type": event_type,
+                "table_id": "server-events",
+                "state_version": 0,
+                "detail": "submitted",
+            },
+        )
+        assert response.status_code == 409
+        assert "dedicated server path" in response.json()["detail"]
+
+
 def test_server_generated_table_selection_is_open_scoped_and_idempotent() -> None:
     repository = _repository("selection-table")
     client = TestClient(create_app(repository))
