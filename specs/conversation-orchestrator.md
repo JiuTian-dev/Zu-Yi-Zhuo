@@ -205,6 +205,7 @@ master
 | D24 repository write serialization | complete | re-entrant process lock covers in-memory and JSON compound reads/writes; competing consent updates retain both changes and ordered versions | 171 tests + compileall + diff check | `6794029` |
 | D25 atomic intervention audit | complete | WebSocket host state and its non-SILENCE audit record commit as one repository bundle; invalid audit leaves the prior snapshot untouched | 173 tests + compileall + diff check | `16a03a0` |
 | D26 WebSocket identity handshake | complete | unknown `participant_id` is rejected before registration or state delivery with a structured error and close code 1008 | 173 tests + compileall + diff check | `4cc808e` |
+| D27 Host profile-consent boundary | complete | PASS wording cites private experience only after explicit `profile_shared`; unconsented broadcasts retain public role context and redact experience text | 174 tests + privacy regression | `7277585` |
 
 ## 已知坑位（Running Gotchas）
 
