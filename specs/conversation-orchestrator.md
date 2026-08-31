@@ -1,7 +1,7 @@
 # 组一桌：Conversation Orchestrator 后端
 
 > Status: confirmed by `组一桌_后端Conversation_Orchestrator_执行SPEC_v1.0.docx`
-> Last updated: 2026-08-31
+> Last updated: 2026-09-01
 
 ## 目标与反目标（缓存锚点区）
 <!-- 本区保存稳定产品决策与接口契约，尽量少改。 -->
@@ -170,6 +170,13 @@
 - **替代方案**: 只在前端本地保存状态，或把新行动直接追加成真人消息。
 - **代价**: 行动项以关闭时公共底稿的稳定索引定位；未来若允许编辑底稿，需要升级为显式 artifact ID。
 
+### ADR-22: 软过期是保留历史的生命周期迁移
+
+- **决策**: 桌内成员可通过 `POST /tables/{id}/soft-expire` 将主题或组合价值下降的桌迁移为 `conversation.soft_expired=true`、`state=soft_expired`；记录原因并从默认桌发现中淡出。软过期后拒绝新消息、成员变更、邀请、同步升级、主持/安全快照和来源卡片写入，但保留参与者、消息、状态回放、行动回响和收桌能力；收桌后状态为 `closed` 且保留软过期标记与原因。迁移幂等，不删除数据，也不自动复制成员到新桌。
+- **理由**: 产品要求桌子在问题热度或组合价值下降时停止消耗实时协作资源，同时保留可追溯的历史和后续收桌产物，支持围绕新问题重组新桌。
+- **替代方案**: 直接删除桌、继续在旧桌接收消息，或让前端本地标记过期。
+- **代价**: 客户端需要处理 `table_soft_expired` 错误；正式重组流程仍应创建新桌并重新走匹配/邀请边界。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -193,6 +200,7 @@ GET  /tables/{id}/interventions
 GET  /tables/{id}/close-artifacts?participant_id={participant_id}
 GET  /tables/{id}/follow-ups?participant_id={participant_id}
 POST /tables/{id}/follow-ups/{index}/outcome?participant_id={participant_id}
+POST /tables/{id}/soft-expire?participant_id={participant_id}
 POST /tables/{id}/close
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
@@ -208,6 +216,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
 邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
+软过期边界：软过期桌默认从发现列表隐藏；桌内对话、成员、邀请、同步、主持/安全快照和来源卡片写入均返回冲突，历史回放、状态查询、收桌和收桌后行动回响仍可用；重复软过期不增加版本。
 候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
@@ -224,6 +233,8 @@ TableState(table_id, version, core_question, current_subquestion, phase,
            momentum, close_readiness, insights<=8, consensus<=5,
            disagreements, open_loops<=3, participants, conversation,
            intervention)
+
+ConversationState(..., soft_expired, soft_expiry_reason?)
 
 AgentActionEvent(action, target_participant_id?, text?, visual_hint,
                  evidence_turns, state_version, confidence)
@@ -265,6 +276,7 @@ master
                                                               ←── D08 provider adapter + fail-closed calls
                                                               ←── D11 runtime entrypoint + configurable persistence
                                                                     ←── D36 provider-backed Host wording boundary
+                                                                          ←── D44 soft-expired table lifecycle
 ```
 
 ## Progress Ledger
@@ -318,6 +330,7 @@ master
 | D41 bounded candidate-source calls | complete | injected candidate source calls have a positive timeout and fail closed with a generic 502 on timeout | 208 tests + compileall + diff check | `e95f4a5` |
 | D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | 209 tests + compileall + diff check | `9076fca` |
 | D43 follow-up outcome ledger | complete | close-card follow-ups expose a REST read/write contract with owner checks and JSON restart persistence | 214 tests + compileall + diff check | `aac94a0` |
+| D44 soft-expired table lifecycle | in progress | explicit soft-expire state, discovery filtering, read-only conversation boundary, history-preserving close path, and reconnect-safe WebSocket error | 218 tests + compileall + diff check | pending |
 
 ## 已知坑位（Running Gotchas）
 
