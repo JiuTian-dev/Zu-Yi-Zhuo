@@ -132,7 +132,7 @@ master
 | D03.1 loop integration | complete | Gate→Router seam, intervention writeback/cooldown, routed CLI, reachable PASS | 80 tests + 4 CLI replays | `49663d8` |
 | D04 Host | complete | six action-specific natural Chinese host events, visual hints and safe fallbacks | 104 tests + compileall; naturalness/contract checkpoint | `7bf7b9e` |
 | D05 Reflection/Close | complete | deterministic effect log with post-intervention evidence attribution; close-readiness refresh; Q0→Q1 shared baseline; personal cards; commitment/suggestion extraction | 123 tests + compileall + diff review; explicit stale-turn regression | `a00df65` |
-| D06 API/WS | pending | session APIs and structured realtime events | frontend integration tests | pending |
+| D06 API/WS | complete | FastAPI REST table lifecycle, immutable in-memory replay (`messages + snapshots`), structured WebSocket message/join/leave/debug events, Host action delivery and cooldown writeback | 132 tests + compileall + REST/WS contract review | `c1cb020` + `dcc4d89` |
 | D07 persistence/QA | pending | snapshots, replay, failure fallback | 10 consecutive demo runs | pending |
 
 ## 已知坑位（Running Gotchas）
