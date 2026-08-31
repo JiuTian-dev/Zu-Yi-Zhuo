@@ -140,6 +140,50 @@ def test_declined_invitation_is_not_reissued_to_the_same_candidate() -> None:
     ).status_code == 200
 
 
+def test_sync_mode_defaults_async_and_upgrades_only_after_two_hard_conditions() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "sync",
+        "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    assert client.get("/tables/sync/state").json()["conversation"]["mode"] == "async"
+    repository.append_turn("sync", HumanTurn(turn_id=1, participant_id="p1", text="我亲历过一次试点。"))
+    repository.append_turn("sync", HumanTurn(turn_id=2, participant_id="p2", text="我也补充一条现场经验。"))
+
+    not_ready = client.post(
+        "/tables/sync/sync/preview?participant_id=p1",
+        json={"wants_continue": False, "sync_extra_value": True},
+    )
+    assert not_ready.status_code == 200
+    assert not_ready.json()["eligible"] is False
+    assert not_ready.json()["active_member_count"] == 2
+
+    upgraded = client.post(
+        "/tables/sync/sync/upgrade?participant_id=p1",
+        json={
+            "wants_continue": True,
+            "sync_extra_value": True,
+            "discussion_quality": True,
+        },
+    )
+    assert upgraded.status_code == 200
+    assert upgraded.json()["decision"]["eligible"] is True
+    assert upgraded.json()["state"]["conversation"]["mode"] == "sync"
+    assert upgraded.json()["state"]["version"] == 3
+
+    repeated = client.post(
+        "/tables/sync/sync/upgrade?participant_id=p1",
+        json={"wants_continue": False, "sync_extra_value": False},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["state"]["version"] == 3
+    assert client.post(
+        "/tables/sync/sync/preview?participant_id=ghost",
+        json={"wants_continue": True, "sync_extra_value": True},
+    ).status_code == 403
+
+
 def test_repository_rejects_unknown_participants_and_invalid_turn_order() -> None:
     repository = InMemoryTableRepository()
     repository.create("turns", "Q", [])

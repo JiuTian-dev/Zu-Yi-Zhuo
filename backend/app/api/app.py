@@ -7,9 +7,9 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
+from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
-from app.orchestrator import build_shared_baseline
+from app.orchestrator import build_shared_baseline, evaluate_sync_upgrade
 
 from .repository import InMemoryTableRepository
 from .privacy import project_state_for_viewer
@@ -58,6 +58,13 @@ class InvitationResponse(BaseModel):
 
     invitation: InvitationView
     state: TableState | None = None
+
+
+class SyncUpgradeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: SyncUpgradeDecision
+    state: TableState
 
 
 class ConfirmMatchRequest(MatchRequest):
@@ -208,6 +215,35 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
         return InvitationResponse(
             invitation=invitation_view(invitation), state=projected_state
         )
+
+    def sync_decision(table_id: str, participant_id: str, signals: SyncUpgradeSignals) -> SyncUpgradeDecision:
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        return evaluate_sync_upgrade(state, signals)
+
+    @api.post("/tables/{table_id}/sync/preview", response_model=SyncUpgradeDecision)
+    def preview_sync_upgrade(
+        table_id: str,
+        signals: SyncUpgradeSignals,
+        participant_id: str = Query(..., min_length=1),
+    ) -> SyncUpgradeDecision:
+        return sync_decision(table_id, participant_id, signals)
+
+    @api.post("/tables/{table_id}/sync/upgrade", response_model=SyncUpgradeResponse)
+    def upgrade_to_sync(
+        table_id: str,
+        signals: SyncUpgradeSignals,
+        participant_id: str = Query(..., min_length=1),
+    ) -> SyncUpgradeResponse:
+        decision = sync_decision(table_id, participant_id, signals)
+        if not decision.eligible:
+            raise HTTPException(status_code=409, detail=decision.model_dump(mode="json"))
+        try:
+            state = repo.upgrade_to_sync(table_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return SyncUpgradeResponse(decision=decision, state=projected(state, participant_id))
 
     @api.post("/tables/{table_id}/participants/{participant_id}/consent", response_model=TableState)
     def set_participant_consent(
