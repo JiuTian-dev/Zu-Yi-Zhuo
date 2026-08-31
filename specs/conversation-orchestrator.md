@@ -79,6 +79,7 @@
 ```text
 POST /tables
 POST /matches/preview
+POST /matches/confirm
 GET  /tables/{id}
 POST /tables/{id}/participants
 GET  /tables/{id}/state
@@ -171,6 +172,7 @@ master
 | D13 WebSocket consent projection | complete | connection-scoped viewer identity; consent event is self-scoped; public consent change broadcasts while each state event is independently redacted | 157 tests + compileall + privacy regression | `a52f228` |
 | D14 matching core | complete | bounded deterministic candidate selection with role diversity, question-term evidence, stable output, and public-only seat/reason contracts | 160 tests + compileall + diff check | `ad0de75` |
 | D15 matching REST preview | complete | `POST /matches/preview` exposes selected public seats and reasons without private profile fields | 161 tests + compileall + API contract check | `ad0de75` |
+| D16 matching confirmation | complete | `POST /matches/confirm` recomputes and commits the selected seats into a new table while returning the public match plan and redacted initial state | 162 tests + compileall + API contract check | `4d4e49a` |
 
 ## 已知坑位（Running Gotchas）
 
