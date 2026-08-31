@@ -77,7 +77,7 @@ def test_human_turn_automatically_creates_behavior_event() -> None:
 
     assert created and state.version == 1
     assert repository.behavior_events("p1")[0].model_dump(mode="json") == {
-        "event_id": "message-1",
+        "event_id": "behavior-auto:human:message-1",
         "participant_id": "p1",
         "event_type": "human_message",
         "table_id": "behavior-auto",

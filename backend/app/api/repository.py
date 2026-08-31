@@ -377,7 +377,7 @@ class InMemoryTableRepository:
         self._turns[table_id].append(turn)
         self._comment_promotions[table_id].append(promotion)
         self._behavior_events.setdefault(promoter_id, []).append(BehaviorEvent(
-            event_id=message_id,
+            event_id=f"{table_id}:human:{message_id}",
             participant_id=promoter_id,
             event_type="human_message",
             table_id=table_id,
@@ -393,7 +393,9 @@ class InMemoryTableRepository:
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
         """Persist one bounded product behavior signal with user-scoped idempotency."""
-        self.get(event.table_id)
+        state = self.get(event.table_id)
+        if event.state_version is not None and event.state_version > state.version:
+            raise ValueError("behavior event cannot reference a future state version")
         existing = next(
             (item for item in self._behavior_events.get(event.participant_id, []) if item.event_id == event.event_id),
             None,
@@ -551,7 +553,7 @@ class InMemoryTableRepository:
         state = observe_turn(current, committed)
         self._turns[table_id].append(committed)
         self._behavior_events.setdefault(committed.participant_id, []).append(BehaviorEvent(
-            event_id=committed.message_id or f"{table_id}:turn:{committed.turn_id}",
+            event_id=f"{table_id}:human:{committed.message_id or committed.turn_id}",
             participant_id=committed.participant_id,
             event_type="human_message",
             table_id=table_id,
@@ -591,7 +593,7 @@ class InMemoryTableRepository:
         state = observe_turn(current, turn)
         self._turns[table_id].append(turn)
         self._behavior_events.setdefault(participant_id, []).append(BehaviorEvent(
-            event_id=message_id,
+            event_id=f"{table_id}:human:{message_id}",
             participant_id=participant_id,
             event_type="human_message",
             table_id=table_id,
@@ -914,7 +916,7 @@ class JsonTableRepository(InMemoryTableRepository):
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], committed]}
         event = BehaviorEvent(
-            event_id=committed.message_id or f"{table_id}:turn:{committed.turn_id}",
+            event_id=f"{table_id}:human:{committed.message_id or committed.turn_id}",
             participant_id=committed.participant_id,
             event_type="human_message",
             table_id=table_id,
@@ -959,7 +961,7 @@ class JsonTableRepository(InMemoryTableRepository):
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], turn]}
         event = BehaviorEvent(
-            event_id=message_id,
+            event_id=f"{table_id}:human:{message_id}",
             participant_id=participant_id,
             event_type="human_message",
             table_id=table_id,
@@ -1199,7 +1201,7 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [*self._comment_promotions[table_id], promotion.model_copy(deep=True)],
         }
         behavior_event = BehaviorEvent(
-            event_id=message_id,
+            event_id=f"{table_id}:human:{message_id}",
             participant_id=promoter_id,
             event_type="human_message",
             table_id=table_id,
@@ -1225,7 +1227,9 @@ class JsonTableRepository(InMemoryTableRepository):
 
     @_synchronized
     def record_behavior_event(self, event: BehaviorEvent) -> tuple[BehaviorEvent, bool]:
-        self.get(event.table_id)
+        state = self.get(event.table_id)
+        if event.state_version is not None and event.state_version > state.version:
+            raise ValueError("behavior event cannot reference a future state version")
         existing = next(
             (item for item in self._behavior_events.get(event.participant_id, []) if item.event_id == event.event_id),
             None,

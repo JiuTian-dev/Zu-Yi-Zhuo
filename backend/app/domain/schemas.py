@@ -599,6 +599,8 @@ class BehaviorEvent(ContractModel):
             raise ValueError("state_version is required for table behavior events")
         if self.event_type == "relationship_saved" and self.related_participant_id is None:
             raise ValueError("relationship_saved requires related_participant_id")
+        if self.related_participant_id == self.participant_id:
+            raise ValueError("related_participant_id must differ from participant_id")
         return self
 
 
