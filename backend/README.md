@@ -66,6 +66,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 ## 身份与隐私边界
 
 - 参与者连接握手必须属于该桌；未知 `participant_id` 会收到 `unknown_participant` 并以 1008 关闭。
+- 成员离席后，仍未关闭的旧连接也会在每条真人消息进入安全检查前重新校验席位；不会因为 stale socket 写入安全暂停或消息快照。
 - REST consent 必须带 `viewer_id`，且必须等于路径中的参与者；当前这是开发态身份声明，不等同于生产认证。
 - 未同意时，状态投影隐藏 `declared_position`/`unused_relevant_experience`，PASS 主持话也不会广播经历原文。
 - 当前默认没有候选 source，候选人仍可由显式 `ParticipantSeed` 候选池提供；没有依赖知乎非官方抓取。

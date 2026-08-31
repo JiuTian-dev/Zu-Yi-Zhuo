@@ -290,6 +290,7 @@ master
 | D37 five-seat table capacity | complete | repository-level five-seat cap for create/add/invite/accept paths with in-memory and JSON parity | 199 tests + compileall + diff check | `cd6e518` |
 | D38 candidate source adapter boundary | complete | injectable CLI/MCP/OAuth-compatible candidate source, normalized source-preview endpoint, and privacy-safe failure responses | 203 tests + compileall + diff check | `e9bfcdf` |
 | D39 reconnectable close artifacts | complete | evidence-backed close-artifacts REST recovery with participant-scoped personal card | 205 tests + compileall + diff check | `cffe3a8` |
+| D40 stale WebSocket membership guard | complete | re-check participant membership after handshake and before safety/turn handling, preventing a departed socket from writing snapshots | 206 tests + compileall + diff check | `f8b2d79` |
 
 ## 已知坑位（Running Gotchas）
 
