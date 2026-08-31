@@ -200,6 +200,7 @@ master
 | D19 reflection writeback | complete | after two post-intervention human turns, deterministic ReflectionResult is attached to the audit record and broadcast as `intervention_reflected` | 164 tests + compileall + reflection regression | `ba110cb` |
 | D20 match explanation privacy | complete | private position/experience may influence selection internally but public match reasons expose only role-derived terms; regression checks no private text leaks | 164 tests + compileall + redaction regression | `81e6539` |
 | D21 optional OpenAI provider | complete | lazy-loaded `AsyncOpenAI.responses` adapter for structured/text calls, environment configuration, explicit missing-key failure, and optional dependency isolation | 167 tests + compileall + diff check | `fc3e326` |
+| D22 runtime integration probes | complete | configurable Vite-friendly CORS plus `/healthz` and `/readyz` probes without exposing table data | 169 tests + compileall + diff check | `cf67435` |
 
 ## 已知坑位（Running Gotchas）
 
