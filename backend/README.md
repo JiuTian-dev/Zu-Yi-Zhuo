@@ -16,6 +16,7 @@ python -m uvicorn app.main:app --reload
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
+- `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
@@ -66,7 +67,8 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 参与者连接握手必须属于该桌；未知 `participant_id` 会收到 `unknown_participant` 并以 1008 关闭。
 - REST consent 必须带 `viewer_id`，且必须等于路径中的参与者；当前这是开发态身份声明，不等同于生产认证。
 - 未同意时，状态投影隐藏 `declared_position`/`unused_relevant_experience`，PASS 主持话也不会广播经历原文。
-- 当前候选人来自显式 `ParticipantSeed` 候选池；没有依赖知乎非官方抓取。接入正式知乎 OAuth/API 前，需要平台提供可核验的授权与资料接口契约。
+- 当前默认没有候选 source，候选人仍可由显式 `ParticipantSeed` 候选池提供；没有依赖知乎非官方抓取。
+- 接入正式知乎 CLI/MCP/OAuth 时，通过 `create_app(..., candidate_source=...)` 注入适配器，适配器只返回已授权、规范化候选资料，服务端不会接收或记录 access token。
 
 ## 验证
 

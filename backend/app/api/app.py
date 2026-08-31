@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.domain import HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
@@ -15,6 +15,7 @@ from app.providers import LLMProvider
 from .repository import InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
+from app.sources import CandidateSource, CandidateSourceError
 
 
 class CreateTableRequest(BaseModel):
@@ -72,6 +73,15 @@ class ConfirmMatchRequest(MatchRequest):
     table_id: str | None = Field(default=None, min_length=1)
 
 
+class SourceMatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    core_question: str = Field(min_length=1)
+    query: str | None = Field(default=None, min_length=1)
+    table_size: int = Field(default=4, ge=2, le=5)
+    limit: int = Field(default=20, ge=2, le=20)
+
+
 class MatchedTableResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -82,12 +92,14 @@ class MatchedTableResponse(BaseModel):
 def create_app(
     repository: InMemoryTableRepository | None = None,
     provider: LLMProvider | None = None,
+    candidate_source: CandidateSource | None = None,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
+    api.state.candidate_source = candidate_source
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -141,6 +153,33 @@ def create_app(
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:
         return build_match_plan(payload)
+
+    @api.post("/matches/source-preview", response_model=MatchPlan)
+    async def preview_source_match(payload: SourceMatchRequest) -> MatchPlan:
+        """Run an injected, authorized source through the same match preview."""
+        if candidate_source is None:
+            raise HTTPException(status_code=503, detail="candidate source is not configured")
+        try:
+            raw_candidates = await candidate_source.search(
+                query=payload.query or payload.core_question,
+                limit=payload.limit,
+            )
+            candidates = [
+                item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
+                for item in raw_candidates
+            ][:payload.limit]
+            request = MatchRequest(
+                core_question=payload.core_question,
+                candidates=candidates,
+                table_size=payload.table_size,
+            )
+        except CandidateSourceError as error:
+            raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        except (TypeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=502, detail="candidate source returned invalid candidates") from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        return build_match_plan(request)
 
     @api.post("/matches/confirm", response_model=MatchedTableResponse, status_code=status.HTTP_201_CREATED)
     def confirm_match(payload: ConfirmMatchRequest) -> MatchedTableResponse:
