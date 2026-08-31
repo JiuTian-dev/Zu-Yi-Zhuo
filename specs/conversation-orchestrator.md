@@ -163,6 +163,13 @@
 - **替代方案**: 客户端自行重算，或仅在请求 close 时计算。
 - **代价**: 收桌准备度的确定性公式属于状态契约，未来替换 Observer 时仍需保留刷新边界。
 
+### ADR-21: 收桌行动结果是可恢复的独立账本
+
+- **决策**: 关闭后通过 `GET /tables/{id}/follow-ups` 查询公共行动项，并由成员通过 `POST /tables/{id}/follow-ups/{index}/outcome` 回报 `completed / in_progress / blocked / dismissed`；承诺只能由拥有者回报，建议项由首位报告成员占用，结果写入内存或 JSON 仓储。
+- **理由**: 收桌卡不应停留在一次性建议；用户需要在现实行动发生后看到回响，同时不把“聊到过”误写成“已经承诺”。
+- **替代方案**: 只在前端本地保存状态，或把新行动直接追加成真人消息。
+- **代价**: 行动项以关闭时公共底稿的稳定索引定位；未来若允许编辑底稿，需要升级为显式 artifact ID。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -184,6 +191,8 @@ GET  /tables/{id}/state
 GET  /tables/{id}/replay
 GET  /tables/{id}/interventions
 GET  /tables/{id}/close-artifacts?participant_id={participant_id}
+GET  /tables/{id}/follow-ups?participant_id={participant_id}
+POST /tables/{id}/follow-ups/{index}/outcome?participant_id={participant_id}
 POST /tables/{id}/close
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
@@ -201,6 +210,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
+行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
 
 ### 数据模型 / 类型定义
 
@@ -307,6 +317,7 @@ master
 | D40 stale WebSocket membership guard | complete | re-check participant membership after handshake and before safety/turn handling, preventing a departed socket from writing snapshots | 206 tests + compileall + diff check | `f8b2d79` |
 | D41 bounded candidate-source calls | complete | injected candidate source calls have a positive timeout and fail closed with a generic 502 on timeout | 208 tests + compileall + diff check | `e95f4a5` |
 | D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | 209 tests + compileall + diff check | `9076fca` |
+| D43 follow-up outcome ledger | complete | close-card follow-ups expose a REST read/write contract with owner checks and JSON restart persistence | 214 tests + compileall + diff check | `aac94a0` |
 
 ## 已知坑位（Running Gotchas）
 
