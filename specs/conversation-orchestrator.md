@@ -233,6 +233,13 @@
 - **替代方案**: 旁听者直接创建临时 ParticipantState、只在前端本地模拟旁听，或把所有状态原样广播后交给客户端过滤。
 - **代价**: V1 旁听只读，不提供外围评论写入口；后续评论若落地，应单独建公共评论账本并继续复用旁听身份边界。
 
+### ADR-31: 外围评论独立于核心真人 turn
+
+- **决策**: WebSocket 增加 `viewer_mode=commenter` 和 `peripheral_comment` 事件；评论者不占核心席位，只能提交有界文本，服务端以 `(table_id, comment_id)` 做幂等提交并把 `PeripheralComment` 写入独立评论账本。评论通过 REST `POST/GET /tables/{id}/comments` 与 WebSocket 事件共享同一账本，旁听者、评论者和核心成员都能看到；评论不会进入 Observer、Gate、Router、Host、Reflection 或核心 turn 证据链。评论者连接仍只能看到全量隐私投影后的公共状态。
+- **理由**: 产品需要外围观众可以提出问题、补充线索，但不能用低承诺评论稀释核心桌的节奏或占用第五席；独立账本同时保留回放与审核边界。
+- **替代方案**: 把评论伪装成匿名 ParticipantState、直接追加 HumanTurn，或让前端本地维护评论而不广播。
+- **代价**: V1 只提供文本评论和幂等写入，未实现评论排序、点赞或升级到主桌；后续应由 Agent/主持策略显式挑选高质量评论递进核心桌。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -264,7 +271,9 @@ POST /tables/{id}/close
 POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
-WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer}
+POST /tables/{id}/comments?author_id={author_id}
+GET  /tables/{id}/comments
+WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `request_debug_state`。
@@ -282,6 +291,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 关系记忆边界：只从已收桌的证据派生；`viewer_id` 必须等于路径参与者本人；只返回公开姓名、旧桌问题、关系理由和证据定位，不返回对方私有画像或个人卡全文；该接口只读。
 离桌边界：REST/WS 均要求本人身份；离桌产生一个成员快照版本，保留历史但拒绝该参与者后续真人消息；软过期或关闭后不再允许成员迁移。
 候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
+参与层级边界：`observer` 只读且不占席位；`commenter` 只能写独立公共评论，评论不触发主持决策、不进入核心 turn 或状态证据链。
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
 
@@ -348,6 +358,7 @@ master
                                                                                                            ←── D50 content signal source bridge
                                                                                                                   ←── D51 post-close value feedback ledger
                                                                                                                          ←── D52 read-only observer WebSocket
+                                                                                                                               ←── D53 peripheral comment ledger
 ```
 
 ## Progress Ledger
@@ -410,6 +421,7 @@ master
 | D50 content signal source bridge | complete | bounded authorized public-content source feeding the existing opportunity detector without table or invitation writes | 242 tests + compileall + diff check | `573d2cf` |
 | D51 post-close value feedback ledger | complete | self-scoped post-close four-dimension value feedback with JSON persistence and member-only aggregate summary | 247 tests + compileall + diff check | `72bfed9` |
 | D52 read-only observer WebSocket | complete | observer-mode public projection with no seat, turn, invitation, consent, or close mutations | 249 tests + compileall + diff check | `918a5af` |
+| D53 peripheral comment ledger | complete | commenter-mode public comments with independent persistence, idempotency, and no core-turn mutation | 253 tests + compileall + diff check | `b484496` |
 
 ## 已知坑位（Running Gotchas）
 

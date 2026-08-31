@@ -31,6 +31,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/follow-ups/{index}/outcome?participant_id=...`：回报行动结果；承诺只能由 owner 回报，结果会写入 JSON 快照。
 - `POST /tables/{table_id}/feedback?participant_id=...`：收桌后提交或更新认知、关系、行动、情绪四类 1–5 分价值反馈。
 - `GET /tables/{table_id}/feedback?participant_id=...`：桌内成员查看匿名价值聚合；不返回他人的评分明细或备注。
+- `POST /tables/{table_id}/comments?author_id=...` / `GET /tables/{table_id}/comments`：外围评论独立账本；评论不占席位、不进入核心 turn。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
@@ -111,6 +112,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 
 - 参与者连接握手必须属于该桌；未知 `participant_id` 会收到 `unknown_participant` 并以 1008 关闭。
 - `viewer_mode=observer` 是只读旁听连接：`participant_id` 仅作为连接标识，不要求属于桌内；状态始终按无 viewer 投影，发言、入席/离席、同意和收桌事件统一返回 `observer_read_only`，不会产生任何持久化写入。
+- `viewer_mode=commenter` 是外围评论连接：`participant_id` 仅作为评论作者标识，不占席位；连接建立后收到公开状态，只接受 `peripheral_comment`，其他写事件返回 `commenter_read_only`。评论以 `comment_id` 做桌级幂等，单独持久化并广播，不会触发主持决策或改变 Table State。
 - 成员离席后，仍未关闭的旧连接也会在每条真人消息进入安全检查前重新校验席位；不会因为 stale socket 写入安全暂停或消息快照。
 - 成员也可通过自证的 REST leave 入口离桌；离桌会产生一个版本化成员快照，旧连接后续消息会返回 `unknown participant`。
 - REST consent 必须带 `viewer_id`，且必须等于路径中的参与者；当前这是开发态身份声明，不等同于生产认证。
