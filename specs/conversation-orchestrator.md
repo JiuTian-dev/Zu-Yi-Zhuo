@@ -443,6 +443,13 @@
 - **替代方案**: 允许任意最新 turn、由前端自行判断是否首条、或把理由改成泛化的“最新表达”；这些方案分别扩大主持插话面、把证据边界移出后端或削弱产品语义的可审计性。
 - **代价**: 如果未来要支持普通讨论中的显式递话，应另设独立动作/理由，不复用冷启动 `nudge` 入口。
 
+### ADR-61: WebSocket 握手支持显式 Origin 白名单
+
+- **决策**: `create_app` 增加可选 `websocket_allowed_origins`，部署入口同时读取逗号分隔的 `WS_ALLOWED_ORIGINS`；配置后，WebSocket 握手必须携带完全匹配的 Origin，缺失或不在白名单时以 1008 拒绝。禁止 `*`，未配置时保留本地 Demo 的兼容行为。
+- **理由**: CORS middleware 不覆盖 WebSocket 握手；浏览器会自动携带 Cookie/会话，若不校验 Origin，恶意站点可发起跨站 WebSocket（CSWSH）。Origin 校验应与现有身份 resolver、逐消息授权并列，不能由前端自律。
+- **替代方案**: 复用 CORS 配置但允许空 Origin、只在反向代理校验、或接受通配符；这些方案分别会误放行非浏览器/配置漂移、让应用边界失去可测试性或扩大跨站攻击面。
+- **代价**: 生产部署必须维护明确的前端来源列表；原生客户端若没有 Origin，需要使用专门的部署配置或改用带会话身份的受控入口。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -631,7 +638,8 @@ master
                                                                                                                                                                                                                                                                                               ←── D80 bounded moderator safety queue
                                                                                                                                                                                                                                                                                                    ←── D81 cold-start nudge event
                                                                                                                                                                                                                                                                                                         ←── D82 REST/WebSocket shared nudge service
-                                                                                                                                                                                                                                                                                                              ←── D83 first-expression nudge evidence boundary
+                                                                                                                                                                                                                                                                                                             ←── D83 first-expression nudge evidence boundary
+                                                                                                                                                                                                                                                                                                                   ←── D84 WebSocket Origin allowlist boundary
 ```
 
 ## Progress Ledger
@@ -725,6 +733,7 @@ master
 | D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response; audit retains the nudge rationale | 324 tests + compileall + diff check | `5f430a5` + `41b823b` |
 | D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 327 tests + compileall + diff check | `288dde4` + `af854ad` |
 | D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
+| D84 WebSocket Origin allowlist boundary | in_progress | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
