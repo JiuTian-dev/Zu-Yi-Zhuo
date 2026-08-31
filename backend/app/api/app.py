@@ -9,10 +9,10 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
-from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
+from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
 
@@ -167,6 +167,15 @@ class PeripheralCommentRequest(BaseModel):
     comment_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=500)
+
+
+class CommentPromotionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    comment: PeripheralComment
+    promotion: CommentPromotion
+    turn: HumanTurn
+    state: TableState
 
 
 class SafetyReportRequest(BaseModel):
@@ -618,6 +627,104 @@ def create_app(
     def get_peripheral_comments(table_id: str) -> list[PeripheralComment]:
         table_or_404(table_id)
         return repo.comments(table_id)
+
+    @api.post(
+        "/tables/{table_id}/comments/{comment_id}/promote",
+        response_model=CommentPromotionResponse,
+    )
+    async def promote_peripheral_comment(
+        table_id: str,
+        comment_id: str = Path(..., min_length=1),
+        participant_id: str = Query(..., min_length=1),
+    ) -> CommentPromotionResponse:
+        """Let a core member explicitly and safely bring one comment into the table."""
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="promoter must be a table participant")
+        comment = next(
+            (item for item in repo.comments(table_id) if item.comment_id == comment_id),
+            None,
+        )
+        if comment is None:
+            raise HTTPException(status_code=404, detail=f"unknown comment: {comment_id}")
+
+        existing = next(
+            (item for item in repo.comment_promotions(table_id) if item.comment_id == comment_id),
+            None,
+        )
+        if existing is not None:
+            if existing.promoter_id != participant_id:
+                raise HTTPException(status_code=409, detail="comment_id is already promoted by another participant")
+            turn = next(
+                (item for item in repo.turns(table_id) if item.turn_id == existing.turn_id),
+                None,
+            )
+            if turn is None:
+                raise HTTPException(status_code=500, detail="comment promotion record is incomplete")
+            return CommentPromotionResponse(
+                comment=comment,
+                promotion=existing,
+                turn=turn,
+                state=projected(state, participant_id),
+            )
+
+        if state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is closed")
+        if state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is soft-expired")
+        if state.conversation.safety_level.value == "critical":
+            raise HTTPException(status_code=409, detail="table is paused for safety review")
+        next_turn_id = max((item.turn_id for item in repo.turns(table_id)), default=0) + 1
+        safety = evaluate_safety(comment.text, next_turn_id)
+        if safety.blocked:
+            try:
+                paused = repo.append_safety_state(table_id, enforce_safety(state, safety))
+            except ValueError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            safety_broadcaster = getattr(api.state, "table_broadcast_safety", None)
+            state_broadcaster = getattr(api.state, "table_broadcast_state", None)
+            if safety_broadcaster is not None:
+                await safety_broadcaster(table_id, safety, paused)
+            if state_broadcaster is not None:
+                await state_broadcaster(table_id, paused)
+            raise HTTPException(status_code=422, detail="comment promotion blocked by safety policy")
+
+        try:
+            promotion, committed, _created = repo.promote_comment_once(
+                table_id,
+                comment_id,
+                participant_id,
+                expected_state_version=state.version,
+            )
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        turn = next(
+            (item for item in repo.turns(table_id) if item.turn_id == promotion.turn_id),
+            None,
+        )
+        if turn is None:
+            raise HTTPException(status_code=500, detail="comment promotion record is incomplete")
+        broadcaster = getattr(api.state, "table_broadcast", None)
+        state_broadcaster = getattr(api.state, "table_broadcast_state", None)
+        if broadcaster is not None:
+            await broadcaster(table_id, {
+                "type": "comment_promoted",
+                "comment": comment.model_dump(mode="json"),
+                "promotion": promotion.model_dump(mode="json"),
+                "turn": turn.model_dump(mode="json"),
+            })
+        if state_broadcaster is not None:
+            await state_broadcaster(table_id, committed)
+        return CommentPromotionResponse(
+            comment=comment,
+            promotion=promotion,
+            turn=turn,
+            state=projected(committed, participant_id),
+        )
 
     @api.post("/tables/{table_id}/safety-reports", response_model=SafetyReport, status_code=status.HTTP_201_CREATED)
     def submit_safety_report(

@@ -181,6 +181,22 @@ def register_websocket_routes(
             lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id or None)),
         )
 
+    async def broadcast_safety(table_id: str, decision, state: TableState) -> None:
+        await _broadcast(
+            table_id,
+            lambda viewer_id: {
+                "type": "safety_enforced",
+                "decision": decision.model_dump(mode="json"),
+                "state": project_state_for_viewer(state, viewer_id or None).model_dump(mode="json"),
+            },
+        )
+
+    # REST routes can reuse the same table-scoped fanout without reaching into
+    # the connection registry or duplicating privacy projection logic.
+    api.state.table_broadcast = broadcast
+    api.state.table_broadcast_state = broadcast_state
+    api.state.table_broadcast_safety = broadcast_safety
+
     @api.websocket("/ws/tables/{table_id}")
     async def table_events(
         websocket: WebSocket,
