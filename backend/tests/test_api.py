@@ -154,6 +154,56 @@ def test_table_directory_defaults_to_open_public_projections() -> None:
     assert next(item for item in all_tables if item["table_id"] == "closed-table")["conversation"]["closed"] is True
 
 
+def test_soft_expire_hides_table_but_preserves_history_and_close() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "stale-api", "core_question": "问题热度是否还在？",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn(
+        "stale-api", HumanTurn(turn_id=1, participant_id="p1", text="我做过一次小范围验证。")
+    )
+
+    expired = client.post(
+        "/tables/stale-api/soft-expire?participant_id=p1",
+        json={"reason": "问题热度已下降"},
+    )
+    assert expired.status_code == 200
+    assert expired.json()["version"] == 2
+    assert expired.json()["conversation"]["soft_expired"] is True
+    assert expired.json()["conversation"]["state"] == "soft_expired"
+    assert expired.json()["conversation"]["soft_expiry_reason"] == "问题热度已下降"
+
+    assert client.get("/tables").json() == []
+    visible = client.get("/tables?include_closed=true&participant_id=p1")
+    assert visible.status_code == 200
+    assert visible.json()[0]["table_id"] == "stale-api"
+    assert visible.json()[0]["conversation"]["soft_expired"] is True
+
+    assert client.post("/tables/stale-api/participants", json=participant("p3")).status_code == 409
+    assert client.post(
+        "/tables/stale-api/soft-expire?participant_id=p1", json={"reason": "再次确认"}
+    ).json()["version"] == 2
+    assert client.post(
+        "/tables/stale-api/soft-expire?participant_id=ghost", json={"reason": "无权限"}
+    ).status_code == 403
+
+    closed = client.post("/tables/stale-api/close")
+    assert closed.status_code == 200
+    assert repository.get("stale-api").conversation.soft_expired is True
+    assert repository.get("stale-api").conversation.closed is True
+
+
+def test_soft_expire_requires_a_reason() -> None:
+    client, _ = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "reason-api", "core_question": "Q", "participants": [participant("p1")],
+    })
+    assert client.post(
+        "/tables/reason-api/soft-expire?participant_id=p1", json={"reason": " "}
+    ).status_code == 409
+
+
 def test_api_rejects_unknown_tables_duplicate_participants_and_empty_close() -> None:
     client, _ = client_and_repo()
     assert client.get("/tables/missing").status_code == 404

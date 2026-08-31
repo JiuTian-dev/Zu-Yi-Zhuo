@@ -190,6 +190,8 @@ class ConversationState(ContractModel):
     safety_level: SafetyLevel
     mode: ConversationMode = ConversationMode.ASYNC
     closed: bool = False
+    soft_expired: bool = False
+    soft_expiry_reason: str | None = Field(default=None, min_length=1, max_length=240)
 
 class InterventionState(ContractModel):
     reasons_to_speak: list[EvidenceStatement] = Field(default_factory=list)
@@ -222,6 +224,10 @@ class TableState(ContractModel):
             raise ValueError("participant map keys must match participant_id")
         if self.conversation.safety_level is SafetyLevel.CRITICAL and not self.conversation.risk_flags:
             raise ValueError("critical safety requires risk_flags with turn evidence")
+        if self.conversation.soft_expired and self.conversation.state not in {"soft_expired", "closed"}:
+            raise ValueError("soft-expired conversations must use soft_expired or closed state")
+        if self.conversation.state == "soft_expired" and not self.conversation.soft_expired:
+            raise ValueError("soft_expired state requires soft_expired flag")
         return self
 
 class GateDecision(ContractModel):

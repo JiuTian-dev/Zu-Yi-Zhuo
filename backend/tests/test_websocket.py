@@ -294,6 +294,25 @@ def test_stale_socket_cannot_write_after_participant_leaves() -> None:
         assert repository.get("table-ws").version == version_after_leave
 
 
+def test_soft_expired_socket_rejects_new_messages_with_explicit_error() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    repository.soft_expire_table("table-ws", "问题热度已下降")
+    version_before = repository.get("table-ws").version
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "after-expiry", "participant_id": "p1",
+            "text": "不应继续写入", "client_ts": "2026-08-31T12:04:00Z",
+        })
+        assert websocket.receive_json() == {
+            "type": "error", "code": "table_soft_expired", "detail": "table is soft-expired",
+        }
+
+    assert repository.get("table-ws").version == version_before
+    assert repository.turns("table-ws") == []
+
+
 def test_legacy_human_message_is_a_structured_error_without_closing_connection() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

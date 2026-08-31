@@ -53,6 +53,28 @@ def test_json_repository_deduplicates_message_ids_across_restart(tmp_path) -> No
         restored.append_message_once("idempotent", "architect", "换一条内容", "msg-1")
 
 
+def test_json_repository_persists_soft_expiry_and_keeps_close_available(tmp_path) -> None:
+    path = tmp_path / "soft-expiry.json"
+    repository = JsonTableRepository(path)
+    repository.create("stale", "Q", [flagship_participants[0]])
+    expired = repository.soft_expire_table("stale", "问题热度已下降")
+    assert expired.version == 1
+    assert expired.conversation.soft_expired is True
+    assert repository.list_tables() == []
+
+    restored = JsonTableRepository(path)
+    assert restored.get("stale").conversation.soft_expired is True
+    assert restored.get("stale").conversation.soft_expiry_reason == "问题热度已下降"
+    assert [state.version for state in restored.replay("stale")] == [0, 1]
+    with pytest.raises(ValueError, match="soft-expired"):
+        restored.append_turn(
+            "stale", HumanTurn(turn_id=1, participant_id="architect", text="不应继续写入")
+        )
+    closed = restored.close_table("stale")
+    assert closed.conversation.closed is True
+    assert JsonTableRepository(path).get("stale").conversation.closed is True
+
+
 def test_json_repository_enforces_five_seat_capacity(tmp_path) -> None:
     repository = JsonTableRepository(tmp_path / "capacity.json")
     repository.create("capacity", "Q", flagship_participants)

@@ -105,7 +105,7 @@ def test_participant_map_key_must_match_id() -> None:
 def test_spec_sections_expose_required_fields() -> None:
     expected = [
         (ParticipantState, "role current_position key_contributions unused_relevant_experience engagement last_spoke_turn good_pass_opportunity"),
-        (ConversationState, "state most_promising_thread risk_flags safety_level"),
+        (ConversationState, "state most_promising_thread risk_flags safety_level soft_expired soft_expiry_reason"),
         (InterventionState, "reasons_to_speak reasons_to_stay_silent recommended_action confidence last_action last_agent_turn_id human_turns_since_last_intervention"),
         (InterventionRecord, "table_id latency_ms model token_usage outcome reflection"),
         (SharedBaseline, "core_question_before key_consensus unresolved_disagreements evolved_question collective_next_steps"),

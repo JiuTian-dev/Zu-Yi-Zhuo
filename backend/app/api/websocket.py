@@ -227,6 +227,9 @@ def register_websocket_routes(
                         if current_state.conversation.closed:
                             await _send_error(websocket, "table_closed", "table is already closed")
                             continue
+                        if current_state.conversation.soft_expired:
+                            await _send_error(websocket, "table_soft_expired", "table is soft-expired")
+                            continue
                         if current_state.conversation.safety_level is SafetyLevel.CRITICAL:
                             await _send_error(websocket, "table_paused", "table is paused for safety review")
                             continue

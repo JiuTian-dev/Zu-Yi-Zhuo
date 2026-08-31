@@ -107,6 +107,12 @@ class FollowUpOutcomeRequest(BaseModel):
     note: str | None = Field(default=None, min_length=1, max_length=240)
 
 
+class SoftExpireRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=240)
+
+
 class FollowUpStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -434,6 +440,22 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return FollowUpStatusResponse(follow_up_index=follow_up_index, item=item, outcome=saved)
+
+    @api.post("/tables/{table_id}/soft-expire", response_model=TableState)
+    def soft_expire_table(
+        table_id: str,
+        payload: SoftExpireRequest,
+        participant_id: str = Query(..., min_length=1),
+    ) -> TableState:
+        """Hide a stale table from discovery while preserving its history and close path."""
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        try:
+            expired = repo.soft_expire_table(table_id, payload.reason)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return projected(expired, participant_id)
 
     @api.post("/tables/{table_id}/close", response_model=SharedBaseline)
     def close_table(table_id: str) -> SharedBaseline:

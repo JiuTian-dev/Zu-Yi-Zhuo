@@ -67,7 +67,10 @@ class InMemoryTableRepository:
         """Return isolated latest snapshots for the public table directory."""
         states = [snapshots[-1] for snapshots in self._states.values() if snapshots]
         if not include_closed:
-            states = [state for state in states if not state.conversation.closed]
+            states = [
+                state for state in states
+                if not state.conversation.closed and not state.conversation.soft_expired
+            ]
         return [state.model_copy(deep=True) for state in states]
 
     @_synchronized
@@ -75,6 +78,8 @@ class InMemoryTableRepository:
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if seed.participant_id in state.participants:
             raise ValueError(f"participant already exists: {seed.participant_id}")
         if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
@@ -100,6 +105,8 @@ class InMemoryTableRepository:
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if inviter_id not in state.participants:
             raise ValueError("inviter must be a table participant")
         if candidate.participant_id in state.participants:
@@ -169,6 +176,8 @@ class InMemoryTableRepository:
             raise ValueError("invitation has already been resolved")
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if accept and len(state.participants) >= MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated_invitation = invitation.model_copy(update={"status": requested})
@@ -200,6 +209,8 @@ class InMemoryTableRepository:
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if participant_id not in state.participants:
             raise ValueError(f"unknown participant: {participant_id}")
         updated = state.model_copy(deep=True)
@@ -231,6 +242,8 @@ class InMemoryTableRepository:
             return state
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if state.conversation.safety_level is SafetyLevel.CRITICAL:
             raise ValueError("table is paused for safety review")
         updated = state.model_copy(deep=True)
@@ -242,10 +255,13 @@ class InMemoryTableRepository:
     @_synchronized
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
         """Commit a human turn; the WebSocket adapter will use this helper later."""
-        if self.get(table_id).conversation.closed:
+        current = self.get(table_id)
+        if current.conversation.closed:
             raise ValueError("table is closed")
+        if current.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         committed = turn.model_copy(deep=True)
-        state = observe_turn(self.get(table_id), committed)
+        state = observe_turn(current, committed)
         self._turns[table_id].append(committed)
         return self._append(table_id, state)
 
@@ -262,6 +278,8 @@ class InMemoryTableRepository:
         current = self.get(table_id)
         if current.conversation.closed:
             raise ValueError("table is closed")
+        if current.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         existing = next(
             (turn for turn in self._turns[table_id] if turn.message_id == message_id),
             None,
@@ -279,6 +297,24 @@ class InMemoryTableRepository:
         state = observe_turn(current, turn)
         self._turns[table_id].append(turn)
         return self._append(table_id, state), True
+
+    @_synchronized
+    def soft_expire_table(self, table_id: str, reason: str) -> TableState:
+        """Hide a stale table from discovery while preserving its history."""
+        state = self.get(table_id)
+        if not reason.strip():
+            raise ValueError("soft-expiry reason must be non-empty")
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.conversation.soft_expired = True
+        updated.conversation.state = "soft_expired"
+        updated.conversation.soft_expiry_reason = reason.strip()
+        updated.intervention.recommended_action = Action.SILENCE
+        return self._append(table_id, updated)
 
     @_synchronized
     def close_table(self, table_id: str) -> TableState:
@@ -301,6 +337,8 @@ class InMemoryTableRepository:
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if state.table_id != table_id or state.version != latest.version + 1:
             raise ValueError("intervention state must be the next snapshot for its table")
         return self._append(table_id, state)
@@ -313,6 +351,8 @@ class InMemoryTableRepository:
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if state.table_id != table_id or state.version != latest.version + 1:
             raise ValueError("intervention state must be the next snapshot for its table")
         if record.table_id != table_id or record.state_version != state.version:
@@ -332,6 +372,8 @@ class InMemoryTableRepository:
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if record.table_id != table_id or record.state_version != latest.version:
             raise ValueError("intervention record must reference the current table state")
         if record.action is Action.SILENCE:
@@ -365,6 +407,8 @@ class InMemoryTableRepository:
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if state.table_id != table_id or state.version != latest.version + 1:
             raise ValueError("safety state must be the next snapshot for its table")
         return self._append(table_id, state)
@@ -386,7 +430,11 @@ class InMemoryTableRepository:
     @_synchronized
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage one validated demo-injected source for the table's next GROUND action."""
-        self.get(table_id)
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if not all(value.strip() for value in (card.title, card.excerpt, card.source_ref)):
             raise ValueError("grounding card title, excerpt, and source_ref must be non-empty")
         self._trusted_grounding_cards[table_id] = card.model_copy(deep=True)
@@ -446,6 +494,8 @@ class JsonTableRepository(InMemoryTableRepository):
         current = self.get(table_id)
         if current.conversation.closed:
             raise ValueError("table is closed")
+        if current.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         state = observe_turn(current, committed)
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
@@ -461,6 +511,8 @@ class JsonTableRepository(InMemoryTableRepository):
         current = self.get(table_id)
         if current.conversation.closed:
             raise ValueError("table is closed")
+        if current.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         existing = next(
             (turn for turn in self._turns[table_id] if turn.message_id == message_id),
             None,
@@ -483,12 +535,34 @@ class JsonTableRepository(InMemoryTableRepository):
         return snapshot.model_copy(deep=True), True
 
     @_synchronized
+    def soft_expire_table(self, table_id: str, reason: str) -> TableState:
+        state = self.get(table_id)
+        if not reason.strip():
+            raise ValueError("soft-expiry reason must be non-empty")
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.conversation.soft_expired = True
+        updated.conversation.state = "soft_expired"
+        updated.conversation.soft_expiry_reason = reason.strip()
+        updated.intervention.recommended_action = Action.SILENCE
+        snapshot = TableState.model_validate(updated.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        self._commit(states, self._turns, self._trusted_grounding_cards, self._interventions)
+        return snapshot.model_copy(deep=True)
+
+    @_synchronized
     def create_invitation(
         self, table_id: str, inviter_id: str, candidate: ParticipantSeed, reason: str
     ) -> Invitation:
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if inviter_id not in state.participants:
             raise ValueError("inviter must be a table participant")
         if candidate.participant_id in state.participants:
@@ -561,6 +635,8 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("invitation has already been resolved")
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if accept and len(state.participants) >= MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated_invitation = invitation.model_copy(update={"status": requested})
@@ -599,6 +675,8 @@ class JsonTableRepository(InMemoryTableRepository):
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if record.table_id != table_id or record.state_version != latest.version:
             raise ValueError("intervention record must reference the current table state")
         if record.action is Action.SILENCE:
@@ -633,7 +711,11 @@ class JsonTableRepository(InMemoryTableRepository):
     @_synchronized
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage a source and persist it before acknowledging the write."""
-        self.get(table_id)
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if not all(value.strip() for value in (card.title, card.excerpt, card.source_ref)):
             raise ValueError("grounding card title, excerpt, and source_ref must be non-empty")
         cards = {**self._trusted_grounding_cards, table_id: card.model_copy(deep=True)}
@@ -666,6 +748,8 @@ class JsonTableRepository(InMemoryTableRepository):
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
         if state.table_id != table_id or state.version != latest.version + 1:
             raise ValueError("intervention state must be the next snapshot for its table")
         if record.table_id != table_id or record.state_version != state.version:
