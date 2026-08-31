@@ -527,6 +527,13 @@
 - **替代方案**: 继续只返回角色文案、直接把公开摘要复制进理由、或把整份来源信号永久写进桌状态；这些方案分别不可回溯、扩大响应/隐私面、或让桌状态绑定外部内容生命周期。
 - **代价**: 归因只保证从机会预览到匹配响应的短链路，重启后桌状态不保留来源详情；若未来需要可回放的来源谱系，应另建公开 source snapshot/artifact，而不是扩张参与者私有字段。
 
+### ADR-73: 建桌时持久化有界公开来源谱系
+
+- **决策**: `TableState` 增加可选 `origin_signal_ids`（最多 20 个），直接建桌和匹配确认均可提供；匹配确认只接受候选 `public_signal_ids` 的并集，拒绝无法从当前候选解释的 ID。来源只保存公开 signal ID，不保存标题、摘要、私有立场、经历或 access token；旧 JSON 快照和未提供字段的调用按空列表兼容。回放和按 viewer 投影会保留这组公开 ID。
+- **理由**: 入口机会与后续圆桌需要同一条可回溯链路，重启后仍能解释“这桌从哪些公开信号形成”；把小型来源谱系放在不可变 Table State 中比复制完整外部内容更稳定，也不扩大隐私数据面。
+- **替代方案**: 只让前端暂存 signal ID、把完整 source 内容写进桌状态、或每次回放重新调用外部 source；这些方案分别不可审计、造成数据膨胀/过期和外部依赖漂移。
+- **代价**: ID 只提供来源定位，不保证外部内容永久存在；未来如需展示历史摘要，应另建带保留策略的公开 source snapshot，而不是放宽 Table State 的内容边界。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -625,8 +632,8 @@ DisagreementType = fact_conflict | causal_disagreement | layer_mismatch |
 
 TableState(table_id, version, core_question, current_subquestion, phase,
            momentum, close_readiness, insights<=8, consensus<=5,
-           disagreements, open_loops<=3, participants, origin_table_id?, conversation,
-           intervention, agent)
+           disagreements, open_loops<=3, participants, origin_table_id?,
+           origin_signal_ids?<=20, conversation, intervention, agent)
 
 ConversationState(..., soft_expired, soft_expiry_reason?)
 
@@ -731,7 +738,8 @@ master
                                                                                                                                                                                                                                                                                                                                                   ←── D92 end-to-end demo journey smoke
                                                                                                                                                                                                                                                                                                                                                        ←── D93 repository behavior trust boundary
                                                                                                                                                                                                                                                                                                                                                             ←── D94 REST mutation rate limit
-                                                                                                                                                                                                                                                                                                                                                                  ←── D95 public match signal attribution
+                                                                                                                                                                                                                                                                                                                                                                 ←── D95 public match signal attribution
+                                                                                                                                                                                                                                                                                                                                                                       ←── D96 persisted public source lineage
 ```
 
 ## Progress Ledger
@@ -837,6 +845,7 @@ master
 | D93 repository behavior trust boundary | complete | Generic in-memory/JSON behavior writes reject server-generated close/feedback events while dedicated paths remain valid | 353 tests + compileall + diff check | `761a8d6` |
 | D94 REST mutation rate limit | complete | Configurable per-process sliding-window limit for REST write methods with 429/Retry-After responses and preserved read/WS behavior | 357 tests + compileall + diff check | `59bcec0` |
 | D95 public match signal attribution | complete | Carry bounded public signal IDs from opportunity candidates into explainable match reasons without leaking private profile data or persisting source details in table state | 357 tests + compileall + diff check | `fa185bb` |
+| D96 persisted public source lineage | complete | Persist bounded origin signal IDs on table creation/match confirmation with candidate-source validation and JSON/replay recovery | 360 tests + compileall + diff check | `a5d75a0` |
 
 ## 已知坑位（Running Gotchas）
 
