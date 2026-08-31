@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, Phase, RelationshipMemory, SafetyLevel, TableState, ValueFeedback
+from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -41,6 +41,7 @@ class InMemoryTableRepository:
         self._value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         self._comments: dict[str, list[PeripheralComment]] = {}
         self._no_match: dict[str, set[str]] = {}
+        self._safety_reports: dict[str, list[SafetyReport]] = {}
 
     @_synchronized
     def create(
@@ -63,6 +64,7 @@ class InMemoryTableRepository:
         self._follow_up_outcomes[table_id] = {}
         self._value_feedback[table_id] = {}
         self._comments[table_id] = []
+        self._safety_reports[table_id] = []
         return state.model_copy(deep=True)
 
     @_synchronized
@@ -186,6 +188,38 @@ class InMemoryTableRepository:
             other_participant_id in self._no_match.get(participant_id, set())
             or participant_id in self._no_match.get(other_participant_id, set())
         )
+
+    @_synchronized
+    def record_safety_report(self, report: SafetyReport) -> tuple[SafetyReport, bool]:
+        """Store one member report without changing the table conversation."""
+        state = self.get(report.table_id)
+        if report.state_version != state.version:
+            raise ValueError("safety report must reference the current table state")
+        if report.reporter_id not in state.participants:
+            raise ValueError("reporter must be a table participant")
+        if report.target_participant_id not in state.participants:
+            raise ValueError("target must be a table participant")
+        existing = next(
+            (item for item in self._safety_reports[report.table_id] if item.report_id == report.report_id),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != report.model_dump(mode="json"):
+                raise ValueError("report_id already belongs to a different report")
+            return existing.model_copy(deep=True), False
+        self._safety_reports[report.table_id].append(report.model_copy(deep=True))
+        return report.model_copy(deep=True), True
+
+    @_synchronized
+    def safety_reports(
+        self, table_id: str, reporter_id: str | None = None
+    ) -> list[SafetyReport]:
+        """Return reports; callers must apply the public reporter visibility boundary."""
+        self.get(table_id)
+        rows = self._safety_reports[table_id]
+        if reporter_id is not None:
+            rows = [item for item in rows if item.reporter_id == reporter_id]
+        return [item.model_copy(deep=True) for item in rows]
 
     @_synchronized
     def invitations(self, table_id: str) -> list[Invitation]:
@@ -605,6 +639,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._value_feedback,
                 self._comments,
                 self._no_match,
+                self._safety_reports,
             ) = self._load()
 
     @_synchronized
@@ -628,10 +663,40 @@ class JsonTableRepository(InMemoryTableRepository):
         outcomes = {**self._follow_up_outcomes, table_id: {}}
         feedback = {**self._value_feedback, table_id: {}}
         comments = {**self._comments, table_id: []}
+        reports = {**self._safety_reports, table_id: []}
         self._commit(
-            states, turns, self._trusted_grounding_cards, interventions, invitations, outcomes, feedback, comments
+            states, turns, self._trusted_grounding_cards, interventions, invitations,
+            outcomes, feedback, comments, self._no_match, reports,
         )
         return state.model_copy(deep=True)
+
+    @_synchronized
+    def record_safety_report(self, report: SafetyReport) -> tuple[SafetyReport, bool]:
+        state = self.get(report.table_id)
+        if report.state_version != state.version:
+            raise ValueError("safety report must reference the current table state")
+        if report.reporter_id not in state.participants:
+            raise ValueError("reporter must be a table participant")
+        if report.target_participant_id not in state.participants:
+            raise ValueError("target must be a table participant")
+        existing = next(
+            (item for item in self._safety_reports[report.table_id] if item.report_id == report.report_id),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != report.model_dump(mode="json"):
+                raise ValueError("report_id already belongs to a different report")
+            return existing.model_copy(deep=True), False
+        reports = {
+            **self._safety_reports,
+            report.table_id: [*self._safety_reports[report.table_id], report.model_copy(deep=True)],
+        }
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards,
+            self._interventions, self._invitations, self._follow_up_outcomes,
+            self._value_feedback, self._comments, self._no_match, reports,
+        )
+        return report.model_copy(deep=True), True
 
     @_synchronized
     def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
@@ -1026,6 +1091,7 @@ class JsonTableRepository(InMemoryTableRepository):
         value_feedback: dict[str, dict[str, ValueFeedback]] | None = None,
         comments: dict[str, list[PeripheralComment]] | None = None,
         no_match: dict[str, set[str]] | None = None,
+        safety_reports: dict[str, list[SafetyReport]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1034,6 +1100,7 @@ class JsonTableRepository(InMemoryTableRepository):
         feedback_rows = value_feedback if value_feedback is not None else self._value_feedback
         comment_rows = comments if comments is not None else self._comments
         no_match_rows = no_match if no_match is not None else self._no_match
+        report_rows = safety_reports if safety_reports is not None else self._safety_reports
         payload = {
             "tables": {
                 table_id: {
@@ -1052,6 +1119,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "comments": [
                         item.model_dump(mode="json")
                         for item in comment_rows[table_id]
+                    ],
+                    "safety_reports": [
+                        item.model_dump(mode="json")
+                        for item in report_rows[table_id]
                     ],
                 }
                 for table_id, snapshots in states.items()
@@ -1104,6 +1175,10 @@ class JsonTableRepository(InMemoryTableRepository):
             participant_id: set(targets)
             for participant_id, targets in no_match_rows.items()
         }
+        self._safety_reports = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in report_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -1115,6 +1190,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, dict[str, ValueFeedback]],
         dict[str, list[PeripheralComment]],
         dict[str, set[str]],
+        dict[str, list[SafetyReport]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -1131,6 +1207,7 @@ class JsonTableRepository(InMemoryTableRepository):
         follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         comments: dict[str, list[PeripheralComment]] = {}
+        safety_reports: dict[str, list[SafetyReport]] = {}
         for table_id, table in payload["tables"].items():
             table_keys = set(table) if isinstance(table, dict) else set()
             if (not isinstance(table_id, str) or not table_id or not isinstance(table, dict)
@@ -1139,6 +1216,7 @@ class JsonTableRepository(InMemoryTableRepository):
                         {
                             "states", "turns", "interventions", "invitations",
                             "follow_up_outcomes", "value_feedback", "comments",
+                            "safety_reports",
                         }
                     )):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
@@ -1162,6 +1240,10 @@ class JsonTableRepository(InMemoryTableRepository):
                 if not isinstance(raw_comments, list):
                     raise ValueError("comments must be an array")
                 comment_rows = [PeripheralComment.model_validate(item) for item in raw_comments]
+                raw_reports = table.get("safety_reports", [])
+                if not isinstance(raw_reports, list):
+                    raise ValueError("safety_reports must be an array")
+                reports = [SafetyReport.model_validate(item) for item in raw_reports]
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid data for table {table_id!r}") from error
             if not snapshots or any(state.table_id != table_id for state in snapshots):
@@ -1205,6 +1287,20 @@ class JsonTableRepository(InMemoryTableRepository):
             comment_ids = [item.comment_id for item in comment_rows]
             if len(set(comment_ids)) != len(comment_ids):
                 raise ValueError(f"invalid persistence file: duplicate comments for table {table_id!r}")
+            if any(
+                report.table_id != table_id
+                or report.state_version < 0
+                or not any(
+                    report.reporter_id in snapshot.participants
+                    and report.target_participant_id in snapshot.participants
+                    for snapshot in snapshots
+                )
+                for report in reports
+            ):
+                raise ValueError(f"invalid persistence file: incompatible safety reports for table {table_id!r}")
+            report_ids = [report.report_id for report in reports]
+            if len(set(report_ids)) != len(report_ids):
+                raise ValueError(f"invalid persistence file: duplicate safety reports for table {table_id!r}")
             states[table_id] = snapshots
             turns[table_id] = messages
             interventions[table_id] = audit
@@ -1214,6 +1310,8 @@ class JsonTableRepository(InMemoryTableRepository):
                 item.participant_id: item for item in feedback
             }
             comments[table_id] = comment_rows
+            self_reports = reports
+            safety_reports[table_id] = self_reports
         raw_cards = payload.get("trusted_grounding_cards", {})
         if not isinstance(raw_cards, dict):
             raise ValueError("invalid persistence file: malformed trusted_grounding_cards")
@@ -1244,4 +1342,4 @@ class JsonTableRepository(InMemoryTableRepository):
             ):
                 raise ValueError("invalid persistence file: invalid no_match participant")
             no_match[participant_id] = set(targets)
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, no_match
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, no_match, safety_reports

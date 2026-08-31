@@ -418,6 +418,25 @@ class NoMatchPreference(ContractModel):
         return self
 
 
+class SafetyReport(ContractModel):
+    """A private, idempotent report retained for controlled moderation review."""
+
+    report_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    reporter_id: str = Field(min_length=1)
+    target_participant_id: str = Field(min_length=1)
+    category: Literal["harassment", "privacy", "spam", "other"]
+    description: str = Field(min_length=1, max_length=500)
+    state_version: int = Field(ge=0)
+    status: Literal["open", "acknowledged", "resolved"] = "open"
+
+    @model_validator(mode="after")
+    def reporter_and_target_must_differ(self) -> "SafetyReport":
+        if self.reporter_id == self.target_participant_id:
+            raise ValueError("reporter cannot report themselves")
+        return self
+
+
 class FollowUpItem(ContractModel):
     item_type: Literal["suggestion", "commitment"]
     text: str = Field(min_length=1)

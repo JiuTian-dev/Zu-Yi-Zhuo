@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -140,6 +140,15 @@ class PeripheralCommentRequest(BaseModel):
     comment_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=500)
+
+
+class SafetyReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str = Field(min_length=1)
+    target_participant_id: str = Field(min_length=1)
+    category: Literal["harassment", "privacy", "spam", "other"]
+    description: str = Field(min_length=1, max_length=500)
 
 
 class RecomposeTableRequest(BaseModel):
@@ -491,6 +500,40 @@ def create_app(
     def get_peripheral_comments(table_id: str) -> list[PeripheralComment]:
         table_or_404(table_id)
         return repo.comments(table_id)
+
+    @api.post("/tables/{table_id}/safety-reports", response_model=SafetyReport, status_code=status.HTTP_201_CREATED)
+    def submit_safety_report(
+        table_id: str,
+        payload: SafetyReportRequest,
+        reporter_id: str = Query(..., min_length=1),
+    ) -> SafetyReport:
+        """Collect a private member report for controlled moderation review."""
+        state = table_or_404(table_id)
+        if reporter_id not in state.participants:
+            raise HTTPException(status_code=403, detail="reporter must be a table participant")
+        if payload.target_participant_id not in state.participants:
+            raise HTTPException(status_code=404, detail="target must be a table participant")
+        try:
+            report = SafetyReport(
+                table_id=table_id,
+                reporter_id=reporter_id,
+                state_version=state.version,
+                **payload.model_dump(),
+            )
+            saved, _created = repo.record_safety_report(report)
+            return saved
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.get("/tables/{table_id}/safety-reports", response_model=list[SafetyReport])
+    def get_safety_reports(
+        table_id: str,
+        reporter_id: str = Query(..., min_length=1),
+    ) -> list[SafetyReport]:
+        state = table_or_404(table_id)
+        if reporter_id not in state.participants:
+            raise HTTPException(status_code=403, detail="reporter must be a table participant")
+        return repo.safety_reports(table_id, reporter_id)
 
     def invitation_view(invitation) -> InvitationView:
         candidate = invitation.candidate

@@ -254,6 +254,13 @@
 - **替代方案**: 只在当前桌临时隐藏、由前端维护黑名单，或屏蔽后立即改写历史桌成员。
 - **代价**: V1 只约束本服务的邀请和候选预览；外部候选 source 仍返回原始授权结果，由服务端在有 viewer 身份的入口过滤；未来接入统一用户身份后可把该账本映射为账号级偏好。
 
+### ADR-34: 举报进入独立、最小可见的安全账本
+
+- **决策**: 增加桌级 `SafetyReport` 账本。桌内成员可以自证身份后提交有界的举报类别、描述和目标参与者；`report_id` 在桌内幂等，重复提交只返回原记录。举报查询默认只允许举报人读取自己的记录，举报正文不广播给同桌、不进入 HumanTurn、Table State 或主持证据链。仓储保留供后续审核适配器读取的完整记录，但当前不提供无认证的公共管理员接口。
+- **理由**: 产品要求支持举报，同时安全信息不能被旁观者或被举报对象反向读取；独立账本让审核可以异步接入，不把举报动作误当作自动封禁或主持判断。
+- **替代方案**: 把举报写成核心消息、把举报内容广播给全桌，或用未认证的管理端点暴露所有举报。
+- **代价**: V1 的审核处理状态由后续受控运营/适配器更新；当前 API 只负责安全收集、幂等和举报人可见性，不自动移除成员或关闭桌。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -291,6 +298,8 @@ GET  /tables/{id}/comments
 POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
 DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
 GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
+POST /tables/{id}/safety-reports?reporter_id={reporter_id}
+GET  /tables/{id}/safety-reports?reporter_id={reporter_id}
 WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
@@ -313,6 +322,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
 不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
+举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
 
 ### 数据模型 / 类型定义
 
@@ -379,7 +389,8 @@ master
                                                                                                                          ←── D52 read-only observer WebSocket
                                                                                                                               ←── D53 peripheral comment ledger
                                                                                                                                      ←── D54 evolved-question table recompose
-                                                                                                                                           ←── D55 global no-match preference boundary
+                                                                                                                                          ←── D55 global no-match preference boundary
+                                                                                                                                                 ←── D56 safety report ledger and privacy boundary
 ```
 
 ## Progress Ledger
@@ -444,7 +455,8 @@ master
 | D52 read-only observer WebSocket | complete | observer-mode public projection with no seat, turn, invitation, consent, or close mutations | 249 tests + compileall + diff check | `918a5af` |
 | D53 peripheral comment ledger | complete | commenter-mode public comments with independent persistence, idempotency, and no core-turn mutation | 253 tests + compileall + diff check | `b484496` |
 | D54 evolved-question table recompose | complete | close-only next-table creation with persisted origin link and no automatic member copying | 256 tests + compileall + diff check | `ef544d1` |
-| D55 global no-match preference boundary | in progress | self-scoped persistent no-match ledger, symmetric invitation rejection and candidate-preview filtering | pending | — |
+| D55 global no-match preference boundary | complete | self-scoped persistent no-match ledger, symmetric invitation rejection and candidate-preview filtering | 261 tests + compileall + diff check | `201d72c` |
+| D56 safety report ledger and privacy boundary | in progress | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
