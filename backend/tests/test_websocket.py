@@ -249,6 +249,67 @@ def test_debug_join_unknown_event_and_silence_are_structured() -> None:
         })
         assert websocket.receive_json()["type"] == "message_committed"
         assert websocket.receive_json()["type"] == "table_state_changed"
+
+
+def test_request_nudge_turns_unanswered_first_expression_into_audited_probe() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "nudge-1", "participant_id": "p1",
+            "text": "我有一个初步感受，但还没想清楚。", "client_ts": 1,
+        })
+        assert websocket.receive_json()["type"] == "message_committed"
+        first_state = websocket.receive_json()
+        assert first_state["type"] == "table_state_changed"
+        assert repository.interventions("table-ws") == []
+
+        websocket.send_json({"type": "request_nudge"})
+        action = websocket.receive_json()
+        changed = websocket.receive_json()
+
+    assert action["type"] == "agent_action"
+    assert action["action"] == "PROBE"
+    assert action["route"] == {
+        "action": "PROBE",
+        "target_participant_id": None,
+        "evidence_turns": [1],
+        "confidence": 0.72,
+    }
+    assert action["gate"]["reasons_to_speak"] == ["首条表达暂未获得自然回应，主动递一句轻问"]
+    assert changed["state"]["version"] == 4
+    assert repository.interventions("table-ws")[0].action is Action.PROBE
+
+
+def test_request_nudge_requires_evidence_and_respects_intervention_cooldown() -> None:
+    client, _repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({"type": "request_nudge"})
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "nudge_unavailable",
+            "detail": "a cold-start nudge requires a committed human turn",
+        }
+
+        websocket.send_json({
+            "type": "human_message", "message_id": "nudge-2", "participant_id": "p1",
+            "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": 2,
+        })
+        assert websocket.receive_json()["type"] == "message_committed"
+        assert websocket.receive_json()["type"] == "agent_action"
+        assert websocket.receive_json()["type"] == "table_state_changed"
+
+        websocket.send_json({"type": "request_nudge"})
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "intervention_cooldown",
+            "detail": "two human turns are required between Agent interventions",
+        }
         websocket.send_json({"type": "request_debug_state"})
         # This is the next event, proving that SILENCE did not enqueue agent_action.
         assert websocket.receive_json()["type"] == "table_state_changed"

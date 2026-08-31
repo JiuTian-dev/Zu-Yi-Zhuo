@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, AgentActionEvent, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, GateDecision, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import (
     build_personal_card,
@@ -63,6 +63,10 @@ class _RequestDebugState(_ClientEvent):
 
 class _RequestClose(_ClientEvent):
     type: Literal["request_close"]
+
+
+class _RequestNudge(_ClientEvent):
+    type: Literal["request_nudge"]
 
 
 class _PeripheralComment(_ClientEvent):
@@ -256,7 +260,7 @@ def register_websocket_routes(
                 mutates_table = (
                     viewer_mode == "participant" and payload["type"] in {
                         "human_message", "participant_joined", "participant_left",
-                        "participant_consent", "request_close",
+                        "participant_consent", "request_close", "request_nudge",
                     }
                 ) or (
                     viewer_mode == "commenter" and payload["type"] == "peripheral_comment"
@@ -423,6 +427,74 @@ def register_websocket_routes(
                                 "type": "intervention_reflected",
                                 "record": reflected.model_dump(mode="json"),
                             })
+                    elif payload["type"] == "request_nudge":
+                        _RequestNudge.model_validate(payload)
+                        state = repository.get(table_id)
+                        if participant_id not in state.participants:
+                            raise ValueError(f"unknown participant: {participant_id}")
+                        if state.conversation.closed:
+                            await _send_error(websocket, "table_closed", "table is already closed")
+                            continue
+                        if state.conversation.soft_expired:
+                            await _send_error(websocket, "table_soft_expired", "table is soft-expired")
+                            continue
+                        if state.conversation.safety_level is SafetyLevel.CRITICAL:
+                            await _send_error(websocket, "table_paused", "table is paused for safety review")
+                            continue
+                        turns = repository.turns(table_id)
+                        if not turns:
+                            await _send_error(
+                                websocket,
+                                "nudge_unavailable",
+                                "a cold-start nudge requires a committed human turn",
+                            )
+                            continue
+                        if (
+                            state.intervention.last_action is not Action.SILENCE
+                            and state.intervention.human_turns_since_last_intervention < 2
+                        ):
+                            await _send_error(
+                                websocket,
+                                "intervention_cooldown",
+                                "two human turns are required between Agent interventions",
+                            )
+                            continue
+                        evidence_turn = turns[-1].turn_id
+                        gate = GateDecision(
+                            should_speak=True,
+                            evidence_turns=[evidence_turn],
+                            reasons_to_speak=["首条表达暂未获得自然回应，主动递一句轻问"],
+                            reasons_to_stay_silent=[],
+                            confidence=.72,
+                        )
+                        route = RouteDecision(
+                            action=Action.PROBE,
+                            evidence_turns=[evidence_turn],
+                            confidence=.72,
+                        )
+                        action = await generate_host_event_with_provider(
+                            state, route, None, provider
+                        )
+                        agent_turn_id = f"{table_id}:agent:{state.version + 1}"
+                        final_state = record_intervention(state, route, agent_turn_id)
+                        action = action.model_copy(update={"state_version": final_state.version})
+                        model_name = str(
+                            getattr(provider, "model", None)
+                            or (type(provider).__name__ if provider is not None else "deterministic-demo")
+                        )
+                        record = _build_intervention_record(
+                            table_id, final_state, route, action, model=model_name
+                        )
+                        state = repository.append_intervention_bundle(
+                            table_id, final_state, record
+                        )
+                        await broadcast(table_id, {
+                            "type": "agent_action",
+                            **action.model_dump(mode="json"),
+                            "gate": gate.model_dump(mode="json"),
+                            "route": route.model_dump(mode="json"),
+                        })
+                        await broadcast_state(table_id, state)
                     elif payload["type"] == "participant_joined":
                         event = _ParticipantJoined.model_validate(payload)
                         if event.participant_id != participant_id:
