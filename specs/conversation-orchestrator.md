@@ -565,7 +565,7 @@ master
 | D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture, namespaced IDs, and JSON persistence | 284 tests + compileall + diff check | `766cb50` |
 | D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 287 tests + compileall + diff check | `70aaca1` |
 | D65 source full-lifecycle timeout | complete | candidate/content/personal command bridges enforce one timeout across process startup, stdin, drain, exit, and cleanup | 290 tests + compileall + diff check | `26abb0d` |
-| D66 server-generated table selection event | in progress | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check pending | — |
+| D66 server-generated table selection event | complete | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check | `0fb1bbc` |
 
 ## 已知坑位（Running Gotchas）
 
