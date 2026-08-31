@@ -166,6 +166,8 @@ master
 | D09 grounding persistence | complete | JSON snapshots persist trusted grounding cards, consume them atomically, and load legacy files without the optional card section | 154 tests + compileall + diff check | `c4e66db` |
 | D10 table WebSocket fanout | complete | table-scoped connection registry; public message/action/state/safety/close-start events fan out to peers; debug state and personal close cards remain requester-only; disconnect cleanup | 155 tests + compileall + diff check | `99d8bcc` |
 | D11 runtime entrypoint | complete | `app.main:app` ASGI entrypoint; `TABLE_REPOSITORY_PATH` selects restart-safe JSON repository while default remains in-memory | 155 tests + compileall + import smoke check | `b0da261` |
+| D12 REST privacy projection | complete | participant profile fields default to redacted; owner view, explicit consent/revocation endpoint, and replay projections preserve public evidence while hiding private profile data | 156 tests + compileall + diff check | `195f4bc` |
+| D13 WebSocket consent projection | complete | connection-scoped viewer identity; consent event is self-scoped; public consent change broadcasts while each state event is independently redacted | 157 tests + compileall + privacy regression | `a52f228` |
 
 ## 已知坑位（Running Gotchas）
 
