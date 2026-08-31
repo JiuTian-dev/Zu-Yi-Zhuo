@@ -261,6 +261,13 @@
 - **替代方案**: 把举报写成核心消息、把举报内容广播给全桌，或用未认证的管理端点暴露所有举报。
 - **代价**: V1 的审核处理状态由后续受控运营/适配器更新；当前 API 只负责安全收集、幂等和举报人可见性，不自动移除成员或关闭桌。
 
+### ADR-35: 用户授权个人层通过短生命周期 source 进入
+
+- **决策**: 增加 `PersonalContextSource` 适配器和 `POST /personal-context/source-preview?viewer_id=...`。适配器在服务端完成 OAuth/CLI/MCP 授权，返回只属于该 viewer 的关注、收藏、个人公开表达等规范化 `PersonalContextSignal`；服务端只生成私有、短生命周期的主题预览，不把 access token 交给前端、不把个人信号写入 Table State 或默认 JSON 快照。source 未配置、超时或 owner 不匹配时 fail-closed。
+- **理由**: 产品需要“从用户自己的长期表达和兴趣出发”发现问题，但个人层比公共内容更敏感；将授权和读取封装在 source，既能接入真实 OAuth，又能让核心机会/匹配逻辑不绑定平台私有接口。
+- **替代方案**: 前端直接携带 token 调知乎、把个人收藏原文永久落盘，或把个人信号广播给同桌。
+- **代价**: V1 只提供 viewer 自己的预览，不自动创建桌、不自动公开个人画像；正式 OAuth scope、刷新和撤权由外部适配器负责，后续可把预览作为机会检测的私有输入。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -300,6 +307,7 @@ DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_i
 GET  /participants/{participant_id}/no-match?viewer_id={participant_id}
 POST /tables/{id}/safety-reports?reporter_id={reporter_id}
 GET  /tables/{id}/safety-reports?reporter_id={reporter_id}
+POST /personal-context/source-preview?viewer_id={viewer_id}
 WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={participant|observer|commenter}
 ```
 
@@ -323,6 +331,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
 不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
+个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 
 ### 数据模型 / 类型定义
 
@@ -390,7 +399,8 @@ master
                                                                                                                               ←── D53 peripheral comment ledger
                                                                                                                                      ←── D54 evolved-question table recompose
                                                                                                                                           ←── D55 global no-match preference boundary
-                                                                                                                                                 ←── D56 safety report ledger and privacy boundary
+                                                                                                                                                ←── D56 safety report ledger and privacy boundary
+                                                                                                                                                        ←── D57 authorized personal context source boundary
 ```
 
 ## Progress Ledger
@@ -457,6 +467,7 @@ master
 | D54 evolved-question table recompose | complete | close-only next-table creation with persisted origin link and no automatic member copying | 256 tests + compileall + diff check | `ef544d1` |
 | D55 global no-match preference boundary | complete | self-scoped persistent no-match ledger, symmetric invitation rejection and candidate-preview filtering | 261 tests + compileall + diff check | `201d72c` |
 | D56 safety report ledger and privacy boundary | complete | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | 265 tests + compileall + diff check | `3f82db6` |
+| D57 authorized personal context source boundary | complete | server-side OAuth/CLI/MCP adapter seam with viewer-only ephemeral personal preview | 271 tests + compileall + diff check | `9d33685` |
 
 ## 已知坑位（Running Gotchas）
 
