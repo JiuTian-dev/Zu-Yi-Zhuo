@@ -362,6 +362,10 @@ class TableState(ContractModel):
             raise ValueError("soft-expired conversations must use soft_expired or closed state")
         if self.conversation.state == "soft_expired" and not self.conversation.soft_expired:
             raise ValueError("soft_expired state requires soft_expired flag")
+        if self.conversation.closed:
+            self.agent.status = "closed"
+        elif self.conversation.soft_expired or self.conversation.safety_level.value == "critical":
+            self.agent.status = "paused"
         return self
 
 class GateDecision(ContractModel):
