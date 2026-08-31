@@ -39,6 +39,9 @@ class ReplayResponse(BaseModel):
     table_id: str
     messages: list[HumanTurn]
     snapshots: list[TableState]
+    interventions: list[InterventionRecord] = Field(default_factory=list)
+    comments: list[PeripheralComment] = Field(default_factory=list)
+    comment_promotions: list[CommentPromotion] = Field(default_factory=list)
 
 
 class ParticipantConsentRequest(BaseModel):
@@ -887,6 +890,9 @@ def create_app(
                 table_id=table_id,
                 messages=repo.turns(table_id),
                 snapshots=[projected(item, participant_id) for item in snapshots],
+                interventions=repo.interventions(table_id),
+                comments=repo.comments(table_id),
+                comment_promotions=repo.comment_promotions(table_id),
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
