@@ -408,6 +408,13 @@
 - **替代方案**: 允许任意状态覆盖、把状态交给前端保存、或复用安全处置接口；这些方案分别会破坏审计顺序、重启一致性或混淆“举报处理”和“桌面安全恢复”。
 - **代价**: 审核器需要显式携带目标状态；重新打开举报暂不支持，若未来需要应另设带理由的复核事件。
 
+### ADR-56: 举报状态迁移保留受信审核事件
+
+- **决策**: 每次真实的举报状态迁移额外写入 `SafetyReportStatusAudit`，记录举报、原状态、目标状态、受信审核器身份和可选处置理由；重复提交当前状态不新增事件。审核器可通过 `GET /tables/{table_id}/safety-reports/{report_id}/history` 读取该举报的完整迁移链，普通成员永远不可见。
+- **理由**: 当前举报对象只保存最终状态，无法回答“谁完成了处置、从哪个状态推进、为何推进”。独立事件链补齐安全审核的可解释性，同时不把 moderator 身份或理由暴露给桌内广播，也不改变举报状态机。
+- **替代方案**: 覆盖举报上的 `updated_by/updated_reason` 字段、复用桌面干预日志、或把审核信息广播给成员；这些方案分别会丢失多次迁移、混淆安全域或扩大隐私泄露面。
+- **代价**: JSON 快照新增可选 `safety_report_audits` 段；旧快照按空事件链加载，且历史上无法补回 D78 之前的审核身份与理由。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -670,6 +677,7 @@ master
 | D76 replay projection for late joiners | complete | Current member identity is validated once, then historical snapshots tolerate the viewer being absent before joining while retaining privacy projection | 314 tests + compileall + diff check | `b7bdc90` + `e39c138` |
 | D77 moderator-only safety report queue | complete | Trusted moderator identity can read a table's full private report queue; participant self-read remains unchanged and no report is broadcast | 316 tests + compileall + diff check | `de40b4d` + `7fda8d8` |
 | D78 moderator safety report status lifecycle | complete | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | 318 tests + compileall + diff check | `276b595` + `a115fef` |
+| D79 safety report transition audit | in_progress | Persist trusted moderator identity, from/to status, and optional reason for each real report transition; moderator-only history read with legacy JSON compatibility | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
