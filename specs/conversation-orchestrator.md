@@ -478,6 +478,13 @@
 - **替代方案**: 让前端自行 POST 任意 `table_closed` 事件、在每次状态查询时隐式记录、或把收桌行为写进公共消息；这些方案分别允许伪造、混淆曝光与主动行为、或污染桌面叙事和隐私边界。
 - **代价**: 只有携带参与者身份的用户入口会产生事件；直接调用仓储的旧脚本不会自动补行为，生产账号接入后仍需把 `participant_id` 替换为认证主体。
 
+### ADR-66: 带身份收桌与行为事件同一仓储提交
+
+- **决策**: 增加仓储内部的 `close_table_for_participant(table_id, participant_id)` 写路径；它在同一进程锁/JSON 原子快照中完成 evidence-backed close 状态迁移和 `table_closed` 私有行为事件。REST/WS 带参与者身份的收桌统一调用该路径；无身份的旧 `close_table(table_id)` 只迁移桌状态，不产生行为事件。重复调用不增加状态版本或重复行为事件。
+- **理由**: 收桌状态和行为飞轮信号必须共同成功或共同可恢复，避免崩溃窗口造成“桌已关闭但用户行为缺失”的不可解释数据；同时保留 CLI/旧脚本的兼容入口。
+- **替代方案**: 继续在 API 层连续调用两个仓储方法、让 JSON 写入后异步补事件、或删除无身份 close 兼容；这些方案分别留下半提交窗口、难以证明事件最终到达、或破坏已有回放/脚本调用。
+- **代价**: 内存与 JSON 仓储需要维护一条带 actor 的平行 close 写路径；未来数据库实现应把状态行与行为事件放在同一事务。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -564,7 +571,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
-行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
+行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；带身份的 REST/WS 收桌在同一仓储提交中生成稳定 `table_closed` 事件，旧的无身份 `close_table` 兼容入口只迁移桌状态；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
 
 ### 数据模型 / 类型定义
 
@@ -673,7 +680,8 @@ master
                                                                                                                                                                                                                                                                                                                        ←── D85 WebSocket frame size boundary
                                                                                                                                                                                                                                                                                                                               ←── D86 self-scoped invitation preference update
                                                                                                                                                                                                                                                                                                                                    ←── D87 WebSocket inbound event rate limit
-                                                                                                                                                                                                                                                                                                                                          ←── D88 table_closed behavior event
+                                                                                                                                                                                                                                                                                                                                         ←── D88 table_closed behavior event
+                                                                                                                                                                                                                                                                                                                                                   ←── D89 atomic actor close behavior commit
 ```
 
 ## Progress Ledger
@@ -772,6 +780,7 @@ master
 | D86 self-scoped invitation preference update | complete | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | 341 tests + compileall + diff check | `72655e5` |
 | D87 WebSocket inbound event rate limit | complete | Add per-connection sliding-window event limit with structured retry response and runtime configuration | 345 tests + compileall + diff check | `ecd174d` |
 | D88 table_closed behavior event | complete | Record actor-scoped close behavior from REST/WS close paths with stable idempotent event and JSON recovery | 347 tests + compileall + diff check | `ff9d394` |
+| D89 atomic actor close behavior commit | complete | Commit actor close state and private table_closed event together in memory/JSON repositories; REST/WS use the atomic actor path while legacy identity-less close remains compatible | 347 tests + compileall + diff check | `f59a6bc` |
 
 ## 已知坑位（Running Gotchas）
 
