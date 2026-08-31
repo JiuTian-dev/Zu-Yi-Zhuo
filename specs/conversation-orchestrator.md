@@ -456,7 +456,7 @@ master
 | D53 peripheral comment ledger | complete | commenter-mode public comments with independent persistence, idempotency, and no core-turn mutation | 253 tests + compileall + diff check | `b484496` |
 | D54 evolved-question table recompose | complete | close-only next-table creation with persisted origin link and no automatic member copying | 256 tests + compileall + diff check | `ef544d1` |
 | D55 global no-match preference boundary | complete | self-scoped persistent no-match ledger, symmetric invitation rejection and candidate-preview filtering | 261 tests + compileall + diff check | `201d72c` |
-| D56 safety report ledger and privacy boundary | in progress | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | pending | — |
+| D56 safety report ledger and privacy boundary | complete | self-scoped idempotent reports, persisted for controlled moderation without peer disclosure | 265 tests + compileall + diff check | `3f82db6` |
 
 ## 已知坑位（Running Gotchas）
 
