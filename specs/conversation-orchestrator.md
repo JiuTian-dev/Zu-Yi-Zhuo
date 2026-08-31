@@ -135,6 +135,13 @@
 - **替代方案**: 只在 `MatchRequest.table_size` 上限制，或允许桌面无限扩容。
 - **代价**: 满桌时新邀请/入席返回冲突，候选人需要等待空位；未来若支持不同桌型，应把容量变成显式 Table 配置。
 
+### ADR-17: 外部候选 source 只通过规范化适配器进入匹配
+
+- **决策**: 增加 `POST /matches/source-preview`，由服务端注入的 `CandidateSource.search(query, limit)` 适配器返回已授权的 `ParticipantSeed`，随后复用现有 `MatchRequest`/`MatchPlan` 校验和隐私投影；默认未配置 source 时明确返回 503。
+- **理由**: 知乎 CLI、MCP、OAuth 的授权和字段契约可能由外部适配器负责变化，核心匹配不应绑定 undocumented endpoint，也不应把 access token 传给前端或 LLM。
+- **替代方案**: 后端直接抓取知乎网页/内部接口，或把外部 source 输出未经校验交给匹配。
+- **代价**: 正式 source 尚需平台授权和适配器实现；source 故障/格式错误会返回 502，不能自动降级成未经授权的候选。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -142,6 +149,7 @@
 ```text
 POST /tables
 POST /matches/preview
+POST /matches/source-preview
 POST /matches/confirm
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
@@ -169,6 +177,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
 邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
+候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
 
 ### 数据模型 / 类型定义
 
@@ -270,6 +279,7 @@ master
 | D35 roundtable invite preference | complete | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | 187 tests + compileall + diff check | `008a984` |
 | D36 optional Host wording provider | complete | provider-injected Host wording with public-context prompt, bounded output validation, deterministic fallback, and explicit runtime selection | 196 tests + compileall + diff check | `a04655e` |
 | D37 five-seat table capacity | complete | repository-level five-seat cap for create/add/invite/accept paths with in-memory and JSON parity | 199 tests + compileall + diff check | `cd6e518` |
+| D38 candidate source adapter boundary | complete | injectable CLI/MCP/OAuth-compatible candidate source, normalized source-preview endpoint, and privacy-safe failure responses | 203 tests + compileall + diff check | `e9bfcdf` |
 
 ## 已知坑位（Running Gotchas）
 
