@@ -320,6 +320,18 @@ class RelationshipSuggestion(ContractModel):
     evidence_turns: TurnEvidence
 
 
+class RelationshipMemory(ContractModel):
+    """A read-only reminder derived from one participant's closed-table evidence."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    core_question: str = Field(min_length=1)
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+    evidence_turns: TurnEvidence
+
+
 class FollowUpItem(ContractModel):
     item_type: Literal["suggestion", "commitment"]
     text: str = Field(min_length=1)

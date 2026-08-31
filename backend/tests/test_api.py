@@ -125,6 +125,34 @@ def test_follow_up_outcome_enforces_closed_table_owner_and_index() -> None:
     ).status_code == 404
 
 
+def test_relationship_memory_is_derived_from_closed_table_and_self_scoped() -> None:
+    client, repository = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "relationship-api", "core_question": "如何把试点做成长期能力？",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn(
+        "relationship-api", HumanTurn(turn_id=1, participant_id="p1", text="我负责落地第一轮试点。")
+    )
+    repository.append_turn(
+        "relationship-api", HumanTurn(turn_id=2, participant_id="p2", text="我做过供应商采购。")
+    )
+
+    assert client.get("/participants/p1/relationship-memory?viewer_id=p1").json() == []
+    assert client.post("/tables/relationship-api/close").status_code == 200
+
+    response = client.get("/participants/p1/relationship-memory?viewer_id=p1")
+    assert response.status_code == 200
+    memory = response.json()[0]
+    assert memory["table_id"] == "relationship-api"
+    assert memory["core_question"] == "如何把试点做成长期能力？"
+    assert memory["participant_id"] == "p2"
+    assert memory["display_name"] == "甲"
+    assert memory["evidence_turns"] == [2]
+    assert "declared_position" not in memory and "relevant_experience" not in memory
+    assert client.get("/participants/p1/relationship-memory?viewer_id=p2").status_code == 403
+
+
 def test_table_directory_defaults_to_open_public_projections() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={

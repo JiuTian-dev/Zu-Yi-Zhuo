@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.domain import Action, AgentActionEvent, FollowUpOutcome, PersonalCard, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, FollowUpOutcome, PersonalCard, RelationshipMemory, SafetyLevel, TableState
 from app.domain.schemas import ConversationState, InterventionRecord, InterventionState, ParticipantState, SharedBaseline
 
 def evidence(text: str, turn: int = 1) -> dict:
@@ -60,6 +60,16 @@ def test_relationship_suggestion_uses_participant_and_reason() -> None:
     card = PersonalCard(table_id="table-1", participant_id="p1", state_version=2,
                         worth_continuing_with=[{"participant_id": "p2", "reason": "可继续交叉验证", "evidence_turns": [2]}])
     assert card.worth_continuing_with[0].participant_id == "p2"
+
+def test_relationship_memory_has_only_public_reminder_fields() -> None:
+    memory = RelationshipMemory(
+        table_id="table-1", state_version=4, core_question="Q", participant_id="p2",
+        display_name="乙", reason="可继续交叉验证", evidence_turns=[2],
+    )
+    assert set(memory.model_dump()) == {
+        "table_id", "state_version", "core_question", "participant_id",
+        "display_name", "reason", "evidence_turns",
+    }
 
 def test_visual_hint_serializes_as_structured_json() -> None:
     event = AgentActionEvent(action="REFRAME", text="换个角度看。", visual_hint={"focus": ["p1", "p2"]},

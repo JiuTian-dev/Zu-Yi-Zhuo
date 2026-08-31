@@ -9,9 +9,9 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, SafetyLevel, TableState
+from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, RelationshipMemory, SafetyLevel, TableState
 from app.domain.schemas import ParticipantState
-from app.orchestrator import build_initial_state, observe_turn
+from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
 MAX_TABLE_PARTICIPANTS = 5
 
@@ -154,6 +154,32 @@ class InMemoryTableRepository:
             self._follow_up_outcomes[table_id][index].model_copy(deep=True)
             for index in sorted(self._follow_up_outcomes[table_id])
         ]
+
+    @_synchronized
+    def relationship_memories(self, participant_id: str) -> list[RelationshipMemory]:
+        """Derive self-only relationship reminders from closed table snapshots."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        memories: list[RelationshipMemory] = []
+        for table_id in sorted(self._states):
+            state = self._states[table_id][-1]
+            if not state.conversation.closed or participant_id not in state.participants:
+                continue
+            card = build_personal_card(state, participant_id)
+            for relationship in card.worth_continuing_with:
+                other = state.participants.get(relationship.participant_id)
+                if other is None:
+                    continue
+                memories.append(RelationshipMemory(
+                    table_id=table_id,
+                    state_version=state.version,
+                    core_question=state.core_question,
+                    participant_id=other.participant_id,
+                    display_name=other.display_name,
+                    reason=relationship.reason,
+                    evidence_turns=list(relationship.evidence_turns),
+                ))
+        return [memory.model_copy(deep=True) for memory in memories]
 
     @_synchronized
     def respond_invitation(

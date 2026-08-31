@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, PersonalCard, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
+from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableState
 from app.matching import build_match_plan
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
 from app.providers import LLMProvider
@@ -184,6 +184,16 @@ def create_app(
             project_state_for_viewer(state, participant_id)
             for state in repo.list_tables(include_closed=include_closed)
         ]
+
+    @api.get("/participants/{participant_id}/relationship-memory", response_model=list[RelationshipMemory])
+    def get_relationship_memory(
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> list[RelationshipMemory]:
+        """Return evidence-backed old-table reminders only to the participant themselves."""
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        return repo.relationship_memories(participant_id)
 
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:

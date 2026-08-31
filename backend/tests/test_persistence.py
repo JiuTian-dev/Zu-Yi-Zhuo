@@ -187,6 +187,26 @@ def test_follow_up_outcome_rejects_open_table_and_unknown_participant(tmp_path) 
         repository.record_follow_up_outcome(outcome.model_copy(update={"participant_id": "ghost"}))
 
 
+def test_json_repository_derives_relationship_memory_after_restart(tmp_path) -> None:
+    path = tmp_path / "relationships.json"
+    repository = JsonTableRepository(path)
+    repository.create("relationship", "如何把试点做成长期能力？", flagship_participants[:2])
+    repository.append_turn(
+        "relationship", HumanTurn(turn_id=1, participant_id="architect", text="我负责落地第一轮试点。")
+    )
+    repository.append_turn(
+        "relationship", HumanTurn(turn_id=2, participant_id="product", text="我做过企业产品试点。")
+    )
+    repository.close_table("relationship")
+
+    restored = JsonTableRepository(path)
+    memories = restored.relationship_memories("architect")
+    assert len(memories) == 1
+    assert memories[0].table_id == "relationship"
+    assert memories[0].participant_id == "product"
+    assert memories[0].evidence_turns == [2]
+
+
 def test_json_repository_persists_intervention_audit_records(tmp_path) -> None:
     path = tmp_path / "audit.json"
     repository = JsonTableRepository(path)
