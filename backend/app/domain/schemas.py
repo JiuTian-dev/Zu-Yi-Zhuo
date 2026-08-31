@@ -62,6 +62,7 @@ class ParticipantState(ContractModel):
     participant_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
     role: str = Field(min_length=1)
+    profile_shared: bool = False
     declared_position: str | None = Field(default=None, min_length=1)
     current_position: EvidenceStatement | None = None
     key_contributions: list[EvidenceStatement] = Field(default_factory=list)

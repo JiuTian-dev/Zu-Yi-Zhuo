@@ -85,3 +85,42 @@ def test_repository_get_is_isolated_from_callers() -> None:
     state.core_question = "篡改后的问题"
 
     assert repository.get("current").core_question == "Q"
+
+
+def test_profile_fields_are_hidden_until_explicit_consent() -> None:
+    client, _ = client_and_repo()
+    created = client.post("/tables", json={
+        "table_id": "privacy",
+        "core_question": "Q",
+        "participants": [
+            {
+                **participant("p1"),
+                "declared_position": "只对本人可见的立场",
+                "relevant_experience": [{"text": "未公开采购经历", "source_ref": "private:1"}],
+            },
+            {
+                **participant("p2"),
+                "declared_position": "另一份私有立场",
+                "relevant_experience": [{"text": "另一份经历", "source_ref": "private:2"}],
+            },
+        ],
+    })
+    assert created.status_code == 201
+    assert created.json()["participants"]["p1"]["declared_position"] is None
+    assert created.json()["participants"]["p1"]["unused_relevant_experience"] == []
+
+    own_view = client.get("/tables/privacy/state?participant_id=p1").json()
+    assert own_view["participants"]["p1"]["declared_position"] == "只对本人可见的立场"
+    assert own_view["participants"]["p1"]["unused_relevant_experience"][0]["source_ref"] == "private:1"
+    assert own_view["participants"]["p2"]["declared_position"] is None
+
+    consented = client.post("/tables/privacy/participants/p2/consent", json={"profile_shared": True})
+    assert consented.status_code == 200
+    assert consented.json()["participants"]["p2"]["declared_position"] == "另一份私有立场"
+    public_view = client.get("/tables/privacy/state").json()
+    assert public_view["participants"]["p2"]["declared_position"] == "另一份私有立场"
+    assert public_view["participants"]["p2"]["unused_relevant_experience"][0]["source_ref"] == "private:2"
+
+    revoked = client.post("/tables/privacy/participants/p2/consent", json={"profile_shared": False})
+    assert revoked.status_code == 200
+    assert client.get("/tables/privacy/state").json()["participants"]["p2"]["declared_position"] is None

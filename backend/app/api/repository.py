@@ -61,6 +61,19 @@ class InMemoryTableRepository:
         del updated.participants[participant_id]
         return self._append(table_id, updated)
 
+    def set_profile_consent(self, table_id: str, participant_id: str, shared: bool) -> TableState:
+        """Set one participant's explicit profile-sharing consent."""
+        state = self.get(table_id)
+        participant = state.participants.get(participant_id)
+        if participant is None:
+            raise ValueError(f"unknown participant: {participant_id}")
+        if participant.profile_shared is shared:
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.participants[participant_id].profile_shared = shared
+        return self._append(table_id, updated)
+
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
         """Commit a human turn; the WebSocket adapter will use this helper later."""
         committed = turn.model_copy(deep=True)
