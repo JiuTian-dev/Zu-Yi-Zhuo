@@ -177,6 +177,13 @@
 - **替代方案**: 直接删除桌、继续在旧桌接收消息，或让前端本地标记过期。
 - **代价**: 客户端需要处理 `table_soft_expired` 错误；正式重组流程仍应创建新桌并重新走匹配/邀请边界。
 
+### ADR-23: 关系记忆从收桌证据派生且只读
+
+- **决策**: 增加按参与者查询的 `RelationshipMemory` 只读视图，来源限定为已收桌且 `PersonalCard.worth_continuing_with` 有证据的关系建议；每条记忆包含旧桌 ID、旧桌问题、对方公开姓名/参与者 ID、关系理由、证据 turn 和收桌状态版本。查询必须由本人 `viewer_id` 自证，响应不包含对方私有立场、经历或个人卡全文。记忆从持久化 Table State 派生，不另建可漂移的编辑副本。
+- **理由**: 产品需要在再次遇到旧桌友时提醒“曾在哪桌围绕什么问题聊过”，但关系是否继续由人决定；派生式只读视图能复用收桌证据并避免额外一致性事务。
+- **替代方案**: 前端本地保存关系、把关系写成新的公共消息，或建立允许 Agent 自由编辑的长期画像。
+- **代价**: 只有已产生关系证据的已收桌才会出现记忆；未来接入好友/关注动作时需另设用户授权和关系状态，不把本接口当作社交关系写入口。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -202,6 +209,7 @@ GET  /tables/{id}/follow-ups?participant_id={participant_id}
 POST /tables/{id}/follow-ups/{index}/outcome?participant_id={participant_id}
 POST /tables/{id}/soft-expire?participant_id={participant_id}
 POST /tables/{id}/close
+GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 WS   /ws/tables/{table_id}?participant_id={participant_id}
 ```
 
@@ -217,6 +225,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 软过期边界：软过期桌默认从发现列表隐藏；桌内对话、成员、邀请、同步、主持/安全快照和来源卡片写入均返回冲突，历史回放、状态查询、收桌和收桌后行动回响仍可用；重复软过期不增加版本。
+关系记忆边界：只从已收桌的证据派生；`viewer_id` 必须等于路径参与者本人；只返回公开姓名、旧桌问题、关系理由和证据定位，不返回对方私有画像或个人卡全文；该接口只读。
 候选 source 边界：外部 source 只允许通过服务端注入的 `CandidateSource` 返回规范化 `ParticipantSeed`；未配置返回 503，输出不合法返回 502，不接受前端 token。
 收桌产物边界：关闭前返回 409；关闭后只返回请求参与者自己的 `personal_card`，共享基线可恢复但不包含其他人的个人卡。
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
@@ -331,6 +340,7 @@ master
 | D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | 209 tests + compileall + diff check | `9076fca` |
 | D43 follow-up outcome ledger | complete | close-card follow-ups expose a REST read/write contract with owner checks and JSON restart persistence | 214 tests + compileall + diff check | `aac94a0` |
 | D44 soft-expired table lifecycle | in progress | explicit soft-expire state, discovery filtering, read-only conversation boundary, history-preserving close path, and reconnect-safe WebSocket error | 218 tests + compileall + diff check | pending |
+| D45 relationship memory view | planned | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | pending | pending |
 
 ## 已知坑位（Running Gotchas）
 
