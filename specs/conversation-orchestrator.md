@@ -252,7 +252,7 @@ master
 | D32 invitation lifecycle | complete | persistent pending/accepted/declined invitations with candidate-scoped response and redacted preview | 181 tests + compileall + diff check | `fe05845` + `78ae2fb` |
 | D33 async-to-sync upgrade | complete | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | 184 tests + compileall + diff check | `5f9d3f7` + `fb82f8b` |
 | D34 public table discovery | complete | list open tables with privacy-projected state and optional closed-table inclusion | 185 tests + compileall + diff check | `bc7f9be` |
-| D35 roundtable invite preference | in progress | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | pending | pending |
+| D35 roundtable invite preference | complete | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | 187 tests + compileall + diff check | `008a984` |
 
 ## 已知坑位（Running Gotchas）
 
