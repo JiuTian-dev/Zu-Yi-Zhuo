@@ -242,6 +242,43 @@ def test_status_history_requires_moderator_and_known_report() -> None:
     ).status_code == 404
 
 
+def test_moderation_queue_filters_status_and_paginates_in_report_order() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("queue-page", "Q", [_seed("alice"), _seed("bob")])
+    for index, status_value in enumerate(("open", "acknowledged", "resolved"), start=1):
+        repository.record_safety_report(SafetyReport(
+            report_id=f"report-{index}",
+            table_id="queue-page",
+            reporter_id="alice",
+            target_participant_id="bob",
+            category="spam",
+            description=f"举报 {index}",
+            state_version=0,
+        ))
+        if status_value != "open":
+            repository.update_safety_report_status("queue-page", f"report-{index}", status_value)
+    client = TestClient(create_app(repository, moderator_resolver=_moderator))
+
+    page = client.get(
+        "/tables/queue-page/safety-reports/moderation?offset=1&limit=1",
+        headers={"X-Moderator-ID": "mod-1"},
+    )
+    assert page.status_code == 200
+    assert [item["report_id"] for item in page.json()] == ["report-2"]
+
+    resolved = client.get(
+        "/tables/queue-page/safety-reports/moderation?status=resolved",
+        headers={"X-Moderator-ID": "mod-1"},
+    )
+    assert resolved.status_code == 200
+    assert [item["report_id"] for item in resolved.json()] == ["report-3"]
+
+    assert client.get(
+        "/tables/queue-page/safety-reports/moderation?limit=201",
+        headers={"X-Moderator-ID": "mod-1"},
+    ).status_code == 422
+
+
 def test_json_report_status_transition_survives_restart(tmp_path) -> None:
     path = tmp_path / "status.json"
     repository = JsonTableRepository(path)

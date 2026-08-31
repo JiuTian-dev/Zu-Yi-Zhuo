@@ -1013,13 +1013,26 @@ def create_app(
     def get_moderation_safety_reports(
         table_id: str,
         request: Request,
+        status_filter: Literal["open", "acknowledged", "resolved"] | None = Query(
+            default=None, alias="status"
+        ),
+        offset: int = Query(default=0, ge=0, le=100_000),
+        limit: int = Query(default=100, ge=1, le=200),
     ) -> list[SafetyReport]:
-        """Expose the full private report queue only to the moderation adapter."""
+        """Expose a bounded, stable private report queue only to moderation."""
         if moderator_resolver is None:
             raise HTTPException(status_code=503, detail="moderation is not configured")
         require_moderator_identity(moderator_resolver, request)
         table_or_404(table_id)
-        return repo.safety_reports(table_id)
+        try:
+            return repo.safety_reports(
+                table_id,
+                status=status_filter,
+                offset=offset,
+                limit=limit,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @api.get(
         "/tables/{table_id}/safety-reports/{report_id}/history",

@@ -265,13 +265,29 @@ class InMemoryTableRepository:
 
     @_synchronized
     def safety_reports(
-        self, table_id: str, reporter_id: str | None = None
+        self,
+        table_id: str,
+        reporter_id: str | None = None,
+        *,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int | None = None,
     ) -> list[SafetyReport]:
         """Return reports; callers must apply the public reporter visibility boundary."""
         self.get(table_id)
+        if status is not None and status not in {"open", "acknowledged", "resolved"}:
+            raise ValueError("unsupported safety report status filter")
+        if offset < 0 or (limit is not None and limit < 1):
+            raise ValueError("safety report pagination must be non-negative")
         rows = self._safety_reports[table_id]
         if reporter_id is not None:
             rows = [item for item in rows if item.reporter_id == reporter_id]
+        if status is not None:
+            rows = [item for item in rows if item.status == status]
+        if limit is not None:
+            rows = rows[offset:offset + limit]
+        elif offset:
+            rows = rows[offset:]
         return [item.model_copy(deep=True) for item in rows]
 
     @_synchronized
