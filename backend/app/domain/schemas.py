@@ -190,6 +190,22 @@ class FollowUpItem(ContractModel):
         return self
 
 
+class ReflectionResult(ContractModel):
+    """Effect log for an intervention after enough human turns have passed."""
+
+    intervention_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    intervention_action: Action
+    human_turns_observed: int = Field(ge=0)
+    effective: bool
+    score: Confidence
+    confidence: Confidence
+    effects: list[EvidenceStatement] = Field(default_factory=list)
+    negative_effects: list[EvidenceStatement] = Field(default_factory=list)
+    strategy_note: str = Field(min_length=1)
+
+
 class SharedBaseline(ContractModel):
     table_id: str = Field(min_length=1)
     state_version: int = Field(ge=0)

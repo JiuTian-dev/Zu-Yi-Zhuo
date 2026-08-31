@@ -3,13 +3,15 @@
 from app.domain import Action, GateDecision, RouteDecision, TableState
 
 from .gate import evaluate_gate
+from .close import refresh_close_readiness
 from .router import route
 
 
 def decide_intervention(state: TableState) -> tuple[GateDecision, RouteDecision]:
     """Evaluate the silence-first gate, then route the resulting decision."""
-    gate = evaluate_gate(state)
-    return gate, route(state, gate)
+    refreshed = refresh_close_readiness(state)
+    gate = evaluate_gate(refreshed)
+    return gate, route(refreshed, gate)
 
 
 def record_intervention(previous: TableState, decision: RouteDecision, agent_turn_id: str) -> TableState:
