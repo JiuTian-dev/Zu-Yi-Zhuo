@@ -505,7 +505,7 @@ master
 | D57 authorized personal context source boundary | complete | server-side OAuth/CLI/MCP adapter seam with viewer-only ephemeral personal preview | 271 tests + compileall + diff check | `9d33685` |
 | D58 personal context consent and scope gate | complete | self-scoped persistent scope consent, revoke path, and preview enforcement | 273 tests + compileall + diff check | `4e5cc42` |
 | D59 explicit peripheral comment promotion | complete | member-triggered safe comment-to-core turn with provenance, privacy-aware fanout, and idempotent JSON persistence | 278 tests + compileall + diff check | `931783d` |
-| D60 explicit AgentPresence lifecycle contract | in progress | stable public Agent identity outside human participants with safety/expiry/close status | pending | — |
+| D60 explicit AgentPresence lifecycle contract | complete | stable public Agent identity outside human participants with safety/expiry/close status and legacy persistence defaults | 280 tests + compileall + diff check | `64b9463` |
 
 ## 已知坑位（Running Gotchas）
 
