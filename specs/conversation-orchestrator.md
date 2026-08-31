@@ -93,6 +93,13 @@
 - **替代方案**: 只在状态里覆盖保存最后一次动作，或把审计字段塞进前端事件。
 - **代价**: JSON 快照格式增加可选 `interventions` 段；未来接数据库时需要独立事件表。
 
+### ADR-11: WebSocket 消息按桌幂等提交
+
+- **决策**: 客户端 `message_id` 在单桌内作为幂等键；服务端在仓储锁内分配递增 `turn_id`。相同 ID 与相同内容的重试只返回 `duplicate_message`，不会再次观察、路由或触发主持动作；同 ID 不同内容直接拒绝。
+- **理由**: 移动端/浏览器在网络抖动后会重发消息，重复触发一次主持会污染证据、冷却和审计链；turn id 也不能由并发连接在锁外计算。
+- **替代方案**: 仅在 WebSocket 进程内缓存 ID，或继续依赖客户端去重。
+- **代价**: `HumanTurn` 增加可选 `message_id` 以兼容旧 JSON；未来数据库实现需把幂等键设为桌级唯一约束。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -115,6 +122,7 @@ Client events: `human_message`, `participant_joined`, `participant_left`, `parti
 Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
+消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 
 ### 数据模型 / 类型定义
@@ -209,6 +217,7 @@ master
 | D28 backend handoff guide | complete | runtime/install/configuration, WebSocket and privacy boundaries, optional provider usage, and verified commands documented in `backend/README.md` | documentation review + 174-test baseline | `0336a0d` |
 | D29 SILENCE audit invariant | complete | all repository audit-write paths reject `SILENCE`, preserving the rule that silence produces no intervention record | 174 tests + compileall + diff check | `e00c379` |
 | D30 schema audit invariant | complete | `InterventionRecord` itself rejects `SILENCE`, so JSON reload and direct model construction cannot bypass the no-pseudo-audit rule | 175 tests + compileall + diff check | `34fe1ce` |
+| D31 WebSocket message idempotency | complete | table-scoped `message_id` dedupe with atomic server-side `turn_id` allocation; exact retries do not re-run Observer/Host and conflicting reuse is rejected | 177 tests + compileall + diff check | pending |
 
 ## 已知坑位（Running Gotchas）
 

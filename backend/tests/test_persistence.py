@@ -28,6 +28,31 @@ def test_json_repository_recovers_snapshots_messages_and_safety_state(tmp_path) 
     assert restored.get("persisted").conversation.safety_level is SafetyLevel.CRITICAL
 
 
+def test_json_repository_deduplicates_message_ids_across_restart(tmp_path) -> None:
+    path = tmp_path / "idempotency.json"
+    repository = JsonTableRepository(path)
+    repository.create("idempotent", "Q", flagship_participants)
+
+    first, created = repository.append_message_once(
+        "idempotent", "architect", "我亲历过试点。", "msg-1"
+    )
+    assert created is True
+    duplicate, created = repository.append_message_once(
+        "idempotent", "architect", "我亲历过试点。", "msg-1"
+    )
+    assert created is False
+    assert duplicate.version == first.version
+
+    restored = JsonTableRepository(path)
+    duplicate_after_restart, created = restored.append_message_once(
+        "idempotent", "architect", "我亲历过试点。", "msg-1"
+    )
+    assert created is False
+    assert duplicate_after_restart.version == first.version
+    with pytest.raises(ValueError, match="different message"):
+        restored.append_message_once("idempotent", "architect", "换一条内容", "msg-1")
+
+
 def test_json_repository_returns_isolated_models_after_restart(tmp_path) -> None:
     path = tmp_path / "table.json"
     repository = JsonTableRepository(path)
@@ -133,6 +158,28 @@ def test_in_memory_repository_serializes_competing_consent_writes() -> None:
     state = repository.get("concurrent")
     assert state.version == 2
     assert all(person.profile_shared for person in state.participants.values())
+
+
+def test_in_memory_repository_deduplicates_competing_message_retries() -> None:
+    from app.api.repository import InMemoryTableRepository
+
+    repository = InMemoryTableRepository()
+    repository.create("concurrent-message", "Q", flagship_participants)
+    barrier = Barrier(2)
+
+    def submit() -> tuple[int, bool]:
+        barrier.wait()
+        state, created = repository.append_message_once(
+            "concurrent-message", "architect", "我亲历过试点。", "same-id"
+        )
+        return state.version, created
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: submit(), range(2)))
+
+    assert sorted(results) == [(1, False), (1, True)]
+    assert len(repository.turns("concurrent-message")) == 1
+    assert repository.get("concurrent-message").version == 1
 
 
 def test_intervention_bundle_rejects_invalid_audit_without_committing_state() -> None:

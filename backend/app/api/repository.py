@@ -113,6 +113,37 @@ class InMemoryTableRepository:
         return self._append(table_id, state)
 
     @_synchronized
+    def append_message_once(
+        self, table_id: str, participant_id: str, text: str, message_id: str
+    ) -> tuple[TableState, bool]:
+        """Atomically commit one client message, returning ``(state, created)``.
+
+        WebSocket clients may retry after a lost acknowledgement.  The message id
+        is scoped to a table: an exact retry is acknowledged as already committed,
+        while reusing an id for different content is rejected.
+        """
+        current = self.get(table_id)
+        if current.conversation.closed:
+            raise ValueError("table is closed")
+        existing = next(
+            (turn for turn in self._turns[table_id] if turn.message_id == message_id),
+            None,
+        )
+        if existing is not None:
+            if existing.participant_id != participant_id or existing.text != text:
+                raise ValueError("message_id already belongs to different message")
+            return current, False
+        turn = HumanTurn(
+            turn_id=max((item.turn_id for item in self._turns[table_id]), default=0) + 1,
+            participant_id=participant_id,
+            text=text,
+            message_id=message_id,
+        )
+        state = observe_turn(current, turn)
+        self._turns[table_id].append(turn)
+        return self._append(table_id, state), True
+
+    @_synchronized
     def close_table(self, table_id: str) -> TableState:
         """Mark a table closed exactly once after close artifacts are ready."""
         state = self.get(table_id)
@@ -271,6 +302,35 @@ class JsonTableRepository(InMemoryTableRepository):
         turns = {**self._turns, table_id: [*self._turns[table_id], committed]}
         self._commit(states, turns, self._trusted_grounding_cards, self._interventions)
         return snapshot.model_copy(deep=True)
+
+    @_synchronized
+    def append_message_once(
+        self, table_id: str, participant_id: str, text: str, message_id: str
+    ) -> tuple[TableState, bool]:
+        """Atomically commit one client message and persist the idempotency key."""
+        current = self.get(table_id)
+        if current.conversation.closed:
+            raise ValueError("table is closed")
+        existing = next(
+            (turn for turn in self._turns[table_id] if turn.message_id == message_id),
+            None,
+        )
+        if existing is not None:
+            if existing.participant_id != participant_id or existing.text != text:
+                raise ValueError("message_id already belongs to different message")
+            return current, False
+        turn = HumanTurn(
+            turn_id=max((item.turn_id for item in self._turns[table_id]), default=0) + 1,
+            participant_id=participant_id,
+            text=text,
+            message_id=message_id,
+        )
+        state = observe_turn(current, turn)
+        snapshot = TableState.model_validate(state.model_dump())
+        states = {**self._states, table_id: [*self._states[table_id], snapshot]}
+        turns = {**self._turns, table_id: [*self._turns[table_id], turn]}
+        self._commit(states, turns, self._trusted_grounding_cards, self._interventions)
+        return snapshot.model_copy(deep=True), True
 
     @_synchronized
     def append_intervention_record(self, table_id: str, record: InterventionRecord) -> None:

@@ -1,12 +1,13 @@
 """Structured WebSocket stream for a conversation table."""
 
+import asyncio
 from collections.abc import Callable
 from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
-from app.domain import Action, AgentActionEvent, HumanTurn, InterventionRecord, ReflectionResult, RouteDecision, SafetyLevel, TableState
+from app.domain import Action, AgentActionEvent, InterventionRecord, ReflectionResult, RouteDecision, SafetyLevel, TableState
 from app.domain.schemas import EvidenceStatement, TokenUsage
 from app.orchestrator import (
     build_personal_card,
@@ -138,6 +139,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
     """Register routes on a specific app instance so tests can inject a repository."""
 
     connections: dict[str, dict[WebSocket, str]] = {}
+    table_locks: dict[str, asyncio.Lock] = {}
 
     async def _broadcast(table_id: str, factory: Callable[[str], dict]) -> None:
         """Fan out public table events and discard peers that already closed."""
@@ -184,6 +186,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
             return
 
         connections.setdefault(table_id, {})[websocket] = participant_id
+        table_lock = table_locks.setdefault(table_id, asyncio.Lock())
         try:
             while True:
                 try:
@@ -198,6 +201,12 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                     await _send_error(websocket, "invalid_event", "event must include a string type")
                     continue
 
+                mutates_table = payload["type"] in {
+                    "human_message", "participant_joined", "participant_left",
+                    "participant_consent", "request_close",
+                }
+                if mutates_table:
+                    await table_lock.acquire()
                 try:
                     if payload["type"] == "human_message":
                         event = _HumanMessage.model_validate(payload)
@@ -210,6 +219,9 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                         if current_state.conversation.safety_level is SafetyLevel.CRITICAL:
                             await _send_error(websocket, "table_paused", "table is paused for safety review")
                             continue
+                        # The id is only needed to annotate a possible safety
+                        # decision here.  A safe message receives its authoritative
+                        # turn id inside the repository's atomic commit below.
                         turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
                         safety = evaluate_safety(event.text, turn_id)
                         if safety.blocked:
@@ -228,8 +240,16 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             )
                             continue
 
-                        turn = HumanTurn(turn_id=turn_id, participant_id=participant_id, text=event.text)
-                        state = repository.append_turn(table_id, turn)
+                        state, created = repository.append_message_once(
+                            table_id, participant_id, event.text, event.message_id
+                        )
+                        if not created:
+                            await _send_error(
+                                websocket,
+                                "duplicate_message",
+                                "message_id is already committed for this table",
+                            )
+                            continue
                         reflected = _reflect_latest_intervention(repository, table_id, state)
                         action = None
                         grounding_card = None
@@ -342,12 +362,16 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                     await _send_error(websocket, "invalid_payload", "event payload does not match its contract")
                 except (KeyError, ValueError) as error:
                     await _send_error(websocket, "invalid_event", str(error))
+                finally:
+                    if mutates_table:
+                        table_lock.release()
         finally:
             peers = connections.get(table_id)
             if peers is not None:
                 peers.pop(websocket, None)
                 if not peers:
                     connections.pop(table_id, None)
+                    table_locks.pop(table_id, None)
 
 
 __all__ = ("register_websocket_routes",)

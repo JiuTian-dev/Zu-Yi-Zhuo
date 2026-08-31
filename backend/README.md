@@ -17,6 +17,10 @@ python -m uvicorn app.main:app --reload
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：实时消息、主持动作、状态和关闭产物。
 
+WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相同 ID 和内容会返回
+`duplicate_message`，不会再次生成 turn、状态快照或主持动作；复用同一 ID 发送不同内容会被拒绝。
+安全检查仍在幂等提交前执行，因此未提交的危险消息不会占用消息 ID。
+
 默认使用内存仓储；设置 `TABLE_REPOSITORY_PATH` 后使用同目录原子 JSON 快照：
 
 ```powershell

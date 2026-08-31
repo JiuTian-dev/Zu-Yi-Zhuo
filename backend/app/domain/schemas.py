@@ -88,6 +88,8 @@ class HumanTurn(ContractModel):
     turn_id: PositiveInt
     participant_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    # Optional for legacy CLI/persistence records; WebSocket messages always set it.
+    message_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
 
 
 class SafetyDecision(ContractModel):

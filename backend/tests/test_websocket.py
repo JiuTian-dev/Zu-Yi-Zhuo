@@ -71,6 +71,37 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
     assert audit.json()[0]["state_version"] == 4
 
 
+def test_duplicate_message_id_is_rejected_without_replaying_the_turn() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    payload = {
+        "type": "human_message", "message_id": "retry-1", "participant_id": "p1",
+        "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
+    }
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json(payload)
+        assert websocket.receive_json()["type"] == "message_committed"
+        assert websocket.receive_json()["type"] == "agent_action"
+        changed = websocket.receive_json()
+        assert changed["type"] == "table_state_changed"
+        committed_version = changed["state"]["version"]
+
+        websocket.send_json(payload)
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "duplicate_message",
+            "detail": "message_id is already committed for this table",
+        }
+        websocket.send_json({"type": "request_debug_state"})
+        debug = websocket.receive_json()
+
+    assert debug["state"]["version"] == committed_version
+    assert len(repository.turns("table-ws")) == 1
+    assert len(repository.interventions("table-ws")) == 1
+
+
 def test_intervention_audit_receives_post_turn_reflection() -> None:
     client, _ = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
