@@ -16,6 +16,28 @@ from app.orchestrator import build_initial_state, build_personal_card, observe_t
 MAX_TABLE_PARTICIPANTS = 5
 
 
+def _follow_up_behavior_event(
+    outcome: FollowUpOutcome,
+    state_version: int,
+    previous: FollowUpOutcome | None,
+) -> BehaviorEvent | None:
+    """Build one transition-scoped behavior signal for a follow-up update."""
+    if previous is not None and previous.status == outcome.status:
+        return None
+    transition = "initial" if previous is None else f"{previous.status}-to-{outcome.status}"
+    return BehaviorEvent(
+        event_id=(
+            f"{outcome.table_id}:follow-up:{outcome.follow_up_index}:"
+            f"{outcome.participant_id}:{transition}"
+        ),
+        participant_id=outcome.participant_id,
+        event_type="follow_up_outcome",
+        table_id=outcome.table_id,
+        state_version=state_version,
+        detail=f"status:{outcome.status}",
+    )
+
+
 def _synchronized(method: Callable[..., Any]) -> Callable[..., Any]:
     """Serialize one repository operation while allowing nested calls."""
 
@@ -264,7 +286,11 @@ class InMemoryTableRepository:
         if outcome.participant_id not in state.participants:
             raise ValueError(f"unknown participant: {outcome.participant_id}")
         table_outcomes = self._follow_up_outcomes[outcome.table_id]
+        previous = table_outcomes.get(outcome.follow_up_index)
         table_outcomes[outcome.follow_up_index] = outcome.model_copy(deep=True)
+        event = _follow_up_behavior_event(outcome, state.version, previous)
+        if event is not None:
+            self._behavior_events.setdefault(outcome.participant_id, []).append(event)
         return outcome.model_copy(deep=True)
 
     @_synchronized
@@ -1062,13 +1088,25 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("follow-up outcomes require a closed table")
         if outcome.participant_id not in state.participants:
             raise ValueError(f"unknown participant: {outcome.participant_id}")
+        previous = self._follow_up_outcomes[outcome.table_id].get(outcome.follow_up_index)
         outcomes = {**self._follow_up_outcomes, outcome.table_id: {
             **self._follow_up_outcomes[outcome.table_id],
             outcome.follow_up_index: outcome.model_copy(deep=True),
         }}
+        behavior_event = _follow_up_behavior_event(outcome, state.version, previous)
+        behavior_events = self._behavior_events
+        if behavior_event is not None:
+            behavior_events = {
+                **self._behavior_events,
+                outcome.participant_id: [
+                    *self._behavior_events.get(outcome.participant_id, []),
+                    behavior_event,
+                ],
+            }
         self._commit(
             self._states, self._turns, self._trusted_grounding_cards,
             self._interventions, self._invitations, outcomes,
+            behavior_events=behavior_events,
         )
         return outcome.model_copy(deep=True)
 

@@ -101,6 +101,16 @@ def test_follow_up_outcomes_can_be_reported_and_retrieved_after_close() -> None:
         "status": "completed", "note": "已完成第一轮验证",
     }
     assert client.get("/tables/echo-api/follow-ups?participant_id=p2").json()[0]["outcome"]["status"] == "completed"
+    behavior = client.get("/participants/p1/behavior-events?viewer_id=p1")
+    assert behavior.status_code == 200
+    assert behavior.json()[-1] == {
+        "event_id": "echo-api:follow-up:0:p1:initial",
+        "participant_id": "p1",
+        "event_type": "follow_up_outcome",
+        "table_id": "echo-api",
+        "state_version": 2,
+        "detail": "status:completed",
+    }
 
 
 def test_follow_up_outcome_enforces_closed_table_owner_and_index() -> None:

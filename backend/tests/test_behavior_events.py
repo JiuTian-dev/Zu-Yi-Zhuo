@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository, JsonTableRepository
-from app.domain import BehaviorEvent, ParticipantSeed
+from app.domain import BehaviorEvent, FollowUpOutcome, HumanTurn, ParticipantSeed
 
 
 def _seed(participant_id: str) -> ParticipantSeed:
@@ -85,6 +85,41 @@ def test_human_turn_automatically_creates_behavior_event() -> None:
     }
 
 
+def test_follow_up_outcome_emits_only_status_transitions() -> None:
+    repository = _repository("behavior-follow-up")
+    repository.append_turn(
+        "behavior-follow-up",
+        HumanTurn(turn_id=1, participant_id="p1", text="我会先做一次小范围试点。"),
+    )
+    closed = repository.close_table("behavior-follow-up")
+
+    def report(status: str, note: str | None = None) -> None:
+        repository.record_follow_up_outcome(FollowUpOutcome(
+            table_id="behavior-follow-up",
+            follow_up_index=0,
+            participant_id="p1",
+            status=status,
+            note=note,
+        ))
+
+    report("completed", "第一次回报")
+    report("completed", "只更新备注，不应制造画像事件")
+    report("blocked", "遇到依赖")
+    report("completed", "恢复推进")
+
+    events = [item for item in repository.behavior_events("p1") if item.event_type == "follow_up_outcome"]
+    assert closed.version == 2
+    assert [item.detail for item in events] == [
+        "status:completed", "status:blocked", "status:completed"
+    ]
+    assert [item.event_id for item in events] == [
+        "behavior-follow-up:follow-up:0:p1:initial",
+        "behavior-follow-up:follow-up:0:p1:completed-to-blocked",
+        "behavior-follow-up:follow-up:0:p1:blocked-to-completed",
+    ]
+    assert all(item.state_version == closed.version for item in events)
+
+
 def test_json_behavior_events_persist_and_legacy_files_default_empty(tmp_path) -> None:
     path = tmp_path / "behavior.json"
     repository = JsonTableRepository(path)
@@ -103,3 +138,33 @@ def test_json_behavior_events_persist_and_legacy_files_default_empty(tmp_path) -
     payload.pop("behavior_events")
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     assert JsonTableRepository(path).behavior_events("p1") == []
+
+
+def test_json_follow_up_outcome_and_behavior_event_commit_together(tmp_path) -> None:
+    path = tmp_path / "follow-up-behavior.json"
+    repository = JsonTableRepository(path)
+    repository.create("follow-up-json", "Q", [_seed("p1"), _seed("p2")])
+    repository.append_turn(
+        "follow-up-json",
+        HumanTurn(turn_id=1, participant_id="p1", text="我会先做一次小范围试点。"),
+    )
+    closed = repository.close_table("follow-up-json")
+    outcome = FollowUpOutcome(
+        table_id="follow-up-json",
+        follow_up_index=0,
+        participant_id="p1",
+        status="in_progress",
+    )
+
+    repository.record_follow_up_outcome(outcome)
+    restarted = JsonTableRepository(path)
+
+    assert restarted.follow_up_outcomes("follow-up-json") == [outcome]
+    assert [event.model_dump(mode="json") for event in restarted.behavior_events("p1")][-1] == {
+        "event_id": "follow-up-json:follow-up:0:p1:initial",
+        "participant_id": "p1",
+        "event_type": "follow_up_outcome",
+        "table_id": "follow-up-json",
+        "state_version": closed.version,
+        "detail": "status:in_progress",
+    }

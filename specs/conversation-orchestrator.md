@@ -310,6 +310,13 @@
 - **替代方案**: 让前端本地维护行为、把所有行为拼进真人消息，或开放任意 JSON metadata 造成隐私和 schema 漂移。
 - **代价**: V1 只提供事件记录与本人回读，不自动推断画像、不跨用户公开关系；生产环境需把 `viewer_id` 接到真实会话身份并增加分页/保留策略。
 
+### ADR-42: 行动回响与行为事件必须同一事务落账
+
+- **决策**: `record_follow_up_outcome` 在保存收桌行动结果的同时，自动追加本人可见的 `follow_up_outcome` 行为事件；事件只携带桌 ID、当前关闭状态版本和有界状态摘要，不携带行动备注或完整底稿。相同参与者对同一行动重复回报同一状态保持幂等；状态变化生成新的事件。内存与 JSON 仓储都必须在同一写路径中提交两份账本。
+- **理由**: 产品飞轮要求“行动回响”能反哺后续画像，但行动结果与行为事件若分开写入，会出现一边成功、一边丢失的不可解释状态。将事件派生自已校验的 follow-up 结果，既避免前端漏报，也不扩大个人备注的传播面。
+- **替代方案**: 继续要求前端额外 POST 行为事件、把行动结果复制进 Table State，或只记录最后一次结果而丢失状态变化轨迹。
+- **代价**: V1 的事件摘要只表达状态，不保存备注全文；未来接入真实账号和分析管道时仍需分页、保留与删除策略。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -382,7 +389,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
-行为层边界：行为事件只能由本人 `viewer_id` 写入或读取；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言由服务端自动记录；事件不广播给同桌、不进入 Table State，也不保存完整消息正文。
+行为层边界：行为事件只能由本人 `viewer_id` 写入或读取；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；事件不广播给同桌、不进入 Table State。
 
 ### 数据模型 / 类型定义
 
@@ -465,6 +472,7 @@ master
                                                                                                                                                                                    ←── D61 JSON close lifecycle persistence
                                                                                                                                                                                          ←── D62 replay public narrative artifacts
                                                                                                                                                                                                 ←── D63 product behavior event ledger
+                                                                                                                                                                                                      ←── D64 follow-up behavior event wiring
 ```
 
 ## Progress Ledger
@@ -538,6 +546,7 @@ master
 | D61 JSON close lifecycle persistence | complete | restart-safe idempotent close snapshot and legacy Agent lifecycle normalization | 281 tests + compileall + diff check | `7965cf1` |
 | D62 replay public narrative artifacts | complete | replay response includes interventions, comments, and comment promotion provenance | 281 tests + compileall + diff check | `96aa8c4` |
 | D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture, namespaced IDs, and JSON persistence | 284 tests + compileall + diff check | `766cb50` |
+| D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 286 tests + compileall + diff check | `pending` |
 
 ## 已知坑位（Running Gotchas）
 
