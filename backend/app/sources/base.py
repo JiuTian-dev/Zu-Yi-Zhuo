@@ -8,11 +8,15 @@ or access token can leak into matching or the conversation state machine.
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.domain import ParticipantSeed
+from app.domain import ContentSignal, ParticipantSeed
 
 
 class CandidateSourceError(RuntimeError):
     """Raised when an external candidate source cannot fulfill a search."""
+
+
+class ContentSignalSourceError(RuntimeError):
+    """Raised when an external public-content source cannot fulfill a search."""
 
 
 class CandidateSource(Protocol):
@@ -20,4 +24,14 @@ class CandidateSource(Protocol):
         """Return at most ``limit`` authorized, normalized candidate seeds."""
 
 
-__all__ = ("CandidateSource", "CandidateSourceError")
+class ContentSignalSource(Protocol):
+    async def search(self, *, query: str, limit: int) -> Sequence[ContentSignal]:
+        """Return at most ``limit`` authorized public content signals."""
+
+
+__all__ = (
+    "CandidateSource",
+    "CandidateSourceError",
+    "ContentSignalSource",
+    "ContentSignalSourceError",
+)

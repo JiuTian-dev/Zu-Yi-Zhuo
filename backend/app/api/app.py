@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.domain import FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState
+from app.domain import ContentSignal, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, OpportunityPreview, OpportunityRequest, ParticipantSeed, PersonalCard, RelationshipMemory, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -18,7 +18,7 @@ from app.providers import LLMProvider
 from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import register_websocket_routes
-from app.sources import CandidateSource, CandidateSourceError
+from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError
 
 
 class CreateTableRequest(BaseModel):
@@ -92,6 +92,13 @@ class CandidatePreviewRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=20)
 
 
+class OpportunitySourceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=120)
+    limit: int = Field(default=20, ge=2, le=20)
+
+
 class MatchedTableResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -134,15 +141,20 @@ def create_app(
     provider: LLMProvider | None = None,
     candidate_source: CandidateSource | None = None,
     candidate_source_timeout_seconds: float = 5.0,
+    content_source: ContentSignalSource | None = None,
+    content_source_timeout_seconds: float = 5.0,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
         raise ValueError("candidate_source_timeout_seconds must be positive")
+    if content_source_timeout_seconds <= 0:
+        raise ValueError("content_source_timeout_seconds must be positive")
     repo = repository or InMemoryTableRepository()
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
     api.state.candidate_source = candidate_source
+    api.state.content_source = content_source
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -206,6 +218,31 @@ def create_app(
     @api.post("/opportunities/preview", response_model=OpportunityPreview)
     def preview_opportunity(payload: OpportunityRequest) -> OpportunityPreview:
         return build_opportunity_preview(payload)
+
+    @api.post("/opportunities/source-preview", response_model=OpportunityPreview)
+    async def preview_source_opportunity(payload: OpportunitySourceRequest) -> OpportunityPreview:
+        """Fetch authorized public signals, then run the deterministic opportunity detector."""
+        if content_source is None:
+            raise HTTPException(status_code=503, detail="content source is not configured")
+        try:
+            raw_signals = await asyncio.wait_for(
+                content_source.search(query=payload.query, limit=payload.limit),
+                timeout=content_source_timeout_seconds,
+            )
+            signals = [
+                item if isinstance(item, ContentSignal) else ContentSignal.model_validate(item)
+                for item in raw_signals
+            ][:payload.limit]
+            request = OpportunityRequest(query=payload.query, signals=signals)
+        except ContentSignalSourceError as error:
+            raise HTTPException(status_code=502, detail="content source unavailable") from error
+        except TimeoutError as error:
+            raise HTTPException(status_code=502, detail="content source timed out") from error
+        except (TypeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=502, detail="content source returned invalid signals") from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="content source unavailable") from error
+        return build_opportunity_preview(request)
 
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:
