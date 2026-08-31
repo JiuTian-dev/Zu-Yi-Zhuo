@@ -25,6 +25,10 @@ const worldLabel = (worldId: TableSummary['worldId']) =>
 const SWITCH_COOLDOWN_MS = 1050
 const WHEEL_STEP_THRESHOLD = 90
 
+/** Shared mutable state for the canvas subtree: UseCanvas portals may not
+ *  re-render on parent updates, so table switches travel outside React. */
+const hallwayState = { index: 0 }
+
 const backdropVertex = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`
 const backdropFragment = `
   uniform sampler2D mapA, mapB, flowMap; uniform vec2 focusA, focusB, imageSize, planeSize, resolution;
@@ -50,9 +54,8 @@ const backdropFragment = `
     #include <colorspace_fragment>
   }`
 
-function HallwayBackdrop({ tables, index, flowTexture, reducedMotion }: {
+function HallwayBackdrop({ tables, flowTexture, reducedMotion }: {
   tables: TableSummary[]
-  index: number
   flowTexture: GalleryFlowTextureRef
   reducedMotion: boolean
 }) {
@@ -66,62 +69,63 @@ function HallwayBackdrop({ tables, index, flowTexture, reducedMotion }: {
     return new Map(urls.map((url, i) => [url, list[i]]))
   }, [loaded, urls])
 
-  const shown = useRef(index)
+  const shown = useRef(0)
   const progress = useRef({ value: 0 })
   const tween = useRef<gsap.core.Tween | null>(null)
-  const first = tables[index]
 
-  const uniforms = useMemo(() => ({
-    mapA: { value: textureMap.get(first.sceneTexture) },
-    mapB: { value: textureMap.get(first.sceneTexture) },
-    focusA: { value: new THREE.Vector2(first.coverFocus.x, 1 - first.coverFocus.y) },
-    focusB: { value: new THREE.Vector2(first.coverFocus.x, 1 - first.coverFocus.y) },
-    imageSize: { value: new THREE.Vector2(1672, 941) },
-    planeSize: { value: new THREE.Vector2(1, 1) },
-    resolution: { value: drawingSize },
-    flowMap: { value: flowTexture.current },
-    progress: { value: 0 },
-  }), [drawingSize, first.coverFocus.x, first.coverFocus.y, first.sceneTexture, flowTexture, textureMap])
+  const uniforms = useMemo(() => {
+    const start = tables[0]
+    return {
+      mapA: { value: textureMap.get(start.sceneTexture) },
+      mapB: { value: textureMap.get(start.sceneTexture) },
+      focusA: { value: new THREE.Vector2(start.coverFocus.x, 1 - start.coverFocus.y) },
+      focusB: { value: new THREE.Vector2(start.coverFocus.x, 1 - start.coverFocus.y) },
+      imageSize: { value: new THREE.Vector2(1672, 941) },
+      planeSize: { value: new THREE.Vector2(1, 1) },
+      resolution: { value: drawingSize },
+      flowMap: { value: flowTexture.current },
+      progress: { value: 0 },
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawingSize, flowTexture, textureMap])
 
   useEffect(() => {
     for (const texture of textureMap.values()) texture.colorSpace = THREE.SRGBColorSpace
   }, [textureMap])
 
-  useEffect(() => {
-    if (shown.current === index) return
-    const target = tables[index]
-    const next = material.current?.uniforms
-    if (!next) return
-    shown.current = index
-    tween.current?.kill()
-    next.mapB.value = textureMap.get(target.sceneTexture)
-    next.focusB.value.set(target.coverFocus.x, 1 - target.coverFocus.y)
-    const swap = () => {
-      next.mapA.value = next.mapB.value
-      next.focusA.value.copy(next.focusB.value)
-      progress.current.value = 0
-      next.progress.value = 0
-    }
-    if (reducedMotion) {
-      progress.current.value = 1
-      next.progress.value = 1
-      swap()
-    } else {
-      tween.current = gsap.to(progress.current, {
-        value: 1, duration: .95, ease: 'power2.inOut',
-        onUpdate: () => { next.progress.value = progress.current.value },
-        onComplete: swap,
-      })
-    }
-  }, [index, reducedMotion, tables, textureMap])
-
   useEffect(() => () => { tween.current?.kill() }, [])
 
   useFrame(() => {
     if (!material.current) return
+    const u = material.current.uniforms
     material.current.uniforms.planeSize.value.set(viewport.width, viewport.height)
     material.current.uniforms.flowMap.value = flowTexture.current
     gl.getDrawingBufferSize(drawingSize)
+
+    if (shown.current === hallwayState.index) return
+    const target = tables[hallwayState.index]
+    if (!target) return
+    shown.current = hallwayState.index
+    tween.current?.kill()
+    u.mapB.value = textureMap.get(target.sceneTexture)
+    u.focusB.value.set(target.coverFocus.x, 1 - target.coverFocus.y)
+    const swap = () => {
+      u.mapA.value = u.mapB.value
+      u.focusA.value.copy(u.focusB.value)
+      progress.current.value = 0
+      u.progress.value = 0
+    }
+    if (reducedMotion) {
+      progress.current.value = 1
+      u.progress.value = 1
+      swap()
+    } else {
+      tween.current = gsap.to(progress.current, {
+        value: 1, duration: .95, ease: 'power2.inOut',
+        onUpdate: () => { u.progress.value = progress.current.value },
+        onComplete: swap,
+      })
+    }
   })
 
   return (
@@ -167,6 +171,7 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
     if (Date.now() < cooldown.current) return
     cooldown.current = Date.now() + SWITCH_COOLDOWN_MS
     setForming(false)
+    hallwayState.index = target
     setIndex(target)
   }
 
@@ -213,7 +218,7 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
   return (
     <main className={`hallway-page is-${phase} ${enhanced ? 'is-enhanced' : ''}`} data-world={featured.worldId} inert={!galleryActive}>
       <div className="hallway-veil" aria-hidden="true" />
-      {enhanced && galleryActive && <UseCanvas><HallwayBackdrop tables={galleryTables} index={index} flowTexture={flowTexture} reducedMotion={reducedMotion} /></UseCanvas>}
+      {enhanced && galleryActive && <UseCanvas><HallwayBackdrop tables={galleryTables} flowTexture={flowTexture} reducedMotion={reducedMotion} /></UseCanvas>}
 
       <header className="hallway-header">
         <div className="hallway-brand"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span></div>
