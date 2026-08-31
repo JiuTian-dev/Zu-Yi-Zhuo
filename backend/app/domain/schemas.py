@@ -262,6 +262,9 @@ class HumanTurn(ContractModel):
     text: str = Field(min_length=1)
     # Optional for legacy CLI/persistence records; WebSocket messages always set it.
     message_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
+    # When a core member explicitly promotes an external comment, retain the
+    # immutable source reference without changing normal human-message shape.
+    source_comment_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
 
 
 class SafetyDecision(ContractModel):
@@ -547,6 +550,18 @@ class PeripheralComment(ContractModel):
     display_name: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=500)
     state_version: int = Field(ge=0)
+
+
+class CommentPromotion(ContractModel):
+    """Audit link for one explicit, safety-checked comment promotion."""
+
+    promotion_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    comment_id: str = Field(min_length=1)
+    promoter_id: str = Field(min_length=1)
+    turn_id: PositiveInt
+    state_version: int = Field(ge=0)
+    message_id: str = Field(min_length=1)
 
 
 class ReflectionResult(ContractModel):
