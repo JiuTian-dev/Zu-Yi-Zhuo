@@ -69,6 +69,28 @@ def test_behavior_events_are_self_scoped_bounded_and_idempotent() -> None:
     ).json()[-1]["event_type"] == "relationship_saved"
 
 
+def test_server_generated_table_selection_is_open_scoped_and_idempotent() -> None:
+    repository = _repository("selection-table")
+    client = TestClient(create_app(repository))
+
+    first = client.post("/tables/selection-table/select?participant_id=viewer")
+    retry = client.post("/tables/selection-table/select?participant_id=viewer")
+
+    assert first.status_code == retry.status_code == 201
+    assert first.json() == retry.json() == {
+        "event_id": "viewer:table-selected:selection-table",
+        "participant_id": "viewer",
+        "event_type": "table_selected",
+        "table_id": "selection-table",
+        "detail": "selected",
+    }
+    assert repository.get("selection-table").version == 0
+    assert set(repository.get("selection-table").participants) == {"p1", "p2"}
+
+    repository.close_table("selection-table")
+    assert client.post("/tables/selection-table/select?participant_id=viewer").status_code == 409
+
+
 def test_human_turn_automatically_creates_behavior_event() -> None:
     repository = _repository("behavior-auto")
     state, created = repository.append_message_once(

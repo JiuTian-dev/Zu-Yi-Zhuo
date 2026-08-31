@@ -40,6 +40,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
 - `POST /tables/{table_id}/recompose`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
+- `POST /tables/{table_id}/select?participant_id=...`：显式记录一次 open 桌选择；服务端生成稳定行为事件，不会自动入席或改变桌状态。
 - `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、关系保存、行动回响）；真人发言和行动结果由后端自动沉淀，事件不广播给同桌。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
@@ -155,6 +156,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 关系记忆只从已收桌状态的 `worth_continuing_with` 证据派生；本人身份通过 `viewer_id` 自证，响应只含旧桌问题、对方公开姓名、理由和证据定位，不含私有画像或个人卡全文。
 - 行动回响只在收桌后开放，状态为 `completed`、`in_progress`、`blocked` 或 `dismissed`；原始收桌底稿保持不变，结果单独持久化并可在重启后恢复。
 - 行动结果写入会自动生成本人可见的 `follow_up_outcome` 行为事件；相同状态的重复回报保持幂等，状态迁移会留下带迁移方向的事件 ID，备注不会进入行为事件。
+- 选桌行为通过专用入口生成稳定 `table_selected` 事件；只允许仍可发现的 open 桌，重复选择幂等且不改变参与者席位。
 - 价值反馈只在收桌后开放，参与者可更新自己的单条反馈；聚合返回响应人数、四类价值均值和愿意再次参加人数，且不改变 Table State 或收桌底稿。JSON 仓储会为旧数据缺省空反馈账本。
 
 ## 验证

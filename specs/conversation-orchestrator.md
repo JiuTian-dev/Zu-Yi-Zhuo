@@ -324,6 +324,13 @@
 - **替代方案**: 只继续限制 `process.wait()`、依赖操作系统 pipe 缓冲区，或为每类 source 单独实现不一致的超时逻辑。
 - **代价**: wrapper 必须在预算内消费请求并返回；超时包括进程启动开销，极慢但合法的 source 需要在适配器侧优化或由调用方显式提高注入预算。
 
+### ADR-44: 选桌行为由服务端生成稳定事件
+
+- **决策**: 增加 `POST /tables/{id}/select?participant_id={viewer_id}`，只校验桌存在且仍处于可发现的 open 生命周期，然后由服务端生成不绑定状态版本、但稳定 `event_id` 的 `table_selected` 行为事件。接口不新增席位、不改变 Table State、不广播；重复选择复用行为账本幂等规则。通用行为事件 POST 仍保留，供关系保存等没有独立领域写入口的行为使用。
+- **理由**: 选桌是产品行为层的首个冷启动信号，不能依赖前端随意拼接 event_id 或把一次浏览误当入席。由服务端生成事件可确保桌引用、版本和生命周期一致，同时不把“选择”越权成“加入”。
+- **替代方案**: 继续让前端直接 POST 任意 `table_selected` 事件、在 `GET /tables` 时隐式记录选择，或选择时自动加入桌。
+- **代价**: V1 只支持 open 桌的显式选择，不记录浏览/曝光；正式认证接入后需把 `participant_id` 替换为会话主体。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -358,6 +365,7 @@ GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 POST /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 GET  /participants/{participant_id}/behavior-events?viewer_id={participant_id}
+POST /tables/{id}/select?participant_id={viewer_id}
 POST /tables/{id}/comments?author_id={author_id}
 GET  /tables/{id}/comments
 POST /tables/{id}/comments/{comment_id}/promote?participant_id={member_id}
@@ -396,7 +404,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
-行为层边界：行为事件只能由本人 `viewer_id` 写入或读取；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；事件不广播给同桌、不进入 Table State。
+行为层边界：行为事件只能由本人 `viewer_id` 写入或读取；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；follow-up 事件只记录状态摘要，不保存行动备注或完整消息正文；事件不广播给同桌、不进入 Table State。
 
 ### 数据模型 / 类型定义
 
@@ -480,7 +488,8 @@ master
                                                                                                                                                                                          ←── D62 replay public narrative artifacts
                                                                                                                                                                                                 ←── D63 product behavior event ledger
                                                                                                                                                                                                       ←── D64 follow-up behavior event wiring
-                                                                                                                                                                                                            ←── D65 source full-lifecycle timeout
+                                                                                                                                                                                                           ←── D65 source full-lifecycle timeout
+                                                                                                                                                                                                                  ←── D66 server-generated table selection event
 ```
 
 ## Progress Ledger
@@ -556,6 +565,7 @@ master
 | D63 product behavior event ledger | complete | self-scoped bounded behavior events with automatic human-message capture, namespaced IDs, and JSON persistence | 284 tests + compileall + diff check | `766cb50` |
 | D64 follow-up behavior event wiring | complete | follow-up outcome writes atomically emit self-scoped `follow_up_outcome` events with status-only summaries and transition-aware idempotency | 287 tests + compileall + diff check | `70aaca1` |
 | D65 source full-lifecycle timeout | complete | candidate/content/personal command bridges enforce one timeout across process startup, stdin, drain, exit, and cleanup | 290 tests + compileall + diff check | `26abb0d` |
+| D66 server-generated table selection event | in progress | open-table selection endpoint emits a stable self-scoped `table_selected` behavior event without mutating membership or state | 291 tests + compileall + diff check pending | — |
 
 ## 已知坑位（Running Gotchas）
 

@@ -339,6 +339,33 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(error)) from error
         return event
 
+    @api.post(
+        "/tables/{table_id}/select",
+        response_model=BehaviorEvent,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def select_table(
+        table_id: str,
+        participant_id: str = Query(..., min_length=1),
+    ) -> BehaviorEvent:
+        """Record an explicit open-table selection without mutating membership."""
+        state = table_or_404(table_id)
+        if state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is closed")
+        if state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is soft-expired")
+        try:
+            event, _created = repo.record_behavior_event(BehaviorEvent(
+                event_id=f"{participant_id}:table-selected:{table_id}",
+                participant_id=participant_id,
+                event_type="table_selected",
+                table_id=table_id,
+                detail="selected",
+            ))
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return event
+
     @api.get(
         "/participants/{participant_id}/behavior-events",
         response_model=list[BehaviorEvent],
