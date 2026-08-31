@@ -120,7 +120,7 @@ class JsonTableRepository(InMemoryTableRepository):
         super().__init__()
         self.path = Path(path)
         if self.path.exists():
-            self._states, self._turns = self._load()
+            self._states, self._turns, self._trusted_grounding_cards = self._load()
 
     def create(
         self, table_id: str, core_question: str, participants: Sequence[ParticipantSeed]
@@ -130,7 +130,7 @@ class JsonTableRepository(InMemoryTableRepository):
         state = build_initial_state(table_id, core_question, participants)
         states = {**self._states, table_id: [state]}
         turns = {**self._turns, table_id: []}
-        self._commit(states, turns)
+        self._commit(states, turns, self._trusted_grounding_cards)
         return state.model_copy(deep=True)
 
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
@@ -139,18 +139,41 @@ class JsonTableRepository(InMemoryTableRepository):
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], committed]}
-        self._commit(states, turns)
+        self._commit(states, turns, self._trusted_grounding_cards)
         return snapshot.model_copy(deep=True)
+
+    def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
+        """Stage a source and persist it before acknowledging the write."""
+        self.get(table_id)
+        if not all(value.strip() for value in (card.title, card.excerpt, card.source_ref)):
+            raise ValueError("grounding card title, excerpt, and source_ref must be non-empty")
+        cards = {**self._trusted_grounding_cards, table_id: card.model_copy(deep=True)}
+        self._commit(self._states, self._turns, cards)
+
+    def take_trusted_grounding_card(self, table_id: str) -> GroundingCard | None:
+        """Consume a source only after the removal is atomically persisted."""
+        self.get(table_id)
+        card = self._trusted_grounding_cards.get(table_id)
+        if card is None:
+            return None
+        cards = dict(self._trusted_grounding_cards)
+        cards.pop(table_id)
+        self._commit(self._states, self._turns, cards)
+        return card.model_copy(deep=True)
 
     def _append(self, table_id: str, state: TableState) -> TableState:
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
-        self._commit(states, self._turns)
+        self._commit(states, self._turns, self._trusted_grounding_cards)
         return snapshot.model_copy(deep=True)
 
     def _commit(
-        self, states: dict[str, list[TableState]], turns: dict[str, list[HumanTurn]]
+        self,
+        states: dict[str, list[TableState]],
+        turns: dict[str, list[HumanTurn]],
+        trusted_grounding_cards: dict[str, GroundingCard] | None = None,
     ) -> None:
+        cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         payload = {
             "tables": {
                 table_id: {
@@ -158,7 +181,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "turns": [turn.model_dump(mode="json") for turn in turns[table_id]],
                 }
                 for table_id, snapshots in states.items()
-            }
+            },
+            "trusted_grounding_cards": {
+                table_id: card.model_dump(mode="json") for table_id, card in cards.items()
+            },
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp_name: str | None = None
@@ -176,13 +202,19 @@ class JsonTableRepository(InMemoryTableRepository):
             if temp_name is not None:
                 Path(temp_name).unlink(missing_ok=True)
         self._states, self._turns = states, turns
+        self._trusted_grounding_cards = {
+            table_id: card.model_copy(deep=True) for table_id, card in cards.items()
+        }
 
-    def _load(self) -> tuple[dict[str, list[TableState]], dict[str, list[HumanTurn]]]:
+    def _load(self) -> tuple[
+        dict[str, list[TableState]], dict[str, list[HumanTurn]], dict[str, GroundingCard]
+    ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError(f"invalid persistence file: {self.path}") from error
-        if not isinstance(payload, dict) or set(payload) != {"tables"} or not isinstance(payload["tables"], dict):
+        if (not isinstance(payload, dict) or set(payload) not in ({"tables"}, {"tables", "trusted_grounding_cards"})
+                or not isinstance(payload["tables"], dict)):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
         states: dict[str, list[TableState]] = {}
         turns: dict[str, list[HumanTurn]] = {}
@@ -202,4 +234,15 @@ class JsonTableRepository(InMemoryTableRepository):
                 raise ValueError(f"invalid persistence file: incompatible turns for table {table_id!r}")
             states[table_id] = snapshots
             turns[table_id] = messages
-        return states, turns
+        raw_cards = payload.get("trusted_grounding_cards", {})
+        if not isinstance(raw_cards, dict):
+            raise ValueError("invalid persistence file: malformed trusted_grounding_cards")
+        cards: dict[str, GroundingCard] = {}
+        for table_id, raw_card in raw_cards.items():
+            if table_id not in states:
+                raise ValueError(f"invalid persistence file: grounding card for unknown table {table_id!r}")
+            try:
+                cards[table_id] = GroundingCard.model_validate(raw_card)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"invalid persistence file: invalid grounding card for table {table_id!r}") from error
+        return states, turns, cards

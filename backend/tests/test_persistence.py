@@ -1,8 +1,10 @@
+import json
+
 import pytest
 
 from app.api.repository import JsonTableRepository
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import HumanTurn, SafetyLevel
+from app.domain import GroundingCard, HumanTurn, SafetyLevel
 from app.orchestrator import decide_intervention, enforce_safety, evaluate_safety
 
 
@@ -42,6 +44,31 @@ def test_json_repository_rejects_corrupt_files(tmp_path) -> None:
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError, match="invalid persistence file"):
         JsonTableRepository(path)
+
+
+def test_json_repository_persists_trusted_grounding_card_and_consumes_atomically(tmp_path) -> None:
+    path = tmp_path / "grounding.json"
+    repository = JsonTableRepository(path)
+    repository.create("grounded", "Q", flagship_participants)
+    card = GroundingCard(title="采购流程", excerpt="试点和正式采购责任链不同。", source_ref="demo:42")
+    repository.set_trusted_grounding_card("grounded", card)
+
+    restored = JsonTableRepository(path)
+    assert restored.take_trusted_grounding_card("grounded") == card
+    assert JsonTableRepository(path).take_trusted_grounding_card("grounded") is None
+
+
+def test_json_repository_loads_legacy_snapshot_without_grounding_cards(tmp_path) -> None:
+    path = tmp_path / "legacy.json"
+    repository = JsonTableRepository(path)
+    repository.create("legacy", "Q", flagship_participants)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.pop("trusted_grounding_cards")
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    restored = JsonTableRepository(path)
+    assert restored.get("legacy").table_id == "legacy"
+    assert restored.take_trusted_grounding_card("legacy") is None
 
 
 def test_flagship_replay_is_stable_across_ten_persisted_runs(tmp_path) -> None:
