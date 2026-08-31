@@ -40,6 +40,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
 - `POST /tables/{table_id}/recompose`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
+- `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、关系保存、行动回响）；真人发言由后端自动沉淀，事件不广播给同桌。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=commenter`：外围评论连接；只接受 `peripheral_comment`，评论可由核心成员通过 REST 显式促成。
