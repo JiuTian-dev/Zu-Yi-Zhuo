@@ -65,6 +65,13 @@
 - **替代方案**: 让部署命令直接导入内部 `app.api.app:app`，或默认写入工作目录。
 - **代价**: JSON 仓储仍是单进程方案，生产多实例需要替换 repository 实现。
 
+### ADR-7: 参与者资料默认半公开，按连接做投影
+
+- **决策**: `declared_position` 与 `relevant_experience` 默认只对本人可见；参与者通过自己的 REST/WS 身份显式同意后，才向同桌公开。撤回同意立即恢复隐藏。消息正文和由现场消息产生的证据仍属于桌面公共内容。
+- **理由**: 产品文档要求先获得同意再暴露个人/职业信息，且个人卡不能泄露给其他参与者。
+- **替代方案**: 创建桌时默认全部公开，或把完整内部状态交给前端自行过滤。
+- **代价**: API/WS 必须按请求者生成状态投影；跨进程部署需把同意状态放入共享仓储。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -84,6 +91,7 @@ Client events: `human_message`, `participant_joined`, `participant_left`, `reque
 Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
+资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 
 ### 数据模型 / 类型定义
 
