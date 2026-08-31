@@ -242,6 +242,12 @@ class InterventionRecord(AgentActionEvent):
     outcome: EvidenceStatement | None = None
     reflection: EvidenceStatement | None = None
 
+    @model_validator(mode="after")
+    def action_must_be_intervention(self) -> "InterventionRecord":
+        if self.action is Action.SILENCE:
+            raise ValueError("SILENCE actions do not create intervention records")
+        return self
+
 
 class RelationshipSuggestion(ContractModel):
     participant_id: str = Field(min_length=1)

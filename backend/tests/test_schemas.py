@@ -73,6 +73,21 @@ def test_visual_hint_serializes_as_structured_json() -> None:
 def test_action_context_is_validated(payload: dict) -> None:
     with pytest.raises(ValidationError): AgentActionEvent(**payload, visual_hint={}, state_version=3, confidence=0.7)
 
+
+def test_intervention_record_rejects_silence_action() -> None:
+    with pytest.raises(ValidationError, match="SILENCE"):
+        InterventionRecord(
+            action=Action.SILENCE,
+            visual_hint={},
+            state_version=1,
+            confidence=1,
+            intervention_id="table:intervention:1",
+            table_id="table",
+            latency_ms=0,
+            model="test",
+            token_usage={"input_tokens": 0, "output_tokens": 0},
+        )
+
 def test_participant_map_key_must_match_id() -> None:
     data = valid_state(); data["participants"] = {"wrong": data["participants"]["p1"]}
     with pytest.raises(ValidationError): TableState.model_validate(data)
