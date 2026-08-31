@@ -7,3 +7,7 @@ dist/
 output/
 visual-rolls/
 .codex-doc-review/
+__pycache__/
+*.py[cod]
+# Local backend table snapshots may contain participant data.
+runtime/
