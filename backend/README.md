@@ -16,6 +16,7 @@ python -m uvicorn app.main:app --reload
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；不创建桌。
+- `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
 - `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
@@ -68,6 +69,16 @@ python -m uvicorn app.main:app
 
 wrapper 自己负责知乎授权和 token 管理；不要把 secret、Cookie 或 MCP 配置交给浏览器或前端。
 
+机会发现可额外设置 `CONTENT_SIGNAL_SOURCE_COMMAND` 接入公开内容 CLI/MCP/OAuth wrapper。stdin 同样是
+`{"query":"...","limit":20}`，stdout 返回信号数组或 `{"signals":[...]}`；每条信号必须符合
+`ContentSignal`（`visibility` 必须为 `public`）。命令超时、非零退出、输出过大或信号不合法会 fail-closed 为 502，
+未配置时 `/opportunities/source-preview` 返回 503：
+
+```powershell
+$env:CONTENT_SIGNAL_SOURCE_COMMAND = '["D:\adapters\zhihu-public-signals.exe"]'
+python -m uvicorn app.main:app
+```
+
 动态补位预览会过滤现有参与者、已被邀请过的候选人以及明确选择 `none` 的候选人；返回的 `open_seats`、`role_gaps`
 和候选理由只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。
 
@@ -102,6 +113,7 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 未同意时，状态投影隐藏 `declared_position`/`unused_relevant_experience`，PASS 主持话也不会广播经历原文。
 - 当前默认没有候选 source，候选人仍可由显式 `ParticipantSeed` 候选池提供；没有依赖知乎非官方抓取。
 - 可选 `CommandCandidateSource` 为官方/获授权的 CLI、MCP 或 OAuth wrapper 提供 stdin/stdout 接入；命令不经 shell，默认 5 秒超时和 1 MB 输出上限，后端只接收规范化 `ParticipantSeed`。
+- 可选 `CommandContentSignalSource` 为机会发现接入同样的官方/获授权 wrapper；后端只接收 `visibility=public` 的规范化 `ContentSignal`，不会把原始 token 或私有行为写入桌状态。
 - 接入正式知乎 CLI/MCP/OAuth 时，通过 `create_app(..., candidate_source=...)` 注入适配器，适配器只返回已授权、规范化候选资料，服务端不会接收或记录 access token。
 - 外部 source 调用默认有 5 秒超时；可在 `create_app(..., candidate_source_timeout_seconds=...)` 注入不同正数。超时统一返回通用 502，不会回退到未经授权的候选。
 - 软过期桌不再出现在默认 `GET /tables`；使用 `include_closed=true` 可在历史/运营视图中看到它，且仍按 viewer 做隐私投影。

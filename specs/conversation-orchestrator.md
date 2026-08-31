@@ -212,6 +212,13 @@
 - **替代方案**: 满桌前自动把 source 返回的人写入 participants、只按相关性排序，或把候选推荐交给前端自行实现。
 - **代价**: source 未配置时只能返回 503；角色缺口是 V1 确定性启发式，后续可替换为模型/行为信号而不改变邀请事务。
 
+### ADR-28: 机会发现通过独立公开内容 source 桥接
+
+- **决策**: 增加 `ContentSignalSource.search(query, limit)` 和 `POST /opportunities/source-preview`。服务端通过独立的 `CONTENT_SIGNAL_SOURCE_COMMAND` 无 shell 子进程获取已授权的公开问题/回答/文章信号，严格校验为 `ContentSignal` 后复用现有 `build_opportunity_preview`；source 只负责检索与授权，detector 负责未完成性、角色缺口和候选种子判断。source 未配置、超时、非零退出或信号不合法时统一 fail-closed，不创建桌或邀请。
+- **理由**: 机会发现是产品入口，不能要求前端把原始来源拼成内部契约；独立内容 source 让官方 API、CLI、MCP 或 OAuth wrapper 可替换接入，同时不把未经验证的知乎内部读取接口硬编码进核心服务。
+- **替代方案**: 复用候选人 source 返回混合数据、在 API 内抓取网页、或让前端直接持有知乎 token。
+- **代价**: 接入者需要提供内容检索 wrapper，并保证只返回有授权的公开信号；source 未配置时机会预览保持 503。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -221,6 +228,7 @@ POST /tables
 POST /matches/preview
 POST /matches/source-preview
 POST /matches/confirm
+POST /opportunities/source-preview
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
 POST /tables/{id}/participants
@@ -321,6 +329,7 @@ master
                                                                                         ←── D47 command-backed candidate source
                                                                                               ←── D48 opportunity discovery preview
                                                                                                     ←── D49 dynamic candidate replenishment preview
+                                                                                                           ←── D50 content signal source bridge
 ```
 
 ## Progress Ledger
@@ -380,6 +389,7 @@ master
 | D47 command-backed candidate source | complete | bounded no-shell JSON stdin/stdout bridge for authorized CLI/MCP/OAuth candidate adapters | 227 tests + compileall + diff check | `a7a28bc` |
 | D48 opportunity discovery preview | complete | public-signal opportunity detector with unfinishedness evidence, role gaps, and normalized candidate seeds | 231 tests + compileall + diff check | `9eda0ce` + `874fa68` |
 | D49 dynamic candidate replenishment preview | complete | member-scoped, source-backed recommendations for current role gaps without automatic seat or invitation writes | 236 tests + compileall + diff check | `9884bee` |
+| D50 content signal source bridge | complete | bounded authorized public-content source feeding the existing opportunity detector without table or invitation writes | 242 tests + compileall + diff check | `573d2cf` |
 
 ## 已知坑位（Running Gotchas）
 
