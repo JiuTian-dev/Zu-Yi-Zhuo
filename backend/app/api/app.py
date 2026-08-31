@@ -999,6 +999,21 @@ def create_app(
             raise HTTPException(status_code=403, detail="reporter must be a table participant")
         return repo.safety_reports(table_id, reporter_id)
 
+    @api.get(
+        "/tables/{table_id}/safety-reports/moderation",
+        response_model=list[SafetyReport],
+    )
+    def get_moderation_safety_reports(
+        table_id: str,
+        request: Request,
+    ) -> list[SafetyReport]:
+        """Expose the full private report queue only to the moderation adapter."""
+        if moderator_resolver is None:
+            raise HTTPException(status_code=503, detail="moderation is not configured")
+        require_moderator_identity(moderator_resolver, request)
+        table_or_404(table_id)
+        return repo.safety_reports(table_id)
+
     @api.post(
         "/tables/{table_id}/safety/resolve",
         response_model=SafetyResolutionResponse,
