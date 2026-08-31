@@ -170,11 +170,16 @@ def register_websocket_routes(
     async def broadcast_state(table_id: str, state: TableState) -> None:
         await _broadcast(
             table_id,
-            lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id)),
+            lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id or None)),
         )
 
     @api.websocket("/ws/tables/{table_id}")
-    async def table_events(websocket: WebSocket, table_id: str, participant_id: str = "") -> None:
+    async def table_events(
+        websocket: WebSocket,
+        table_id: str,
+        participant_id: str = "",
+        viewer_mode: Literal["participant", "observer"] = "participant",
+    ) -> None:
         await websocket.accept()
         if not participant_id.strip():
             await _send_error(websocket, "invalid_participant", "participant_id is required")
@@ -186,12 +191,15 @@ def register_websocket_routes(
             await _send_error(websocket, "unknown_table", f"unknown table: {table_id}")
             await websocket.close(code=1008)
             return
-        if participant_id not in state.participants:
+        if viewer_mode == "participant" and participant_id not in state.participants:
             await _send_error(websocket, "unknown_participant", f"unknown participant: {participant_id}")
             await websocket.close(code=1008)
             return
 
-        connections.setdefault(table_id, {})[websocket] = participant_id
+        connection_viewer_id = participant_id if viewer_mode == "participant" else ""
+        connections.setdefault(table_id, {})[websocket] = connection_viewer_id
+        if viewer_mode == "observer":
+            await websocket.send_json(_state_event(project_state_for_viewer(state, None)))
         table_lock = table_locks.setdefault(table_id, asyncio.Lock())
         try:
             while True:
@@ -207,13 +215,20 @@ def register_websocket_routes(
                     await _send_error(websocket, "invalid_event", "event must include a string type")
                     continue
 
-                mutates_table = payload["type"] in {
+                mutates_table = viewer_mode == "participant" and payload["type"] in {
                     "human_message", "participant_joined", "participant_left",
                     "participant_consent", "request_close",
                 }
                 if mutates_table:
                     await table_lock.acquire()
                 try:
+                    if viewer_mode == "observer" and payload["type"] != "request_debug_state":
+                        await _send_error(
+                            websocket,
+                            "observer_read_only",
+                            "observer connections cannot mutate the table",
+                        )
+                        continue
                     if payload["type"] == "human_message":
                         event = _HumanMessage.model_validate(payload)
                         if event.participant_id != participant_id:
@@ -349,7 +364,10 @@ def register_websocket_routes(
                     elif payload["type"] == "request_debug_state":
                         _RequestDebugState.model_validate(payload)
                         await websocket.send_json(_state_event(
-                            project_state_for_viewer(repository.get(table_id), participant_id)
+                            project_state_for_viewer(
+                                repository.get(table_id),
+                                participant_id if viewer_mode == "participant" else None,
+                            )
                         ))
                     elif payload["type"] == "request_close":
                         _RequestClose.model_validate(payload)
