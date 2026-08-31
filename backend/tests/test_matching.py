@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.demo import flagship_participants
-from app.domain import MatchRequest
+from app.domain import MatchRequest, ParticipantSeed
 from app.matching import build_match_plan
 
 
@@ -36,3 +36,21 @@ def test_match_request_rejects_duplicate_ids_and_oversized_table() -> None:
         MatchRequest(core_question="Q", candidates=[flagship_participants[0], flagship_participants[0]])
     with pytest.raises(ValidationError, match="exceed"):
         MatchRequest(core_question="Q", candidates=flagship_participants[:2], table_size=3)
+
+
+def test_match_respects_candidate_invitation_opt_out() -> None:
+    opted_out = ParticipantSeed.model_validate({
+        **flagship_participants[0].model_dump(),
+        "roundtable_invite_preference": "none",
+    })
+    request = MatchRequest(
+        core_question=QUESTION,
+        candidates=[opted_out, *flagship_participants[1:]],
+        table_size=4,
+    )
+    plan = build_match_plan(request)
+    assert "architect" not in {seat.participant_id for seat in plan.selected}
+    assert "architect" in plan.unmatched_participant_ids
+
+    with pytest.raises(ValidationError, match="invitation-eligible"):
+        MatchRequest(core_question="Q", candidates=[opted_out, opted_out.model_copy(update={"participant_id": "other"})], table_size=2)

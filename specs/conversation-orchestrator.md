@@ -114,6 +114,13 @@
 - **替代方案**: 创建桌时强制同步，或完全由前端本地切换模式。
 - **代价**: 模式切换会产生一个可回放的状态版本；跨进程部署时仍需把升级判断和状态迁移放进数据库事务。
 
+### ADR-14: 圆桌邀请偏好由候选人控制
+
+- **决策**: `ParticipantSeed.roundtable_invite_preference` 默认 `few`，候选人选择 `none` 时不进入圆桌匹配，也不能被创建邀请；偏好随已入席成员保留在状态中。
+- **理由**: 产品要求用户可以多推、少推或不推圆桌邀请，且“拒绝后不重复催”必须有服务端约束。
+- **替代方案**: 只在前端保存偏好，或让邀请方覆盖候选人的选择。
+- **代价**: 候选资料和旧 JSON 都增加一个有默认值的枚举字段；真实用户设置接入后需要把该字段映射到资料源。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -146,6 +153,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
+邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 
 ### 数据模型 / 类型定义
@@ -244,6 +252,7 @@ master
 | D32 invitation lifecycle | complete | persistent pending/accepted/declined invitations with candidate-scoped response and redacted preview | 181 tests + compileall + diff check | `fe05845` + `78ae2fb` |
 | D33 async-to-sync upgrade | complete | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | 184 tests + compileall + diff check | `5f9d3f7` + `fb82f8b` |
 | D34 public table discovery | complete | list open tables with privacy-projected state and optional closed-table inclusion | 185 tests + compileall + diff check | `bc7f9be` |
+| D35 roundtable invite preference | in progress | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | pending | pending |
 
 ## 已知坑位（Running Gotchas）
 

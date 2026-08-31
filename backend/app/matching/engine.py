@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 import re
 
-from app.domain import MatchPlan, MatchReason, MatchRequest, MatchSeat, ParticipantSeed
+from app.domain import InvitationPreference, MatchPlan, MatchReason, MatchRequest, MatchSeat, ParticipantSeed
 
 _CJK = re.compile(r"[\u4e00-\u9fff]+")
 _WORD = re.compile(r"[a-z0-9]{2,}")
@@ -34,7 +34,11 @@ def _candidate_value(candidate: ParticipantSeed, question_terms: set[str]) -> tu
 def build_match_plan(request: MatchRequest) -> MatchPlan:
     """Select a varied, evidence-backed group without exposing private profile data."""
     question_terms = _terms(request.core_question)
-    remaining = list(request.candidates)
+    remaining = [
+        candidate
+        for candidate in request.candidates
+        if candidate.roundtable_invite_preference is not InvitationPreference.NONE
+    ]
     selected: list[ParticipantSeed] = []
     selected_roles: set[str] = set()
 

@@ -32,6 +32,9 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 桌默认异步。同步升级请求需要 `wants_continue=true`、`sync_extra_value=true`，且至少两位成员已经有
 高参与度证据；`discussion_quality`、`external_attention`、`public_value` 只会作为可解释加分信号。
 
+候选资料可设置 `roundtable_invite_preference`：`many`、`few`（默认）或 `none`。选择 `none` 的候选人会
+在匹配和邀请边界被跳过。
+
 默认使用内存仓储；设置 `TABLE_REPOSITORY_PATH` 后使用同目录原子 JSON 快照：
 
 ```powershell

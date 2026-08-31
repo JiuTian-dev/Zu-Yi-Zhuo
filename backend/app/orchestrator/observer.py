@@ -12,7 +12,9 @@ CONTRIBUTION = ("亲历", "数据", "试点", "案例", "经验")
 def build_initial_state(table_id: str, core_question: str, participants: Sequence[ParticipantSeed]) -> TableState:
     mapped = {seed.participant_id: ParticipantState(
         participant_id=seed.participant_id, display_name=seed.display_name, role=seed.role, declared_position=seed.declared_position,
-        unused_relevant_experience=seed.relevant_experience, engagement=Level.LOW,
+        unused_relevant_experience=seed.relevant_experience,
+        roundtable_invite_preference=seed.roundtable_invite_preference,
+        engagement=Level.LOW,
     ) for seed in participants}
     if len(mapped) != len(participants):
         raise ValueError("participant_id must be unique")

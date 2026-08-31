@@ -38,6 +38,11 @@ class InvitationStatus(StrEnum):
     ACCEPTED = "accepted"
     DECLINED = "declined"
 
+class InvitationPreference(StrEnum):
+    MANY = "many"
+    FEW = "few"
+    NONE = "none"
+
 class ConversationMode(StrEnum):
     ASYNC = "async"
     SYNC = "sync"

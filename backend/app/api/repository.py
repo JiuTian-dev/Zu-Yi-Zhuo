@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, GroundingCard, HumanTurn, Invitation, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, SafetyLevel, TableState
+from app.domain import Action, ConversationMode, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, ParticipantSeed, Phase, SafetyLevel, TableState
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
@@ -77,6 +77,7 @@ class InMemoryTableRepository:
             participant_id=seed.participant_id,
             display_name=seed.display_name,
             role=seed.role,
+            roundtable_invite_preference=seed.roundtable_invite_preference,
             declared_position=seed.declared_position,
             unused_relevant_experience=seed.relevant_experience,
             engagement="low",
@@ -95,6 +96,10 @@ class InMemoryTableRepository:
             raise ValueError("inviter must be a table participant")
         if candidate.participant_id in state.participants:
             raise ValueError("candidate is already a table participant")
+        if candidate.roundtable_invite_preference is InvitationPreference.NONE:
+            raise ValueError("candidate has disabled roundtable invitations")
+        if candidate.roundtable_invite_preference is InvitationPreference.NONE:
+            raise ValueError("candidate has disabled roundtable invitations")
         if any(
             item.candidate.participant_id == candidate.participant_id
             for item in self._invitations[table_id]
@@ -150,6 +155,7 @@ class InMemoryTableRepository:
             participant_id=participant_id,
             display_name=seed.display_name,
             role=seed.role,
+            roundtable_invite_preference=seed.roundtable_invite_preference,
             declared_position=seed.declared_position,
             unused_relevant_experience=seed.relevant_experience,
             engagement="low",
@@ -511,6 +517,7 @@ class JsonTableRepository(InMemoryTableRepository):
             participant_id=participant_id,
             display_name=seed.display_name,
             role=seed.role,
+            roundtable_invite_preference=seed.roundtable_invite_preference,
             declared_position=seed.declared_position,
             unused_relevant_experience=seed.relevant_experience,
             engagement="low",

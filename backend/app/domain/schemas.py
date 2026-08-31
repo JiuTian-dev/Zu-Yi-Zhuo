@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, model_validator
 
-from .enums import Action, ConversationMode, DisagreementType, InvitationStatus, Level, Phase, SafetyLevel
+from .enums import Action, ConversationMode, DisagreementType, InvitationPreference, InvitationStatus, Level, Phase, SafetyLevel
 
 Confidence = Annotated[float, Field(ge=0, le=1)]
 TurnEvidence = Annotated[list[PositiveInt], Field(min_length=1)]
@@ -29,6 +29,7 @@ class ParticipantSeed(ContractModel):
     role: str = Field(min_length=1)
     declared_position: str = Field(min_length=1)
     relevant_experience: list[RelevantExperience] = Field(default_factory=list)
+    roundtable_invite_preference: InvitationPreference = InvitationPreference.FEW
 
 
 class Invitation(ContractModel):
@@ -93,6 +94,12 @@ class MatchRequest(ContractModel):
             raise ValueError("candidate participant_id values must be unique")
         if self.table_size > len(self.candidates):
             raise ValueError("table_size cannot exceed candidates")
+        eligible = sum(
+            candidate.roundtable_invite_preference is not InvitationPreference.NONE
+            for candidate in self.candidates
+        )
+        if self.table_size > eligible:
+            raise ValueError("table_size cannot exceed invitation-eligible candidates")
         return self
 
 
@@ -166,6 +173,7 @@ class ParticipantState(ContractModel):
     participant_id: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
     role: str = Field(min_length=1)
+    roundtable_invite_preference: InvitationPreference = InvitationPreference.FEW
     profile_shared: bool = False
     declared_position: str | None = Field(default=None, min_length=1)
     current_position: EvidenceStatement | None = None

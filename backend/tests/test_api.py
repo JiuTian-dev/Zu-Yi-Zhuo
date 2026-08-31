@@ -169,6 +169,23 @@ def test_declined_invitation_is_not_reissued_to_the_same_candidate() -> None:
     ).status_code == 200
 
 
+def test_invitation_respects_candidate_opt_out_preference() -> None:
+    client, _ = client_and_repo()
+    client.post("/tables", json={
+        "table_id": "opt-out", "core_question": "Q", "participants": [participant("p1")],
+    })
+    candidate = {
+        **participant("p2"),
+        "roundtable_invite_preference": "none",
+    }
+    response = client.post(
+        "/tables/opt-out/invitations?inviter_id=p1",
+        json={"candidate": candidate, "reason": "不应创建"},
+    )
+    assert response.status_code == 409
+    assert "disabled" in response.json()["detail"]
+
+
 def test_sync_mode_defaults_async_and_upgrades_only_after_two_hard_conditions() -> None:
     client, repository = client_and_repo()
     client.post("/tables", json={
