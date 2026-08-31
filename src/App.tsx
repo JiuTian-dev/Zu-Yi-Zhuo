@@ -3,7 +3,7 @@ import { Suspense, useEffect, useRef, useState, type CSSProperties, type Mutable
 import * as THREE from 'three'
 import { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
-import Gallery, { type GalleryMediaRect } from './Gallery'
+import Hallway, { type GalleryMediaRect } from './Hallway'
 import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
 
@@ -276,7 +276,6 @@ export default function App() {
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
   const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture) as GalleryFlowTextureRef
   const transitionTimer = useRef<number | null>(null)
-  const galleryScrollY = useRef(0)
   const reducedMotion = useReducedMotion()
   useEffect(() => {
     setEnhanced(canEnhance())
@@ -294,7 +293,6 @@ export default function App() {
   }
   const enterTable = (table: TableSummary, rect: GalleryMediaRect) => {
     if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
-    galleryScrollY.current = window.scrollY
     setTransition({ table, rect })
     setAppPhase('expanding')
     schedulePhase('world', reducedMotion ? 180 : 1100)
@@ -310,7 +308,7 @@ export default function App() {
   return (
     <>
       {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{appPhase === 'gallery' && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
-      {showGallery && <Gallery phase={appPhase} restoreScrollY={galleryScrollY.current} returnFocusId={transition?.table.id ?? null} onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />}
+      {showGallery && <Hallway phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={enterTable} enhanced={enhanced} flowTexture={flowTexture} />}
       {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} onExit={exitTable} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>

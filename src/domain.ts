@@ -23,6 +23,7 @@ interface TableSummaryBase {
   hook: string
   seatedCount: number
   missingPerspective: string
+  recommendedBecause?: string
 }
 
 type TableVisual = {
@@ -52,7 +53,8 @@ const table = (
   seatedCount: number,
   missingPerspective: string,
   visual: TableVisual,
-): TableSummary => ({ id, worldId, hook, seatedCount, missingPerspective, ...visual })
+  recommendedBecause?: string,
+): TableSummary => ({ id, worldId, hook, seatedCount, missingPerspective, ...visual, recommendedBecause })
 
 const preview = (sceneTexture: string, coverFocus: CoverFocus): TableVisual => ({
   sceneTexture,
@@ -69,7 +71,7 @@ export const worlds: WorldSummary[] = [
     atmosphere: '真诚、安静、安全，适合把话说深一点。',
     accent: '#FF9B42',
     tables: [
-      table('leaving-the-city', 'campfire', '关于离开大城市这件事，他们已经聊了三天。', 4, '还缺一个真正离开过的人', preview('/assets/valley-world-clean.png', { x: 0.67, y: 0.52 })),
+      table('leaving-the-city', 'campfire', '关于离开大城市这件事，他们已经聊了三天。', 4, '还缺一个真正离开过的人', preview('/assets/campfire-table.png', { x: 0.5, y: 0.55 }), '你一直在关注「要不要离开大城市」，而这桌聊了三天，还没有一个真正离开过的人。'),
       table('staying-in-the-city', 'campfire', '留在大城市，真的值得吗？', 3, '还缺一个决定留下来的人', preview('/assets/valley-world-clean.png', { x: 0.63, y: 0.48 })),
       table('starting-again', 'campfire', '三十岁以后，重新开始意味着什么？', 2, '还缺一个已经重新开始的人', preview('/assets/valley-world-clean.png', { x: 0.7, y: 0.55 })),
     ],
@@ -88,7 +90,7 @@ export const worlds: WorldSummary[] = [
         entryMode: 'immersive',
         transitionPreset: 'valley',
         coverFocus: { x: 0.5, y: 0.5 },
-      }),
+      }, '你关注过「休息焦虑」相关讨论，而这桌缺一个真正停下来过的人。'),
       table('worth-the-trip', 'valley', '有哪些值得专程去吃的地方？', 2, '还缺一个会为味道出发的人', preview('/assets/valley-world-clean.png', { x: 0.72, y: 0.46 })),
     ],
   },
@@ -98,7 +100,7 @@ export const worlds: WorldSummary[] = [
     atmosphere: '创造、碰撞，把一个念头带到现实里。',
     accent: '#FFD28A',
     tables: [
-      table('learning-to-code', 'workshop', 'AI 时代还要学编程吗？', 4, '还缺一个刚开始学习的人', preview('/assets/valley-world-clean.png', { x: 0.78, y: 0.5 })),
+      table('learning-to-code', 'workshop', 'AI 时代还要学编程吗？', 4, '还缺一个刚开始学习的人', preview('/assets/valley-world-clean.png', { x: 0.78, y: 0.5 }), '你最近收藏过 AI 与职业相关的问题，而这桌缺一个刚开始学习的人。'),
       table('idea-to-product', 'workshop', '一个想法怎样变成产品？', 3, '还缺一个把产品做出来的人', preview('/assets/valley-world-clean.png', { x: 0.76, y: 0.58 })),
       table('creative-drive', 'workshop', '怎样重新找回创造欲？', 3, '还缺一个重新开始创作的人', preview('/assets/valley-world-clean.png', { x: 0.72, y: 0.43 })),
     ],
