@@ -128,6 +128,13 @@
 - **替代方案**: 让模型直接决定动作或把完整 Table State 发给模型。
 - **代价**: provider 调用失败、超长、系统腔或来源声称会回退到确定性草稿；真实 provider 仍需要外部密钥、额度和延迟治理。
 
+### ADR-16: 五席是桌级硬上限
+
+- **决策**: 仓储在直接创建、追加参与者、创建邀请和接受邀请四个写入口统一限制最多 5 名参与者；空桌或少于 4 人的桌仍允许先建立并逐步入席。
+- **理由**: 产品把 4 人定义为可开桌、5 人定义为最佳规模；上限必须在服务端原子写路径执行，不能只靠匹配页或前端按钮。
+- **替代方案**: 只在 `MatchRequest.table_size` 上限制，或允许桌面无限扩容。
+- **代价**: 满桌时新邀请/入席返回冲突，候选人需要等待空位；未来若支持不同桌型，应把容量变成显式 Table 配置。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -262,6 +269,7 @@ master
 | D34 public table discovery | complete | list open tables with privacy-projected state and optional closed-table inclusion | 185 tests + compileall + diff check | `bc7f9be` |
 | D35 roundtable invite preference | complete | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | 187 tests + compileall + diff check | `008a984` |
 | D36 optional Host wording provider | complete | provider-injected Host wording with public-context prompt, bounded output validation, deterministic fallback, and explicit runtime selection | 196 tests + compileall + diff check | `a04655e` |
+| D37 five-seat table capacity | complete | repository-level five-seat cap for create/add/invite/accept paths with in-memory and JSON parity | 199 tests + compileall + diff check | `cd6e518` |
 
 ## 已知坑位（Running Gotchas）
 
