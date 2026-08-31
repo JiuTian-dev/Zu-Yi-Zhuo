@@ -15,6 +15,7 @@ python -m uvicorn app.main:app --reload
 - `GET /healthz`：进程存活探针。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
+- `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；不创建桌。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
 - `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
@@ -65,6 +66,10 @@ python -m uvicorn app.main:app
 ```
 
 wrapper 自己负责知乎授权和 token 管理；不要把 secret、Cookie 或 MCP 配置交给浏览器或前端。
+
+机会预览只接受公开 source signal（问题/回答/文章标题、摘要、公开作者角色和公开立场），信号数量最多 20、
+至少覆盖 2 位作者。输出的 `signal_ids` 和 `unfinishedness` 可回溯到原始来源；候选人仍需经过
+`/matches/preview` 的席位与邀请偏好校验后才能建桌。
 
 Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`，可用逗号分隔的 `CORS_ORIGINS` 覆盖。
 

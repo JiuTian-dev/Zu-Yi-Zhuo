@@ -198,6 +198,13 @@
 - **替代方案**: 直接请求 undocumented 知乎内部接口、把 Cookie/token 交给前端，或在没有授权 source 时降级到网页抓取。
 - **代价**: 接入者需要提供一个小型 CLI/MCP wrapper 遵守 JSON stdin/stdout 契约；source 未配置时继续返回 503。
 
+### ADR-26: 问题机会预览先做确定性未完成性判断
+
+- **决策**: 增加 `POST /opportunities/preview`，接收已获授权的公开问题/回答/文章信号，返回 `OpportunityPreview`：规范化核心问题、带 source signal ID 的未完成性证据、角色缺口和 `ParticipantSeed` 候选池。候选池随后可直接交给现有 `/matches/preview`；预览不创建桌、不发送邀请。启发式只使用公开标题/摘要/作者公开角色/公开立场，所有输入必须标记为 `public`，信号数量与摘要长度有界。
+- **理由**: 产品的第一入口不是“先有一群人再聊天”，而是发现一个值得发生的交流机会；先把问题未完成性和候选角色结构化，才能解释为什么要围绕这道题组桌，同时保持模型可替换。
+- **替代方案**: 直接把搜索结果当作桌、让 LLM 自由生成问题/候选人，或在服务端抓取知乎私密行为。
+- **代价**: V1 启发式不能替代语义聚类；真正的知乎 source 只需把授权结果映射为 `ContentSignal`，后续可替换 detector 而不改桌内闭环。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -304,6 +311,7 @@ master
                                                                     ←── D44 soft-expired table lifecycle
                                                                                   ←── D46 participant leave REST parity
                                                                                         ←── D47 command-backed candidate source
+                                                                                              ←── D48 opportunity discovery preview
 ```
 
 ## Progress Ledger
@@ -361,6 +369,7 @@ master
 | D45 relationship memory view | complete | derive evidence-backed old-table relationship reminders from closed states with self-only REST access and no private profile leakage | 221 tests + compileall + diff check | `c9334c4` |
 | D46 participant leave REST parity | complete | self-scoped REST leave endpoint sharing atomic repository membership migration with WebSocket | 222 tests + compileall + diff check | `58c0119` |
 | D47 command-backed candidate source | complete | bounded no-shell JSON stdin/stdout bridge for authorized CLI/MCP/OAuth candidate adapters | 227 tests + compileall + diff check | `a7a28bc` |
+| D48 opportunity discovery preview | complete | public-signal opportunity detector with unfinishedness evidence, role gaps, and normalized candidate seeds | 231 tests + compileall + diff check | pending |
 
 ## 已知坑位（Running Gotchas）
 
