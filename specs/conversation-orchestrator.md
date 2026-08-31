@@ -261,7 +261,7 @@ master
 | D33 async-to-sync upgrade | complete | async-by-default conversation mode, explainable upgrade preview, and atomic sync migration | 184 tests + compileall + diff check | `5f9d3f7` + `fb82f8b` |
 | D34 public table discovery | complete | list open tables with privacy-projected state and optional closed-table inclusion | 185 tests + compileall + diff check | `bc7f9be` |
 | D35 roundtable invite preference | complete | candidate-controlled many/few/none preference enforced at matching and invitation boundaries | 187 tests + compileall + diff check | `008a984` |
-| D36 optional Host wording provider | in progress | provider-injected Host wording with public-context prompt, bounded output validation, deterministic fallback, and explicit runtime selection | 193 tests + compileall + diff check pending | — |
+| D36 optional Host wording provider | complete | provider-injected Host wording with public-context prompt, bounded output validation, deterministic fallback, and explicit runtime selection | 196 tests + compileall + diff check | `a04655e` |
 
 ## 已知坑位（Running Gotchas）
 
