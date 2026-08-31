@@ -733,7 +733,7 @@ master
 | D81 cold-start nudge event | complete | Member-triggered evidence-backed `request_nudge` produces a cooled, audited `PROBE` when a first human turn has no natural response; audit retains the nudge rationale | 324 tests + compileall + diff check | `5f430a5` + `41b823b` |
 | D82 REST/WebSocket shared nudge service | complete | Unified evidence-backed nudge commit path plus REST `POST /tables/{id}/nudge` with projected response and parity tests | 327 tests + compileall + diff check | `288dde4` + `af854ad` |
 | D83 first-expression nudge evidence boundary | complete | Restrict shared cold-start nudge to the latest speaker's first human expression and preserve explicit evidence errors | 329 tests + compileall + diff check | `94e42f5` |
-| D84 WebSocket Origin allowlist boundary | in_progress | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | pending | — |
+| D84 WebSocket Origin allowlist boundary | complete | Add explicit, configurable WebSocket Origin validation with fail-closed handshake rejection and development compatibility | 332 tests + compileall + diff check | `7386901` |
 
 ## 已知坑位（Running Gotchas）
 
