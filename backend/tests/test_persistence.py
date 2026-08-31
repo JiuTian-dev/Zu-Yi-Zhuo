@@ -53,6 +53,19 @@ def test_json_repository_deduplicates_message_ids_across_restart(tmp_path) -> No
         restored.append_message_once("idempotent", "architect", "换一条内容", "msg-1")
 
 
+def test_json_repository_enforces_five_seat_capacity(tmp_path) -> None:
+    repository = JsonTableRepository(tmp_path / "capacity.json")
+    repository.create("capacity", "Q", flagship_participants)
+
+    with pytest.raises(ValueError, match="cannot exceed 5"):
+        repository.add_participant(
+            "capacity", flagship_participants[0].model_copy(update={"participant_id": "extra"})
+        )
+
+    restored = JsonTableRepository(repository.path)
+    assert len(restored.get("capacity").participants) == 5
+
+
 def test_json_repository_returns_isolated_models_after_restart(tmp_path) -> None:
     path = tmp_path / "table.json"
     repository = JsonTableRepository(path)

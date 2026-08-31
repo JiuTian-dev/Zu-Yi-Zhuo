@@ -13,6 +13,8 @@ from app.domain import Action, ConversationMode, GroundingCard, HumanTurn, Invit
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
+MAX_TABLE_PARTICIPANTS = 5
+
 
 def _synchronized(method: Callable[..., Any]) -> Callable[..., Any]:
     """Serialize one repository operation while allowing nested calls."""
@@ -42,6 +44,8 @@ class InMemoryTableRepository:
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
+        if len(participants) > MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         state = build_initial_state(table_id, core_question, participants)
         self._states[table_id] = [state]
         self._turns[table_id] = []
@@ -71,6 +75,8 @@ class InMemoryTableRepository:
             raise ValueError("table is closed")
         if seed.participant_id in state.participants:
             raise ValueError(f"participant already exists: {seed.participant_id}")
+        if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated = state.model_copy(deep=True)
         updated.version += 1
         updated.participants[seed.participant_id] = ParticipantState(
@@ -98,8 +104,8 @@ class InMemoryTableRepository:
             raise ValueError("candidate is already a table participant")
         if candidate.roundtable_invite_preference is InvitationPreference.NONE:
             raise ValueError("candidate has disabled roundtable invitations")
-        if candidate.roundtable_invite_preference is InvitationPreference.NONE:
-            raise ValueError("candidate has disabled roundtable invitations")
+        if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         if any(
             item.candidate.participant_id == candidate.participant_id
             for item in self._invitations[table_id]
@@ -141,6 +147,8 @@ class InMemoryTableRepository:
             raise ValueError("invitation has already been resolved")
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if accept and len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated_invitation = invitation.model_copy(update={"status": requested})
         index = self._invitations[table_id].index(invitation)
         if not accept:
@@ -396,6 +404,8 @@ class JsonTableRepository(InMemoryTableRepository):
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
+        if len(participants) > MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         state = build_initial_state(table_id, core_question, participants)
         states = {**self._states, table_id: [state]}
         turns = {**self._turns, table_id: []}
@@ -457,6 +467,10 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("inviter must be a table participant")
         if candidate.participant_id in state.participants:
             raise ValueError("candidate is already a table participant")
+        if candidate.roundtable_invite_preference is InvitationPreference.NONE:
+            raise ValueError("candidate has disabled roundtable invitations")
+        if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         existing = self._invitations[table_id]
         if any(item.candidate.participant_id == candidate.participant_id for item in existing):
             raise ValueError("candidate already has an invitation for this table")
@@ -496,6 +510,8 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("invitation has already been resolved")
         if state.conversation.closed:
             raise ValueError("table is closed")
+        if accept and len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         updated_invitation = invitation.model_copy(update={"status": requested})
         index = self._invitations[table_id].index(invitation)
         invitations = {

@@ -89,6 +89,42 @@ def test_api_rejects_unknown_tables_duplicate_participants_and_empty_close() -> 
     assert client.post("/tables/empty/participants", json=participant()).status_code == 409
 
 
+def test_table_capacity_is_capped_at_five_seats() -> None:
+    client, _ = client_and_repo()
+    seats = [participant(f"p{index}") for index in range(5)]
+    assert client.post(
+        "/tables", json={"table_id": "full", "core_question": "Q", "participants": seats}
+    ).status_code == 201
+    assert client.post("/tables/full/participants", json=participant("p6")).json() == {
+        "detail": "table cannot exceed 5 participants"
+    }
+    assert client.post(
+        "/tables", json={"table_id": "too-many", "core_question": "Q", "participants": seats + [participant("p6")]}
+    ).status_code == 409
+
+
+def test_invitation_acceptance_cannot_overfill_a_table() -> None:
+    client, _ = client_and_repo()
+    seats = [participant(f"p{index}") for index in range(4)]
+    assert client.post(
+        "/tables", json={"table_id": "invite-full", "core_question": "Q", "participants": seats}
+    ).status_code == 201
+    candidate = {**participant("p6"), "display_name": "候补"}
+    invitation = client.post(
+        "/tables/invite-full/invitations?inviter_id=p0",
+        json={"candidate": candidate, "reason": "补充视角"},
+    )
+    assert invitation.status_code == 201
+    assert client.post("/tables/invite-full/participants", json=participant("p4")).status_code == 200
+
+    response = client.post(
+        f"/tables/invite-full/invitations/{invitation.json()['invitation_id']}/respond?participant_id=p6",
+        json={"accept": True},
+    )
+    assert response.status_code == 409
+    assert response.json() == {"detail": "table cannot exceed 5 participants"}
+
+
 def test_invitation_preview_is_redacted_and_acceptance_adds_the_candidate() -> None:
     client, _ = client_and_repo()
     assert client.post(
