@@ -520,6 +520,13 @@
 - **替代方案**: 只在前端节流、为每个业务路由复制计数器、或现在引入 Redis；这些方案分别不能形成服务端防线、容易出现不一致、或超出当前单体 MVP 的部署边界。
 - **代价**: 限流状态只在单进程内有效，多个实例需要共享网关/存储限流；基于 TCP peer 地址在共享 NAT 下是粗粒度保护，生产应在可信网关后结合认证主体做更细粒度策略。
 
+### ADR-72: 匹配理由携带可选公开信号归因
+
+- **决策**: `ParticipantSeed` 增加有界、可选的 `public_signal_ids`；机会发现从每位作者的公开 `ContentSignal` 生成候选时填入这些 ID，匹配结果的 `MatchReason` 以 `evidence_signal_ids` 返回最多 5 个对应 ID。字段为空时从 JSON 响应中省略，现有手工候选和旧前端契约保持兼容；私有立场、经历和 `source_ref` 不进入匹配理由，也不写入 `TableState`。
+- **理由**: 产品的“为什么是这些人”需要能从公开机会信号回溯，而不是只显示角色词项；将公开 ID 作为轻量归因可以让前端链接到已展示的信号，同时不把个人授权数据或未经同意的画像复制到桌状态。
+- **替代方案**: 继续只返回角色文案、直接把公开摘要复制进理由、或把整份来源信号永久写进桌状态；这些方案分别不可回溯、扩大响应/隐私面、或让桌状态绑定外部内容生命周期。
+- **代价**: 归因只保证从机会预览到匹配响应的短链路，重启后桌状态不保留来源详情；若未来需要可回放的来源谱系，应另建公开 source snapshot/artifact，而不是扩张参与者私有字段。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -632,6 +639,8 @@ CommentPromotion(promotion_id, table_id, comment_id, promoter_id,
 AgentPresence(agent_id, display_name, role, status=active|paused|closed)
 BehaviorEvent(event_id, participant_id, event_type, table_id,
               state_version?, related_participant_id?, detail?)
+ParticipantSeed(..., public_signal_ids?<=20)
+MatchReason(participant_id, reason, evidence_terms, evidence_signal_ids?<=5)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -721,7 +730,8 @@ master
                                                                                                                                                                                                                                                                                                                                             ←── D91 value feedback behavior event
                                                                                                                                                                                                                                                                                                                                                   ←── D92 end-to-end demo journey smoke
                                                                                                                                                                                                                                                                                                                                                        ←── D93 repository behavior trust boundary
-                                                                                                                                                                                                                                                                                                                                                             ←── D94 REST mutation rate limit
+                                                                                                                                                                                                                                                                                                                                                            ←── D94 REST mutation rate limit
+                                                                                                                                                                                                                                                                                                                                                                  ←── D95 public match signal attribution
 ```
 
 ## Progress Ledger
@@ -826,6 +836,7 @@ master
 | D92 end-to-end demo journey smoke | complete | Black-box opportunity → match → WebSocket turn → close → follow-up/relationship/feedback journey with JSON restart recovery | 352 tests + compileall + diff check | `c7820a4` |
 | D93 repository behavior trust boundary | complete | Generic in-memory/JSON behavior writes reject server-generated close/feedback events while dedicated paths remain valid | 353 tests + compileall + diff check | `761a8d6` |
 | D94 REST mutation rate limit | complete | Configurable per-process sliding-window limit for REST write methods with 429/Retry-After responses and preserved read/WS behavior | 357 tests + compileall + diff check | `59bcec0` |
+| D95 public match signal attribution | complete | Carry bounded public signal IDs from opportunity candidates into explainable match reasons without leaking private profile data or persisting source details in table state | 357 tests + compileall + diff check | `fa185bb` |
 
 ## 已知坑位（Running Gotchas）
 

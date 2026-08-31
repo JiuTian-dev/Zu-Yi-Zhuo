@@ -15,11 +15,11 @@ python -m uvicorn app.main:app --reload
 - `GET /healthz`：进程存活探针。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
-- `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；不创建桌。
+- `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，不创建桌。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
 - `POST /personal-context/source-preview?viewer_id=...`：调用服务端注入的用户授权个人 source，生成本人可见的兴趣/表达主题预览；不创建桌、不广播、不落盘。
 - `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。
-- `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由，再创建桌。
+- `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由；来自机会预览的理由会附带 `evidence_signal_ids`，再创建桌。
 - `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
