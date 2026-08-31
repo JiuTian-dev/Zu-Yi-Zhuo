@@ -401,6 +401,13 @@
 - **替代方案**: 复用成员查询接口、接受请求体中的 moderator 字段、或把举报推到 WebSocket；这些方案分别扩大泄露面、可伪造身份或把私密内容带入桌面广播。
 - **代价**: 部署方必须提供审核身份解析器；未配置时队列明确返回 503，而不是降级为公开数据。
 
+### ADR-55: 举报状态由审核器单向推进
+
+- **决策**: 增加 moderator-only `PATCH /tables/{table_id}/safety-reports/{report_id}`，只允许把举报从 `open` 推进到 `acknowledged` 或 `resolved`，以及从 `acknowledged` 推进到 `resolved`；重复提交当前状态幂等，已 `resolved` 的举报不可回退。状态变更写入内存/JSON 仓储，不向桌面 WebSocket 广播。
+- **理由**: 举报队列必须能被审核工作流消费，但举报正文仍是私密审核数据；单向状态机避免前端或被举报成员伪造处置、回滚审计结论。
+- **替代方案**: 允许任意状态覆盖、把状态交给前端保存、或复用安全处置接口；这些方案分别会破坏审计顺序、重启一致性或混淆“举报处理”和“桌面安全恢复”。
+- **代价**: 审核器需要显式携带目标状态；重新打开举报暂不支持，若未来需要应另设带理由的复核事件。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -662,6 +669,7 @@ master
 | D75 REST close lifecycle parity | complete | REST close emits `close_started` before artifact generation, then `table_closed` and projected state only after an evidence-backed atomic close; insufficient evidence leaves the state open | 312 tests + compileall + diff check | `27c9531` + `53aec0b` |
 | D76 replay projection for late joiners | complete | Current member identity is validated once, then historical snapshots tolerate the viewer being absent before joining while retaining privacy projection | 314 tests + compileall + diff check | `b7bdc90` + `e39c138` |
 | D77 moderator-only safety report queue | complete | Trusted moderator identity can read a table's full private report queue; participant self-read remains unchanged and no report is broadcast | 316 tests + compileall + diff check | `de40b4d` + `7fda8d8` |
+| D78 moderator safety report status lifecycle | in progress | Moderator-only single-direction report status transitions (`open` → `acknowledged` → `resolved`) with idempotency and JSON persistence; no peer broadcast | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
