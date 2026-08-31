@@ -5,7 +5,8 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain import HumanTurn, ParticipantSeed, SharedBaseline, TableState
+from app.domain import HumanTurn, MatchPlan, MatchRequest, ParticipantSeed, SharedBaseline, TableState
+from app.matching import build_match_plan
 from app.orchestrator import build_shared_baseline
 
 from .repository import InMemoryTableRepository
@@ -62,6 +63,10 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
             return projected(repo.create(table_id, payload.core_question, payload.participants))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.post("/matches/preview", response_model=MatchPlan)
+    def preview_match(payload: MatchRequest) -> MatchPlan:
+        return build_match_plan(payload)
 
     @api.get("/tables/{table_id}", response_model=TableState)
     def get_table(table_id: str, participant_id: str | None = Query(default=None)) -> TableState:

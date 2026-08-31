@@ -30,6 +30,60 @@ class ParticipantSeed(ContractModel):
     declared_position: str = Field(min_length=1)
     relevant_experience: list[RelevantExperience] = Field(default_factory=list)
 
+
+class MatchRequest(ContractModel):
+    """Bounded candidate pool for the first-stage "find people" preview."""
+
+    core_question: str = Field(min_length=1)
+    candidates: list[ParticipantSeed] = Field(min_length=2, max_length=20)
+    table_size: int = Field(default=4, ge=2, le=5)
+
+    @model_validator(mode="after")
+    def candidate_ids_are_unique_and_fit(self) -> "MatchRequest":
+        ids = [candidate.participant_id for candidate in self.candidates]
+        if len(ids) != len(set(ids)):
+            raise ValueError("candidate participant_id values must be unique")
+        if self.table_size > len(self.candidates):
+            raise ValueError("table_size cannot exceed candidates")
+        return self
+
+
+class MatchSeat(ContractModel):
+    """Public seat preview; private profile fields are intentionally absent."""
+
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+
+
+class MatchReason(ContractModel):
+    participant_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    evidence_terms: list[str] = Field(default_factory=list, max_length=5)
+
+
+class MatchPlan(ContractModel):
+    core_question: str = Field(min_length=1)
+    selected: list[MatchSeat] = Field(min_length=2, max_length=5)
+    reasons: list[MatchReason] = Field(min_length=2, max_length=5)
+    unmatched_participant_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def selected_reasons_are_consistent(self) -> "MatchPlan":
+        selected_ids = [seat.participant_id for seat in self.selected]
+        reason_ids = [reason.participant_id for reason in self.reasons]
+        if len(selected_ids) != len(set(selected_ids)):
+            raise ValueError("selected participant_id values must be unique")
+        if len(reason_ids) != len(set(reason_ids)):
+            raise ValueError("reason participant_id values must be unique")
+        if len(self.unmatched_participant_ids) != len(set(self.unmatched_participant_ids)):
+            raise ValueError("unmatched participant_id values must be unique")
+        if set(reason_ids) != set(selected_ids):
+            raise ValueError("reasons must cover exactly the selected participants")
+        if set(selected_ids) & set(self.unmatched_participant_ids):
+            raise ValueError("selected participants cannot be unmatched")
+        return self
+
 class HumanTurn(ContractModel):
     turn_id: PositiveInt
     participant_id: str = Field(min_length=1)

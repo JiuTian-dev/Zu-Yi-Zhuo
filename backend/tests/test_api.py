@@ -124,3 +124,40 @@ def test_profile_fields_are_hidden_until_explicit_consent() -> None:
     revoked = client.post("/tables/privacy/participants/p2/consent", json={"profile_shared": False})
     assert revoked.status_code == 200
     assert client.get("/tables/privacy/state").json()["participants"]["p2"]["declared_position"] is None
+
+
+def test_match_preview_returns_public_seats_and_explainable_reasons() -> None:
+    client, _ = client_and_repo()
+    candidates = [
+        {
+            "participant_id": "tech",
+            "display_name": "技术角色",
+            "role": "AI 架构师",
+            "declared_position": "模型精度是关键",
+            "relevant_experience": [{"text": "做过企业 Agent 落地", "source_ref": "private:tech"}],
+        },
+        {
+            "participant_id": "buyer",
+            "display_name": "采购角色",
+            "role": "企业采购负责人",
+            "declared_position": "采购责任链是关键",
+            "relevant_experience": [{"text": "亲历过供应商采购", "source_ref": "private:buyer"}],
+        },
+        {
+            "participant_id": "product",
+            "display_name": "产品角色",
+            "role": "产品负责人",
+            "declared_position": "价值闭环更重要",
+        },
+    ]
+    response = client.post("/matches/preview", json={
+        "core_question": "AI Agent 进入企业卡在哪里？",
+        "candidates": candidates,
+        "table_size": 3,
+    })
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["selected"]) == 3
+    assert {seat["participant_id"] for seat in payload["selected"]} == {"tech", "buyer", "product"}
+    assert {reason["participant_id"] for reason in payload["reasons"]} == {"tech", "buyer", "product"}
+    assert all("declared_position" not in seat and "relevant_experience" not in seat for seat in payload["selected"])
