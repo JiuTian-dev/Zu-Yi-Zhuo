@@ -7,9 +7,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextPreview, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, HumanTurn, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, SafetyReport, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, evaluate_sync_upgrade
@@ -106,6 +106,25 @@ class PersonalContextSourceRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=120)
     limit: int = Field(default=20, ge=1, le=20)
+    scopes: list[PersonalContextScope] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def scopes_are_unique(self) -> "PersonalContextSourceRequest":
+        if len(self.scopes) != len(set(self.scopes)):
+            raise ValueError("personal context scopes must be unique")
+        return self
+
+
+class PersonalContextConsentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scopes: list[PersonalContextScope] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def scopes_are_unique(self) -> "PersonalContextConsentRequest":
+        if len(self.scopes) != len(set(self.scopes)):
+            raise ValueError("personal context scopes must be unique")
+        return self
 
 
 class MatchedTableResponse(BaseModel):
@@ -274,6 +293,54 @@ def create_app(
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.relationship_memories(participant_id)
 
+    @api.put(
+        "/participants/{participant_id}/personal-context/consent",
+        response_model=PersonalContextConsent,
+    )
+    def grant_personal_context_consent(
+        participant_id: str,
+        payload: PersonalContextConsentRequest,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> PersonalContextConsent:
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            return repo.set_personal_context_consent(
+                PersonalContextConsent(viewer_id=participant_id, scopes=payload.scopes)
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.delete(
+        "/participants/{participant_id}/personal-context/consent",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def revoke_personal_context_consent(
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> None:
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            repo.revoke_personal_context_consent(participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.get(
+        "/participants/{participant_id}/personal-context/consent",
+        response_model=PersonalContextConsent,
+    )
+    def get_personal_context_consent(
+        participant_id: str,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> PersonalContextConsent:
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        consent = repo.personal_context_consent(participant_id)
+        if consent is None:
+            raise HTTPException(status_code=404, detail="personal context consent not found")
+        return consent
+
     @api.post(
         "/participants/{participant_id}/no-match/{blocked_participant_id}",
         response_model=NoMatchPreference,
@@ -358,12 +425,18 @@ def create_app(
         viewer_id: str = Query(..., min_length=1),
     ) -> PersonalContextPreview:
         """Preview viewer-owned context without persisting or broadcasting it."""
+        consent = repo.personal_context_consent(viewer_id)
+        if consent is None:
+            raise HTTPException(status_code=403, detail="personal context consent required")
+        if not set(payload.scopes).issubset(set(consent.scopes)):
+            raise HTTPException(status_code=403, detail="personal context scope not granted")
         if personal_context_source is None:
             raise HTTPException(status_code=503, detail="personal context source is not configured")
         try:
             raw_signals = await asyncio.wait_for(
                 personal_context_source.search(
                     viewer_id=viewer_id,
+                    scopes=payload.scopes,
                     query=payload.query,
                     limit=payload.limit,
                 ),

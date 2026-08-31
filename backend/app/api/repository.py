@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
+from app.domain import Action, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
@@ -42,6 +42,7 @@ class InMemoryTableRepository:
         self._comments: dict[str, list[PeripheralComment]] = {}
         self._no_match: dict[str, set[str]] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
+        self._personal_context_consents: dict[str, PersonalContextConsent] = {}
 
     @_synchronized
     def create(
@@ -220,6 +221,31 @@ class InMemoryTableRepository:
         if reporter_id is not None:
             rows = [item for item in rows if item.reporter_id == reporter_id]
         return [item.model_copy(deep=True) for item in rows]
+
+    @_synchronized
+    def set_personal_context_consent(
+        self, consent: PersonalContextConsent
+    ) -> PersonalContextConsent:
+        self._personal_context_consents[consent.viewer_id] = consent.model_copy(deep=True)
+        return consent.model_copy(deep=True)
+
+    @_synchronized
+    def revoke_personal_context_consent(self, viewer_id: str) -> bool:
+        if not viewer_id.strip():
+            raise ValueError("viewer_id must be non-empty")
+        if viewer_id not in self._personal_context_consents:
+            return False
+        self._personal_context_consents.pop(viewer_id)
+        return True
+
+    @_synchronized
+    def personal_context_consent(
+        self, viewer_id: str
+    ) -> PersonalContextConsent | None:
+        if not viewer_id.strip():
+            raise ValueError("viewer_id must be non-empty")
+        consent = self._personal_context_consents.get(viewer_id)
+        return consent.model_copy(deep=True) if consent is not None else None
 
     @_synchronized
     def invitations(self, table_id: str) -> list[Invitation]:
@@ -640,6 +666,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._comments,
                 self._no_match,
                 self._safety_reports,
+                self._personal_context_consents,
             ) = self._load()
 
     @_synchronized
@@ -697,6 +724,38 @@ class JsonTableRepository(InMemoryTableRepository):
             self._value_feedback, self._comments, self._no_match, reports,
         )
         return report.model_copy(deep=True), True
+
+    @_synchronized
+    def set_personal_context_consent(
+        self, consent: PersonalContextConsent
+    ) -> PersonalContextConsent:
+        consents = {
+            **self._personal_context_consents,
+            consent.viewer_id: consent.model_copy(deep=True),
+        }
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards,
+            self._interventions, self._invitations, self._follow_up_outcomes,
+            self._value_feedback, self._comments, self._no_match,
+            self._safety_reports, consents,
+        )
+        return consent.model_copy(deep=True)
+
+    @_synchronized
+    def revoke_personal_context_consent(self, viewer_id: str) -> bool:
+        if not viewer_id.strip():
+            raise ValueError("viewer_id must be non-empty")
+        if viewer_id not in self._personal_context_consents:
+            return False
+        consents = dict(self._personal_context_consents)
+        consents.pop(viewer_id)
+        self._commit(
+            self._states, self._turns, self._trusted_grounding_cards,
+            self._interventions, self._invitations, self._follow_up_outcomes,
+            self._value_feedback, self._comments, self._no_match,
+            self._safety_reports, consents,
+        )
+        return True
 
     @_synchronized
     def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
@@ -1092,6 +1151,7 @@ class JsonTableRepository(InMemoryTableRepository):
         comments: dict[str, list[PeripheralComment]] | None = None,
         no_match: dict[str, set[str]] | None = None,
         safety_reports: dict[str, list[SafetyReport]] | None = None,
+        personal_context_consents: dict[str, PersonalContextConsent] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1101,6 +1161,11 @@ class JsonTableRepository(InMemoryTableRepository):
         comment_rows = comments if comments is not None else self._comments
         no_match_rows = no_match if no_match is not None else self._no_match
         report_rows = safety_reports if safety_reports is not None else self._safety_reports
+        consent_rows = (
+            personal_context_consents
+            if personal_context_consents is not None
+            else self._personal_context_consents
+        )
         payload = {
             "tables": {
                 table_id: {
@@ -1133,6 +1198,10 @@ class JsonTableRepository(InMemoryTableRepository):
             "no_match": {
                 participant_id: sorted(targets)
                 for participant_id, targets in no_match_rows.items()
+            },
+            "personal_context_consents": {
+                viewer_id: consent.model_dump(mode="json")
+                for viewer_id, consent in consent_rows.items()
             },
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1179,6 +1248,10 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in report_rows.items()
         }
+        self._personal_context_consents = {
+            viewer_id: consent.model_copy(deep=True)
+            for viewer_id, consent in consent_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -1191,13 +1264,17 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[PeripheralComment]],
         dict[str, set[str]],
         dict[str, list[SafetyReport]],
+        dict[str, PersonalContextConsent],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError(f"invalid persistence file: {self.path}") from error
         if (not isinstance(payload, dict) or "tables" not in payload
-                or not set(payload).issubset({"tables", "trusted_grounding_cards", "no_match"})
+                or not set(payload).issubset({
+                    "tables", "trusted_grounding_cards", "no_match",
+                    "personal_context_consents",
+                })
                 or not isinstance(payload["tables"], dict)):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
         states: dict[str, list[TableState]] = {}
@@ -1342,4 +1419,18 @@ class JsonTableRepository(InMemoryTableRepository):
             ):
                 raise ValueError("invalid persistence file: invalid no_match participant")
             no_match[participant_id] = set(targets)
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, no_match, safety_reports
+        raw_consents = payload.get("personal_context_consents", {})
+        if not isinstance(raw_consents, dict):
+            raise ValueError("invalid persistence file: malformed personal_context_consents")
+        consents: dict[str, PersonalContextConsent] = {}
+        for viewer_id, raw_consent in raw_consents.items():
+            if not isinstance(viewer_id, str) or not viewer_id:
+                raise ValueError("invalid persistence file: invalid personal context viewer")
+            try:
+                consent = PersonalContextConsent.model_validate(raw_consent)
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid persistence file: invalid personal context consent") from error
+            if consent.viewer_id != viewer_id:
+                raise ValueError("invalid persistence file: personal context viewer mismatch")
+            consents[viewer_id] = consent
+        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, no_match, safety_reports, consents

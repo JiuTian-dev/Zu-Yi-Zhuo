@@ -5,7 +5,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from app.domain import PersonalContextSignal
+from app.domain import PersonalContextScope, PersonalContextSignal
 
 from .base import PersonalContextSourceError
 
@@ -48,7 +48,7 @@ class CommandPersonalContextSource:
                 pass
 
     async def search(
-        self, *, viewer_id: str, query: str, limit: int
+        self, *, viewer_id: str, scopes: Sequence[PersonalContextScope], query: str, limit: int
     ) -> Sequence[PersonalContextSignal]:
         if not viewer_id.strip() or not query.strip():
             raise PersonalContextSourceError("personal context viewer and query are required")
@@ -64,7 +64,7 @@ class CommandPersonalContextSource:
             if process.stdin is None:
                 raise OSError("personal context source stdin unavailable")
             process.stdin.write(json.dumps(
-                {"viewer_id": viewer_id, "query": query, "limit": limit},
+                {"viewer_id": viewer_id, "scopes": list(scopes), "query": query, "limit": limit},
                 ensure_ascii=False,
             ).encode("utf-8"))
             await process.stdin.drain()

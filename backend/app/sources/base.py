@@ -8,7 +8,7 @@ or access token can leak into matching or the conversation state machine.
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.domain import ContentSignal, ParticipantSeed, PersonalContextSignal
+from app.domain import ContentSignal, ParticipantSeed, PersonalContextScope, PersonalContextSignal
 
 
 class CandidateSourceError(RuntimeError):
@@ -35,7 +35,7 @@ class ContentSignalSource(Protocol):
 
 class PersonalContextSource(Protocol):
     async def search(
-        self, *, viewer_id: str, query: str, limit: int
+        self, *, viewer_id: str, scopes: Sequence[PersonalContextScope], query: str, limit: int
     ) -> Sequence[PersonalContextSignal]:
         """Return at most ``limit`` private signals owned by ``viewer_id``."""
 

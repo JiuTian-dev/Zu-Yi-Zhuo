@@ -61,6 +61,22 @@ class PersonalContextSignal(ContractModel):
     visibility: Literal["private"] = "private"
 
 
+PersonalContextScope = Literal["profile", "follows", "favorites", "public_content"]
+
+
+class PersonalContextConsent(ContractModel):
+    """A viewer-owned allowlist of personal-context scopes."""
+
+    viewer_id: str = Field(min_length=1)
+    scopes: list[PersonalContextScope] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def scopes_are_unique(self) -> "PersonalContextConsent":
+        if len(self.scopes) != len(set(self.scopes)):
+            raise ValueError("personal context scopes must be unique")
+        return self
+
+
 class PersonalContextPreview(ContractModel):
     """Ephemeral private themes derived from one viewer's authorized signals."""
 
