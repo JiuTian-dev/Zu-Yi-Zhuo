@@ -59,6 +59,7 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
     assert action["type"] == "agent_action"
     assert action["action"] == "PASS"
     assert action["state_version"] == changed["state"]["version"]
+    assert "采购试点的现场经验" not in action["text"]
     assert action["gate"]["should_speak"] is True
     assert action["route"]["action"] == "PASS"
     assert repository.get("table-ws").intervention.last_action.value == "PASS"

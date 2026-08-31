@@ -32,7 +32,11 @@ def _pass_text(state: TableState, participant_id: str | None) -> str:
     person = _target(state, participant_id)
     if person is None:
         raise ValueError("PASS target_participant_id must identify a participant in state")
-    experience = person.unused_relevant_experience[0] if person.unused_relevant_experience else None
+    experience = (
+        person.unused_relevant_experience[0]
+        if person.profile_shared and person.unused_relevant_experience
+        else None
+    )
     if experience:
         text = (f'{person.display_name}，你的角色是{_safe(person.role, 28)}，而且有“{_safe(experience.text, 40)}”这段经历。'
                 "能不能从现场讲讲，它为什么改变了你的判断？")

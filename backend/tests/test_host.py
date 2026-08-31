@@ -35,10 +35,20 @@ def test_every_action_returns_frontend_event(action: Action) -> None:
 
 def test_pass_explains_why_the_target_is_invited() -> None:
     state = state_after("pass")
+    state.participants["buyer"].profile_shared = True
     event = generate_host_event(state, decision(Action.PASS, [1], "buyer"))
     assert event.action is Action.PASS
     assert all(part in event.text for part in ("林青", "企业采购负责人", "供应商采购"))
     assert "作为AI" not in event.text
+
+
+def test_pass_does_not_broadcast_unconsented_experience() -> None:
+    state = state_after("pass")
+    event = generate_host_event(state, decision(Action.PASS, [1], "buyer"))
+
+    assert "林青" in event.text
+    assert "企业采购负责人" in event.text
+    assert "供应商采购" not in event.text
 
 
 @pytest.mark.parametrize("action", [Action.PASS, Action.REFRAME])
