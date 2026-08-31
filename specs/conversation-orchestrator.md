@@ -240,6 +240,13 @@
 - **替代方案**: 把评论伪装成匿名 ParticipantState、直接追加 HumanTurn，或让前端本地维护评论而不广播。
 - **代价**: V1 只提供文本评论和幂等写入，未实现评论排序、点赞或升级到主桌；后续应由 Agent/主持策略显式挑选高质量评论递进核心桌。
 
+### ADR-32: 问题进化通过显式重组创建下一桌
+
+- **决策**: `TableState` 增加可选 `origin_table_id`；已收桌桌子可调用 `POST /tables/{id}/recompose`，服务端从收桌共享基线读取带证据的 `evolved_question`，要求调用方提供一组重新选择且数量有界的 `ParticipantSeed`，创建一张新桌并记录来源桌。重组不复制旧成员、邀请、评论、反馈或消息，源桌和新桌均保持独立可回放。
+- **理由**: 产品的问题飞轮要求“原问题进化 → 下一桌”，但重组不应把旧桌成员机械搬运到新局；显式来源链接既保留问题谱系，也让候选与邀请重新经过用户选择和隐私边界。
+- **替代方案**: 直接复制旧桌、只返回一段文本让前端自行建桌，或把新问题覆盖写回旧桌。
+- **代价**: V1 只支持从已收桌创建单层来源链接；未来若需要多代问题图谱，可在此字段之上扩展 lineage 查询而不改变桌内状态机。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -268,6 +275,7 @@ GET  /tables/{id}/follow-ups?participant_id={participant_id}
 POST /tables/{id}/follow-ups/{index}/outcome?participant_id={participant_id}
 POST /tables/{id}/soft-expire?participant_id={participant_id}
 POST /tables/{id}/close
+POST /tables/{id}/recompose
 POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
@@ -305,7 +313,7 @@ DisagreementType = fact_conflict | causal_disagreement | layer_mismatch |
 
 TableState(table_id, version, core_question, current_subquestion, phase,
            momentum, close_readiness, insights<=8, consensus<=5,
-           disagreements, open_loops<=3, participants, conversation,
+           disagreements, open_loops<=3, participants, origin_table_id?, conversation,
            intervention)
 
 ConversationState(..., soft_expired, soft_expiry_reason?)
@@ -358,7 +366,8 @@ master
                                                                                                            ←── D50 content signal source bridge
                                                                                                                   ←── D51 post-close value feedback ledger
                                                                                                                          ←── D52 read-only observer WebSocket
-                                                                                                                               ←── D53 peripheral comment ledger
+                                                                                                                              ←── D53 peripheral comment ledger
+                                                                                                                                     ←── D54 evolved-question table recompose
 ```
 
 ## Progress Ledger
@@ -422,6 +431,7 @@ master
 | D51 post-close value feedback ledger | complete | self-scoped post-close four-dimension value feedback with JSON persistence and member-only aggregate summary | 247 tests + compileall + diff check | `72bfed9` |
 | D52 read-only observer WebSocket | complete | observer-mode public projection with no seat, turn, invitation, consent, or close mutations | 249 tests + compileall + diff check | `918a5af` |
 | D53 peripheral comment ledger | complete | commenter-mode public comments with independent persistence, idempotency, and no core-turn mutation | 253 tests + compileall + diff check | `b484496` |
+| D54 evolved-question table recompose | complete | close-only next-table creation with persisted origin link and no automatic member copying | 256 tests + compileall + diff check | `ef544d1` |
 
 ## 已知坑位（Running Gotchas）
 

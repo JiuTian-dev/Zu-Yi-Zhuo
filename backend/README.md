@@ -32,6 +32,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/feedback?participant_id=...`：收桌后提交或更新认知、关系、行动、情绪四类 1–5 分价值反馈。
 - `GET /tables/{table_id}/feedback?participant_id=...`：桌内成员查看匿名价值聚合；不返回他人的评分明细或备注。
 - `POST /tables/{table_id}/comments?author_id=...` / `GET /tables/{table_id}/comments`：外围评论独立账本；评论不占席位、不进入核心 turn。
+- `POST /tables/{table_id}/recompose`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `WS /ws/tables/{table_id}?participant_id={participant_id}`：参与者实时收发消息、主持动作、状态和关闭产物。
 - `WS /ws/tables/{table_id}?participant_id={viewer_id}&viewer_mode=observer`：只读旁听；立即收到公开状态和后续桌面事件，但不占席位、不写入消息或状态。
