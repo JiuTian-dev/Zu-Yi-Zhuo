@@ -156,6 +156,13 @@
 - **替代方案**: 不设超时，或超时后回退到本地/网页抓取候选。
 - **代价**: 慢 source 需要在适配器侧分页、缓存或提高注入超时；调用方要把 502 视为可重试的上游失败。
 
+### ADR-20: 收桌准备度随快照持久化
+
+- **决策**: Observer 每次接受真人消息后刷新 `close_readiness` 并写入不可变快照；Host 介入写回沿用同一刷新值，保证 Gate/Router 使用的边际价值信号与客户端、回放看到的状态一致。
+- **理由**: 只在决策函数里临时计算会造成 UI 和回放落后一版，甚至让 CLOSE 路由与持久化状态互相矛盾。
+- **替代方案**: 客户端自行重算，或仅在请求 close 时计算。
+- **代价**: 收桌准备度的确定性公式属于状态契约，未来替换 Observer 时仍需保留刷新边界。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -299,6 +306,7 @@ master
 | D39 reconnectable close artifacts | complete | evidence-backed close-artifacts REST recovery with participant-scoped personal card | 205 tests + compileall + diff check | `cffe3a8` |
 | D40 stale WebSocket membership guard | complete | re-check participant membership after handshake and before safety/turn handling, preventing a departed socket from writing snapshots | 206 tests + compileall + diff check | `f8b2d79` |
 | D41 bounded candidate-source calls | complete | injected candidate source calls have a positive timeout and fail closed with a generic 502 on timeout | 208 tests + compileall + diff check | `e95f4a5` |
+| D42 persisted close-readiness snapshots | complete | Observer and Host writeback persist the same close-readiness value used by Gate/Router | `9076fca` |
 
 ## 已知坑位（Running Gotchas）
 
