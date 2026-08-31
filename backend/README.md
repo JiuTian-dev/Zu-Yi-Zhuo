@@ -38,7 +38,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/comments/{comment_id}/promote?participant_id=...`：核心成员显式促成一条评论；服务端重新做安全检查，成功后以促成人身份写入主桌 turn，并保留 `source_comment_id` 和可回放的 `CommentPromotion`。
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
-- `GET /tables/{table_id}/safety-reports/moderation`：仅注入 `moderator_resolver` 的审核器可读取该桌完整举报队列；未配置审核身份时返回 503，普通成员不能借此读取他人举报。
+- `GET /tables/{table_id}/safety-reports/moderation`：仅注入 `moderator_resolver` 的审核器可读取该桌私密举报队列；支持 `status` 筛选和 `offset`/`limit`（默认 100、最大 200）有界分页，未配置审核身份时返回 503，普通成员不能借此读取他人举报。
 - `PATCH /tables/{table_id}/safety-reports/{report_id}`：审核器将举报状态单向推进为 `acknowledged` 或 `resolved`；可带 `reason`，重复当前状态幂等，已解决举报不可回退，状态更新不广播给桌内连接。
 - `GET /tables/{table_id}/safety-reports/{report_id}/history`：审核器读取该举报的受信状态迁移链（审核器身份、原/目标状态和可选理由）；普通成员不可见，旧 JSON 快照按空链兼容加载。
 - `POST /tables/{table_id}/safety/resolve` / `GET /tables/{table_id}/safety/resolutions`：仅对注入的 `moderator_resolver` 开放；可原子恢复 critical 暂停或移除一名成员，并读取不可变处置审计。未配置审核器时返回 503，不能用请求体自报 moderator。
