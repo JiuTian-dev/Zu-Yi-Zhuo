@@ -421,6 +421,63 @@ def test_request_close_without_evidence_returns_structured_error() -> None:
     assert "evidence" in error["detail"]
 
 
+def test_frontend_valley_flow_bootstraps_viewer_and_closes_with_personal_artifact() -> None:
+    repository = InMemoryTableRepository()
+    client = TestClient(create_app(repository))
+    actors = [
+        _participant("shen-zhiyao", "自由撰稿人"),
+        _participant("zhou-mo", "产品经理"),
+        _participant("lin-zhou", "独立开发者"),
+        _participant("xu-qing", "心理咨询师"),
+    ]
+    created = client.post(
+        "/tables",
+        json={
+            "table_id": "valley-learning-to-rest",
+            "core_question": "为什么我们越来越不会休息？",
+            "participants": actors,
+        },
+    )
+    assert created.status_code == 201
+
+    joined = client.post(
+        "/tables/valley-learning-to-rest/participants",
+        json=_participant("viewer", "第五席"),
+    )
+    assert joined.status_code == 200
+    assert len(joined.json()["participants"]) == 5
+
+    with client.websocket_connect(
+        "/ws/tables/valley-learning-to-rest?participant_id=viewer"
+    ) as websocket:
+        websocket.send_json({
+            "type": "human_message",
+            "message_id": "valley-contract-1",
+            "participant_id": "viewer",
+            "text": "我正在尝试停下来，但总觉得休息会浪费时间。",
+            "client_ts": 1756728000000,
+        })
+        committed = websocket.receive_json()
+        assert committed["type"] == "message_committed"
+        assert committed["message"]["participant_id"] == "viewer"
+        while True:
+            state_event = websocket.receive_json()
+            if state_event["type"] == "table_state_changed":
+                break
+
+        websocket.send_json({"type": "request_close"})
+        started = websocket.receive_json()
+        artifact = websocket.receive_json()
+        closed = websocket.receive_json()
+
+    assert started["type"] == "close_started"
+    assert artifact["type"] == "close_artifact_ready"
+    assert artifact["shared_baseline"]["core_question_before"] == "为什么我们越来越不会休息？"
+    assert artifact["personal_card"]["participant_id"] == "viewer"
+    assert closed["type"] == "table_state_changed"
+    assert closed["state"]["conversation"]["closed"] is True
+
+
 def test_demo_grounding_card_is_emitted_only_for_a_ground_action() -> None:
     client, repository = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200

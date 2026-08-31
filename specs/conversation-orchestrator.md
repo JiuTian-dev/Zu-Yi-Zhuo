@@ -515,7 +515,8 @@ master
                                                                                                                                                                                                                  ←── D66 server-generated table selection event
                                                                                                                                                                                                                        ←── D67 post-close relationship save event
                                                                                                                                                                                                                              ←── D68 behavior event context validation
-                                                                                                                                                                                                                                    ←── D69 self-scoped behavior ledger erasure
+                                                                                                                                                                                                                                   ←── D69 self-scoped behavior ledger erasure
+                                                                                                                                                                                                                                          ←── D70 frontend-compatible runtime contract smoke
 ```
 
 ## Progress Ledger
@@ -595,6 +596,7 @@ master
 | D67 post-close relationship save event | complete | closed-table member-only relationship save endpoint emits a stable self-scoped `relationship_saved` event without persistent social-graph writes | 292 tests + compileall + diff check | `732ebde` |
 | D68 behavior event context validation | complete | behavior events enforce type-specific table membership/lifecycle rules in memory, API, and JSON reload | 294 tests + compileall + diff check | `0b87fcc` |
 | D69 self-scoped behavior ledger erasure | complete | authenticated-by-viewer delete clears only the caller's behavior events with atomic JSON persistence and no table-history deletion | 295 tests + compileall + diff check | `b72bf33` |
+| D70 frontend-compatible runtime contract smoke | in progress | backend regression locks the actual valley demo flow: create table, add fifth viewer seat, exchange a human WebSocket turn, and recover a viewer-scoped close artifact | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
