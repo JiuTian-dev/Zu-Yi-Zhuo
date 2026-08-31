@@ -270,6 +270,30 @@ def test_json_report_status_transition_survives_restart(tmp_path) -> None:
     ]
 
 
+def test_json_rejects_audit_chain_that_does_not_match_report_status(tmp_path) -> None:
+    path = tmp_path / "broken-status.json"
+    repository = JsonTableRepository(path)
+    repository.create("broken-status", "Q", [_seed("alice"), _seed("bob")])
+    repository.record_safety_report(SafetyReport(
+        report_id="report-1",
+        table_id="broken-status",
+        reporter_id="alice",
+        target_participant_id="bob",
+        category="spam",
+        description="需要审核",
+        state_version=0,
+    ))
+    repository.update_safety_report_status("broken-status", "report-1", "acknowledged")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["tables"]["broken-status"]["safety_reports"][0]["status"] = "resolved"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="safety report status does not match audit chain"):
+        JsonTableRepository(path)
+
+
 def test_json_repository_persists_reports_and_accepts_legacy_tables(tmp_path) -> None:
     path = tmp_path / "reports.json"
     repository = JsonTableRepository(path)

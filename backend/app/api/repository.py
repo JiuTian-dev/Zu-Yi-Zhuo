@@ -2091,6 +2091,22 @@ class JsonTableRepository(InMemoryTableRepository):
             audit_ids = [audit.event_id for audit in report_audits]
             if len(set(audit_ids)) != len(audit_ids):
                 raise ValueError(f"invalid persistence file: duplicate safety report audits for table {table_id!r}")
+            for report in reports:
+                history = [item for item in report_audits if item.report_id == report.report_id]
+                if not history:
+                    # D78-era snapshots have a final status but no actor history.
+                    continue
+                current_status = "open"
+                for item in history:
+                    if item.from_status != current_status:
+                        raise ValueError(
+                            f"invalid persistence file: broken safety report audit chain for table {table_id!r}"
+                        )
+                    current_status = item.to_status
+                if current_status != report.status:
+                    raise ValueError(
+                        f"invalid persistence file: safety report status does not match audit chain for table {table_id!r}"
+                    )
             if any(
                 resolution.table_id != table_id
                 or resolution.from_state_version < 0
