@@ -217,7 +217,7 @@ def test_unsafe_message_is_intercepted_before_turn_replay_or_host_action() -> No
 
 
 def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
-    client, _ = _client_with_table()
+    client, repository = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
     assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
 
@@ -230,6 +230,12 @@ def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
         websocket.send_json({"type": "request_close"})
         started = websocket.receive_json()
         artifact = websocket.receive_json()
+        final_state = websocket.receive_json()
+        websocket.send_json({
+            "type": "human_message", "message_id": "after-close", "participant_id": "p1",
+            "text": "关闭后不应继续写入。", "client_ts": "2026-08-31T12:07:00Z",
+        })
+        after_close = websocket.receive_json()
 
     assert started == {
         "type": "close_started", "table_id": "table-ws", "state_version": 4,
@@ -237,9 +243,13 @@ def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
     }
     assert artifact["type"] == "close_artifact_ready"
     assert artifact["table_id"] == artifact["shared_baseline"]["table_id"] == "table-ws"
-    assert artifact["state_version"] == artifact["shared_baseline"]["state_version"] == 4
+    assert artifact["state_version"] == artifact["shared_baseline"]["state_version"] == 5
     assert artifact["personal_card"]["participant_id"] == "p1"
     assert "personal_cards" not in artifact
+    assert final_state["type"] == "table_state_changed"
+    assert final_state["state"]["conversation"]["closed"] is True
+    assert after_close == {"type": "error", "code": "table_closed", "detail": "table is already closed"}
+    assert repository.get("table-ws").phase.value == "close"
 
 
 def test_request_close_for_unknown_query_participant_does_not_leak_personal_card() -> None:

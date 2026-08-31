@@ -130,6 +130,7 @@ class ConversationState(ContractModel):
     most_promising_thread: EvidenceStatement | None = None
     risk_flags: list[EvidenceStatement] = Field(default_factory=list)
     safety_level: SafetyLevel
+    closed: bool = False
 
 class InterventionState(ContractModel):
     reasons_to_speak: list[EvidenceStatement] = Field(default_factory=list)

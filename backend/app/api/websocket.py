@@ -139,7 +139,11 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                         event = _HumanMessage.model_validate(payload)
                         if event.participant_id != participant_id:
                             raise ValueError("participant_id must match the WebSocket query")
-                        if repository.get(table_id).conversation.safety_level is SafetyLevel.CRITICAL:
+                        current_state = repository.get(table_id)
+                        if current_state.conversation.closed:
+                            await _send_error(websocket, "table_closed", "table is already closed")
+                            continue
+                        if current_state.conversation.safety_level is SafetyLevel.CRITICAL:
                             await _send_error(websocket, "table_paused", "table is paused for safety review")
                             continue
                         turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
@@ -244,6 +248,8 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             "reason": "participant_requested_close",
                         })
                         try:
+                            build_shared_baseline(state, turns=repository.turns(table_id))
+                            state = repository.close_table(table_id)
                             baseline = build_shared_baseline(state, turns=repository.turns(table_id))
                             personal_card = build_personal_card(state, participant_id)
                         except ValueError as error:
@@ -256,6 +262,7 @@ def register_websocket_routes(api: FastAPI, repository: InMemoryTableRepository)
                             "shared_baseline": baseline.model_dump(mode="json"),
                             "personal_card": personal_card.model_dump(mode="json"),
                         })
+                        await broadcast_state(table_id, state)
                     else:
                         await _send_error(websocket, "unknown_event", f"unsupported event type: {payload['type']}")
                 except ValidationError:

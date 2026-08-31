@@ -1,3 +1,5 @@
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
@@ -38,7 +40,12 @@ def test_table_lifecycle_returns_serializable_snapshots_and_close_artifact() -> 
 
     closed = client.post("/tables/t-api/close")
     assert closed.status_code == 200
-    assert closed.json()["table_id"] == "t-api" and closed.json()["state_version"] == 2
+    assert closed.json()["table_id"] == "t-api" and closed.json()["state_version"] == 3
+    assert client.get("/tables/t-api/state").json()["conversation"]["closed"] is True
+    assert client.post("/tables/t-api/close").json()["state_version"] == 3
+    assert repository.get("t-api").phase.value == "close"
+    with pytest.raises(ValueError, match="table is closed"):
+        repository.append_turn("t-api", HumanTurn(turn_id=2, participant_id="p1", text="不应再写入"))
 
 
 def test_api_rejects_unknown_tables_duplicate_participants_and_empty_close() -> None:

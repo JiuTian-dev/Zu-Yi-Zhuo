@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 
-from app.domain import GroundingCard, HumanTurn, ParticipantSeed, TableState
+from app.domain import Action, GroundingCard, HumanTurn, Level, ParticipantSeed, Phase, TableState
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, observe_turn
 
@@ -37,6 +37,8 @@ class InMemoryTableRepository:
 
     def add_participant(self, table_id: str, seed: ParticipantSeed) -> TableState:
         state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
         if seed.participant_id in state.participants:
             raise ValueError(f"participant already exists: {seed.participant_id}")
         updated = state.model_copy(deep=True)
@@ -54,6 +56,8 @@ class InMemoryTableRepository:
     def remove_participant(self, table_id: str, participant_id: str) -> TableState:
         """Remove a departing participant while preserving prior snapshots."""
         state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
         if participant_id not in state.participants:
             raise ValueError(f"unknown participant: {participant_id}")
         updated = state.model_copy(deep=True)
@@ -64,6 +68,8 @@ class InMemoryTableRepository:
     def set_profile_consent(self, table_id: str, participant_id: str, shared: bool) -> TableState:
         """Set one participant's explicit profile-sharing consent."""
         state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
         participant = state.participants.get(participant_id)
         if participant is None:
             raise ValueError(f"unknown participant: {participant_id}")
@@ -76,14 +82,32 @@ class InMemoryTableRepository:
 
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
         """Commit a human turn; the WebSocket adapter will use this helper later."""
+        if self.get(table_id).conversation.closed:
+            raise ValueError("table is closed")
         committed = turn.model_copy(deep=True)
         state = observe_turn(self.get(table_id), committed)
         self._turns[table_id].append(committed)
         return self._append(table_id, state)
 
+    def close_table(self, table_id: str) -> TableState:
+        """Mark a table closed exactly once after close artifacts are ready."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            return state
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.phase = Phase.CLOSE
+        updated.close_readiness = Level.HIGH
+        updated.conversation.state = "closed"
+        updated.conversation.closed = True
+        updated.intervention.recommended_action = Action.SILENCE
+        return self._append(table_id, updated)
+
     def append_intervention_state(self, table_id: str, state: TableState) -> TableState:
         """Commit the one follow-up snapshot produced by a real host intervention."""
         latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
         if state.table_id != table_id or state.version != latest.version + 1:
             raise ValueError("intervention state must be the next snapshot for its table")
         return self._append(table_id, state)
@@ -91,6 +115,8 @@ class InMemoryTableRepository:
     def append_safety_state(self, table_id: str, state: TableState) -> TableState:
         """Commit a safety-only snapshot without recording the intercepted human turn."""
         latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
         if state.table_id != table_id or state.version != latest.version + 1:
             raise ValueError("safety state must be the next snapshot for its table")
         return self._append(table_id, state)
@@ -148,7 +174,10 @@ class JsonTableRepository(InMemoryTableRepository):
 
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:
         committed = turn.model_copy(deep=True)
-        state = observe_turn(self.get(table_id), committed)
+        current = self.get(table_id)
+        if current.conversation.closed:
+            raise ValueError("table is closed")
+        state = observe_turn(current, committed)
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         turns = {**self._turns, table_id: [*self._turns[table_id], committed]}

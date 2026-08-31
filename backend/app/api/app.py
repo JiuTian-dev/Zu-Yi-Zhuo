@@ -139,7 +139,9 @@ def create_app(repository: InMemoryTableRepository | None = None) -> FastAPI:
     def close_table(table_id: str) -> SharedBaseline:
         state = table_or_404(table_id)
         try:
-            return build_shared_baseline(state, turns=repo.turns(table_id))
+            build_shared_baseline(state, turns=repo.turns(table_id))
+            closed = repo.close_table(table_id)
+            return build_shared_baseline(closed, turns=repo.turns(table_id))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
