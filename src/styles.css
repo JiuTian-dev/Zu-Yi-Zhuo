@@ -168,3 +168,22 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
 }
 
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+
+/* ---- Live discussion layer (D3) ---- */
+.live-badge{position:absolute;top:clamp(118px,15vh,158px);left:50%;transform:translateX(-50%);padding:5px 12px;border-radius:20px;background:rgba(28,54,50,.72);color:#ffe3a4;font-size:9px;letter-spacing:.14em}
+.live-badge.is-error{color:#ffb08a}
+.conversation-dock p{margin:0 0 8px;font-family:'Noto Serif SC',serif;font-size:clamp(14px,1.15vw,17px);line-height:1.6;text-align:center}
+.conversation-dock p.is-previous{opacity:.34;font-size:clamp(11px,.85vw,13px);margin-bottom:6px}
+.conversation-dock p.is-latest{margin-bottom:12px}
+.conversation-dock b{color:#ffd795;font-weight:400;font-family:'Noto Sans SC',sans-serif;font-size:.72em;letter-spacing:.08em;margin-right:8px}
+.conversation-dock b.host-name{color:#ffe6ad;text-shadow:0 0 14px rgba(255,209,123,.55)}
+.viewer-input{display:flex;gap:8px;margin-top:11px}
+.viewer-input input{flex:1;padding:9px 13px;border:1px solid rgba(255,241,207,.32);border-radius:8px;background:rgba(8,28,27,.34);color:#fff8e7;font-size:11px;outline:none}
+.viewer-input input::placeholder{color:rgba(255,248,231,.38)}
+.viewer-input input:focus{border-color:rgba(255,224,160,.7)}
+.viewer-input button{padding:0 15px;border:0;border-radius:8px;background:#ffd17b;color:#20362f;font-size:11px;font-weight:500;cursor:pointer}
+.viewer-input button:disabled{opacity:.4;cursor:default}
+.close-table-button{position:absolute;left:clamp(24px,4vw,68px);bottom:37px;display:flex;align-items:center;gap:9px;padding:11px 2px;border:0;border-bottom:1px solid rgba(255,210,160,.55);background:none;color:rgba(255,224,183,.9);font-size:11px;letter-spacing:.16em;cursor:pointer}
+.close-table-button:hover{color:#ffe9c2}
+.close-table-button span{transition:transform .2s ease}
+.close-table-button:hover span{transform:translateX(4px)}

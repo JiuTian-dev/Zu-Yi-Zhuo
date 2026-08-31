@@ -7,8 +7,30 @@ import Hallway, { type GalleryMediaRect } from './Hallway'
 import Lobby from './Lobby'
 import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
+import { useLive } from './live/store'
+import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from './live/backend'
 
 const turns = [...humanActors, tableHost]
+
+const ACTION_LABELS: Record<string, string> = {
+  PASS: '递话', PROBE: '追问', REFRAME: '换个角度', GROUND: '落在桌面', CLOSE: '收束',
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  opening: '开场', explore: '探索', tension: '张力', deepen: '深入', close: '收束',
+}
+
+function speakerName(participantId: string): string {
+  if (participantId === 'table-host') return '圆桌主持'
+  if (participantId === 'viewer') return '你'
+  return turns.find((turn) => turn.id === participantId)?.displayName ?? participantId
+}
+
+function speakerRole(participantId: string): string {
+  if (participantId === 'table-host') return 'Table Host'
+  if (participantId === 'viewer') return '第五席'
+  return turns.find((turn) => turn.id === participantId)?.role ?? '嘉宾'
+}
 const zeroFlowTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType)
 zeroFlowTexture.needsUpdate = true
 
@@ -70,6 +92,20 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   const joinOpenerRef = useRef<HTMLButtonElement | null>(null)
   const seatDraftRef = useRef<HTMLTextAreaElement>(null)
   const joinedStatusRef = useRef<HTMLDivElement>(null)
+  const [messageDraft, setMessageDraft] = useState('')
+
+  const liveStatus = useLive((state) => state.status)
+  const liveMessages = useLive((state) => state.messages)
+  const liveSpeaking = useLive((state) => state.speakingId)
+  const liveHost = useLive((state) => state.hostAction)
+  const livePhase = useLive((state) => state.phase)
+  const liveSubQuestion = useLive((state) => state.subQuestion)
+  const closeState = useLive((state) => state.closeState)
+
+  useEffect(() => {
+    void startLive()
+    return () => stopLive()
+  }, [])
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
     const active = document.activeElement
@@ -100,6 +136,13 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
     setJoinError(false)
     setJoinOpen(false)
     setJoined(true)
+    void joinViewer()
+  }
+
+  const submitMessage = (event: { preventDefault(): void }) => {
+    event.preventDefault()
+    if (!sendViewerMessage(messageDraft)) return
+    setMessageDraft('')
   }
 
   const resetDiscovery = () => {
@@ -123,9 +166,12 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
     window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
-      if (timer.current !== null) window.clearTimeout(timer.current)
     }
   }, [joinOpen, menuOpen])
+
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current)
+  }, [])
 
   useEffect(() => {
     if (phase !== 'seated' || reducedMotion) return
@@ -148,11 +194,12 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   }, [appPhase])
 
   useEffect(() => {
-    if (appPhase !== 'world' || entryIntent !== 'join') return
+    if (appPhase !== 'world' || phase !== 'seated' || entryIntent !== 'join') return
+    if (joined || joinOpen) return
     setJoinError(false)
     setJoinOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appPhase])
+  }, [appPhase, phase])
 
   const approachTable = () => {
     if (phase !== 'discovering') return
@@ -166,7 +213,10 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
   const seated = phase === 'seated'
   const listening = entryIntent === 'listen' && !joined
-  const currentTurn = turns[activeSpeaker]
+  const liveActive = liveStatus === 'live' || liveStatus === 'mock'
+  const speakingTurn = liveActive && liveSpeaking ? turns.find((turn) => turn.id === liveSpeaking) ?? null : null
+  const currentTurn = speakingTurn ?? turns[activeSpeaker]
+  const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
   const sceneProps: ValleySceneProps = { phase, activeActorId: currentTurn.id, hoveredActorId, reducedMotion }
 
   return (
@@ -201,7 +251,9 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
       <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
         <button className="back-to-discovery" type="button" onClick={resetDiscovery}>←&nbsp;&nbsp;退回远景</button>
-        <div className="discussion-state"><i />讨论正在发生 <span>{joined ? '05 / 05' : '04 / 05'}</span></div>
+        <div className="discussion-state"><i />{liveActive ? `${PHASE_LABELS[livePhase] ?? '讨论'}进行中` : '讨论正在发生'} <span>{liveActive ? `${String(liveMessages.length).padStart(2, '0')} 条` : joined ? '05 / 05' : '04 / 05'}</span></div>
+        {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
+        {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
 
         <div className="actor-hotspots" aria-label="桌上成员">
           {humanActors.map((actor) => (
@@ -234,13 +286,37 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
             <span className="actor-profile"><small>第六席 · Table Host</small><b>圆桌主持</b><em>认真听，把问题递给此刻最值得说话的人。</em><strong>状态 · {currentTurn.id === tableHost.id ? 'PASS 递话' : 'SILENCE 听'}</strong></span>
           </button>
         </div>
-        <div className="question-card"><small>此刻的问题</small><p>我们需要的是休息，<br />还是允许自己停下？</p></div>
+        <div className="question-card">
+          <small>{liveActive && liveSubQuestion ? '问题 · 推进中' : '此刻的问题'}</small>
+          <p>{liveActive && liveSubQuestion ? liveSubQuestion : <>我们需要的是休息，<br />还是允许自己停下？</>}</p>
+        </div>
         <button className="seat-marker" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{joined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
-        <div className="conversation-dock" key={activeSpeaker}>
-          <p>“{currentTurn.quote}”</p>
-          <div><span><b>{currentTurn.displayName}</b> · {currentTurn.role}</span><i>{String(activeSpeaker + 1).padStart(2, '0')} / 05</i></div>
+        <div className="conversation-dock" key={liveActive ? liveMessages.length : activeSpeaker}>
+          {liveActive && lastLive ? (
+            liveMessages.slice(-2).map((message, index, list) => (
+              <p key={`${message.participantId}-${index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
+                <b className={message.fromHost ? 'host-name' : ''}>
+                  {speakerName(message.participantId)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
+                </b>
+                “{message.text}”
+              </p>
+            ))
+          ) : (
+            <p>“{currentTurn.quote}”</p>
+          )}
+          <div>
+            <span><b>{lastLive ? speakerName(lastLive.participantId) : currentTurn.displayName}</b> · {lastLive ? speakerRole(lastLive.participantId) : currentTurn.role}</span>
+            <i>{liveActive ? `${String(liveMessages.length).padStart(2, '0')} 条发言` : `${String(activeSpeaker + 1).padStart(2, '0')} / 05`}</i>
+          </div>
+          {joined && liveActive && (
+            <form className="viewer-input" onSubmit={submitMessage}>
+              <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} placeholder="把你的真实经历说给这桌听…" aria-label="对这桌发言" maxLength={140} />
+              <button type="submit" disabled={!messageDraft.trim()}>说</button>
+            </form>
+          )}
         </div>
+        {liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
         <button className="join-table-button" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i />{joined ? '已坐到第五席' : '坐到空席'} <span>{joined ? '✓' : '→'}</span></button>
         {joined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
           <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
