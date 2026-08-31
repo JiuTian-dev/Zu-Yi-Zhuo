@@ -130,8 +130,8 @@ master
 | D02 Observer/CLI | complete | 5 role seeds, 3 scripted dialogues, immutable state update and JSON replay | 34 tests + compileall + 3 CLI replays | `d5a59e6` |
 | D03 Gate/Router | complete | explainable silence-first Gate + independent six-action Router | 26 golden cases, 100% accuracy; 71 total tests | `90e3fce` |
 | D03.1 loop integration | complete | Gate→Router seam, intervention writeback/cooldown, routed CLI, reachable PASS | 80 tests + 4 CLI replays | `49663d8` |
-| D04 Host | pending | action-specific natural Chinese host text | naturalness review | pending |
-| D05 Reflection/Close | pending | effect log, Q0→Q1, shared/personal cards | flagship replay | pending |
+| D04 Host | complete | six action-specific natural Chinese host events, visual hints and safe fallbacks | 104 tests + compileall; naturalness/contract checkpoint | `7bf7b9e` |
+| D05 Reflection/Close | in progress | effect log, Q0→Q1, shared/personal cards | flagship replay | pending |
 | D06 API/WS | pending | session APIs and structured realtime events | frontend integration tests | pending |
 | D07 persistence/QA | pending | snapshots, replay, failure fallback | 10 consecutive demo runs | pending |
 
