@@ -305,7 +305,7 @@
 
 ### ADR-41: 产品行为层用本人可见的受限事件账本沉淀
 
-- **决策**: 增加 `BehaviorEvent` 账本与 self-scoped `POST/GET /participants/{id}/behavior-events`。事件类型只允许 `table_selected`、`human_message`、`relationship_saved`、`follow_up_outcome`；可选桌、状态版本、关联参与者和有界备注，不保存完整消息正文或 token。真人 turn 由仓储自动生成 `human_message` 事件，其他行为由客户端在本人身份下显式上报；`event_id` 桌/用户范围幂等，冲突重用拒绝。JSON 仓储原子持久化并兼容缺失账本的旧文件。
+- **决策**: 增加 `BehaviorEvent` 账本与 self-scoped `POST/GET /participants/{id}/behavior-events`。事件类型只允许 `table_selected`、`human_message`、`relationship_saved`、`follow_up_outcome`、`table_closed`；可选桌、状态版本、关联参与者和有界备注，不保存完整消息正文或 token。真人 turn 由仓储自动生成 `human_message` 事件，收桌入口由服务端生成 `table_closed`，其他行为由客户端在本人身份下显式上报；`event_id` 桌/用户范围幂等，冲突重用拒绝。JSON 仓储原子持久化并兼容缺失账本的旧文件。
 - **理由**: 产品希望画像从真实选择、发言、关系和行动回响中逐渐长出来，但行为数据比公共桌状态更敏感；统一小账本既能支撑后续画像/推荐，又不会把个人轨迹广播给同桌或写进 Table State。
 - **替代方案**: 让前端本地维护行为、把所有行为拼进真人消息，或开放任意 JSON metadata 造成隐私和 schema 漂移。
 - **代价**: V1 只提供事件记录与本人回读，不自动推断画像、不跨用户公开关系；生产环境需把 `viewer_id` 接到真实会话身份并增加分页/保留策略。
@@ -771,7 +771,7 @@ master
 | D85 WebSocket frame size boundary | complete | Bound JSON frame size before parsing and reject overlong human text without persistence | 336 tests + compileall + diff check | `f990790` |
 | D86 self-scoped invitation preference update | complete | Add self-only REST/WS seat preference updates with idempotent versioned state and JSON persistence | 341 tests + compileall + diff check | `72655e5` |
 | D87 WebSocket inbound event rate limit | complete | Add per-connection sliding-window event limit with structured retry response and runtime configuration | 345 tests + compileall + diff check | `ecd174d` |
-| D88 table_closed behavior event | in_progress | Record actor-scoped close behavior from REST/WS close paths with stable idempotent event and JSON recovery | pending | — |
+| D88 table_closed behavior event | complete | Record actor-scoped close behavior from REST/WS close paths with stable idempotent event and JSON recovery | 347 tests + compileall + diff check | `ff9d394` |
 
 ## 已知坑位（Running Gotchas）
 

@@ -47,7 +47,7 @@ python -m uvicorn app.main:app --reload
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `POST /tables/{table_id}/select?participant_id=...`：显式记录一次 open 桌选择；服务端生成稳定行为事件，不会自动入席或改变桌状态。
 - `POST /tables/{table_id}/relationships/{related_participant_id}/save?participant_id=...`：收桌后由成员本人保存一段关系；服务端校验双方同桌身份并生成稳定事件，不复制个人卡或好友图。
-- `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、关系保存、行动回响）；真人发言和行动结果由后端自动沉淀，事件不广播给同桌。
+- `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、收桌、关系保存、行动回响）；真人发言和收桌行为由后端自动沉淀，事件不广播给同桌。
 - `DELETE /participants/{participant_id}/behavior-events?viewer_id=...`：本人清除自己的行为账本；不删除消息、桌状态、收桌产物或安全审计。
 
 生产注入 `identity_resolver` 后，`POST /tables/{table_id}/participants?inviter_id=...`、`POST /tables/{table_id}/close?participant_id=...` 和 `GET /tables/{table_id}/interventions?participant_id=...` 也必须通过当前桌成员身份校验；未注入时保留本地 Demo 的无 query 调用。
@@ -183,7 +183,8 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 行动结果写入会自动生成本人可见的 `follow_up_outcome` 行为事件；相同状态的重复回报保持幂等，状态迁移会留下带迁移方向的事件 ID，备注不会进入行为事件。
 - 选桌行为通过专用入口生成稳定 `table_selected` 事件；只允许仍可发现的 open 桌，重复选择幂等且不改变参与者席位。
 - 关系保存通过专用入口生成稳定 `relationship_saved` 事件；只允许收桌后的双方成员主动操作，重复保存幂等且不改变关系记忆的只读派生规则。
-- 通用行为事件接口仍按事件类型校验桌上下文：真人发言和行动回响必须属于当前桌成员，关系保存必须是收桌后的另一名成员；只有 `table_selected` 允许在入席前记录。
+- 带参与者身份的 REST/WS 收桌成功后生成稳定 `table_closed` 事件；事件只写入触发者的行为账本，不广播，重复收桌不会复制同一事件。
+- 通用行为事件接口仍按事件类型校验桌上下文：真人发言和行动回响必须属于当前桌成员，关系保存必须是收桌后的另一名成员，`table_closed` 只能由收桌后的当前成员生成；只有 `table_selected` 允许在入席前记录，收桌事件不接受客户端伪造。
 - 行为账本清除只移除个人行为事件，保留桌事实和安全审计；删除操作幂等，后续新发言或行动仍可重新沉淀事件。
 - 价值反馈只在收桌后开放，参与者可更新自己的单条反馈；聚合返回响应人数、四类价值均值和愿意再次参加人数，且不改变 Table State 或收桌底稿。JSON 仓储会为旧数据缺省空反馈账本。
 
