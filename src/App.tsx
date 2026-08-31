@@ -10,6 +10,7 @@ import type { AppPhase, TableSummary } from './domain'
 import { useLive } from './live/store'
 import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from './live/backend'
 import ClosingCard from './live/ClosingCard'
+import { setAmbient, stopAmbient } from './audio/ambient'
 
 const turns = [...humanActors, tableHost]
 
@@ -87,6 +88,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   const [seatDraft, setSeatDraft] = useState('')
   const [joinError, setJoinError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [soundOn, setSoundOn] = useState(false)
   const timer = useRef<number | null>(null)
   const experienceRef = useRef<HTMLElement>(null!)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
@@ -174,6 +176,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
+    stopAmbient()
   }, [])
 
   useEffect(() => {
@@ -234,7 +237,9 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           <span>组一桌</span><i /> <small>湖边这桌</small>
         </button>
         <div className="header-actions">
-          <button className="icon-button sound-unavailable" type="button" aria-label="环境音即将开放" title="环境音即将开放" disabled><SoundIcon muted /></button>
+          <button className={`icon-button ${soundOn ? '' : 'sound-unavailable'}`} type="button" aria-pressed={soundOn} aria-label={soundOn ? '关闭环境音' : '开启环境音'} title={soundOn ? '关闭环境音' : '开启环境音'} onClick={() => { const next = !soundOn; setSoundOn(next); setAmbient(next, 'valley') }}>
+            <SoundIcon muted={!soundOn} />
+          </button>
           <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label={menuOpen ? '关闭桌单' : '打开桌单'} aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span /><span /></button>
         </div>
       </header>
