@@ -280,7 +280,9 @@ def test_request_nudge_turns_unanswered_first_expression_into_audited_probe() ->
     }
     assert action["gate"]["reasons_to_speak"] == ["首条表达暂未获得自然回应，主动递一句轻问"]
     assert changed["state"]["version"] == 4
-    assert repository.interventions("table-ws")[0].action is Action.PROBE
+    audit = repository.interventions("table-ws")[0]
+    assert audit.action is Action.PROBE
+    assert audit.reasons_to_speak[0].text == "首条表达暂未获得自然回应，主动递一句轻问"
 
 
 def test_request_nudge_requires_evidence_and_respects_intervention_cooldown() -> None:

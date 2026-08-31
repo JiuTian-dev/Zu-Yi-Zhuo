@@ -477,6 +477,12 @@ def register_websocket_routes(
                         )
                         agent_turn_id = f"{table_id}:agent:{state.version + 1}"
                         final_state = record_intervention(state, route, agent_turn_id)
+                        final_state.intervention.reasons_to_speak = [
+                            EvidenceStatement(
+                                text="首条表达暂未获得自然回应，主动递一句轻问",
+                                evidence_turns=[evidence_turn],
+                            )
+                        ]
                         action = action.model_copy(update={"state_version": final_state.version})
                         model_name = str(
                             getattr(provider, "model", None)
