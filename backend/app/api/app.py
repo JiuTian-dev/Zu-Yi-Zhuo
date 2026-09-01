@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
 from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
@@ -32,6 +32,7 @@ from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview
 from app.lobby import build_lobby_discovery, build_lobby_fit_preview, build_lobby_preview
 from app.recommendations import MAX_PERSONALIZED_TABLES, build_personalized_table_recommendations
+from app.comment_curation import MAX_COMMENT_PROMOTION_CANDIDATES, build_comment_promotion_candidates
 
 
 def _bounded_source_rows(rows: object, limit: int) -> list[object]:
@@ -1674,6 +1675,34 @@ def create_app(
     def get_peripheral_comments(table_id: str) -> list[PeripheralComment]:
         table_or_404(table_id)
         return repo.comments(table_id)
+
+    @api.get(
+        "/tables/{table_id}/comment-promotion-candidates",
+        response_model=CommentPromotionCandidates,
+    )
+    def get_comment_promotion_candidates(
+        table_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+        limit: int = Query(default=5, ge=1, le=MAX_COMMENT_PROMOTION_CANDIDATES),
+    ) -> CommentPromotionCandidates:
+        """Suggest safe peripheral comments while keeping promotion member-confirmed."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is closed")
+        if state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is soft-expired")
+        if state.conversation.safety_level is SafetyLevel.CRITICAL:
+            raise HTTPException(status_code=409, detail="table is paused for safety review")
+        return build_comment_promotion_candidates(
+            state,
+            repo.comments(table_id),
+            repo.comment_promotions(table_id),
+            limit=limit,
+        )
 
     @api.post(
         "/tables/{table_id}/comments/{comment_id}/promote",

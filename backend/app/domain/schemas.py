@@ -986,6 +986,49 @@ class CommentPromotion(ContractModel):
     message_id: str = Field(min_length=1)
 
 
+class CommentPromotionCandidate(ContractModel):
+    """One explainable, non-binding suggestion to bring a comment into the table."""
+
+    comment: PeripheralComment
+    reason: str = Field(min_length=1, max_length=240)
+    signals: list[Literal["topic_match", "question", "experience"]] = Field(
+        min_length=1,
+        max_length=3,
+    )
+    matched_topics: list[str] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def evidence_is_consistent(self) -> "CommentPromotionCandidate":
+        if len(self.signals) != len(set(self.signals)):
+            raise ValueError("comment candidate signals must be unique")
+        if len(self.matched_topics) != len(set(self.matched_topics)):
+            raise ValueError("comment candidate matched_topics must be unique")
+        if ("topic_match" in self.signals) != bool(self.matched_topics):
+            raise ValueError("topic_match signal must match matched_topics")
+        return self
+
+
+class CommentPromotionCandidates(ContractModel):
+    """Member-scoped, read-only Agent suggestions for peripheral comments."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    total: int = Field(ge=0, le=100)
+    limit: int = Field(ge=1, le=10)
+    items: list[CommentPromotionCandidate] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def page_matches_table(self) -> "CommentPromotionCandidates":
+        if len(self.items) > self.limit or self.total < len(self.items):
+            raise ValueError("comment candidate page must match total and limit")
+        ids = [item.comment.comment_id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("comment candidate IDs must be unique")
+        if any(item.comment.table_id != self.table_id for item in self.items):
+            raise ValueError("comment candidates must belong to the preview table")
+        return self
+
+
 BehaviorEventType = Literal[
     "table_selected",
     "human_message",
