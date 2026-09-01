@@ -709,6 +709,13 @@
 - **替代方案**: 让每个 REST 路由自行持有桌级异步锁、为所有事件引入客户端序号、或要求前端自行比较版本；这些方案分别需要大范围路由改造、扩大协议、或把一致性责任下放给每个客户端。
 - **代价**: broadcaster 是单进程内存状态；进程重启或跨实例部署需由共享消息总线/网关继续提供顺序保证。状态版本相同的重复广播仍允许发送，以保留现有重连和幂等语义。
 
+### ADR-99: 授权 source 的匹配预览通过短期票据确认
+
+- **决策**: `POST /matches/source-preview` 在返回脱敏 `MatchPlan` 的同时签发一个服务端短期、单次使用的 `preview_token`；服务端在进程内保存已校验的候选种子、核心问题、选定席位和过期时间。新增 `POST /matches/source-confirm` 只接收该 token 和可选 `table_id`，从票据复用候选种子创建桌并返回现有 `MatchedTableResponse`。确认成功后票据立即作废；过期、重复使用或不存在的票据统一返回冲突，不重新调用 source。
+- **理由**: source 返回的 `ParticipantSeed` 含有不应交给浏览器的私有立场/经历，而现有 source-preview 只有公开 `MatchPlan`，导致“先解释为什么匹配，再确认建桌”无法从授权 source 继续完成。短期 bearer 票据把私有候选留在服务端，同时保持确认与预览使用同一批确定性候选，避免 source 二次检索漂移。
+- **替代方案**: 把完整候选种子返回前端、确认时重新调用 source、或把候选永久写进公共桌状态；这些方案分别扩大隐私面、可能得到不同候选/重复消耗上游、或让私有资料进入错误的数据生命周期。
+- **代价**: 票据只在当前进程有效，默认保留 5 分钟且单次消费；进程重启或多实例部署需要共享短期票据/事务存储。票据本身是 bearer capability，生产环境必须通过 HTTPS 传输且不写入日志。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -992,7 +999,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D118 isolated full journey demo CLI
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D119 opportunity-to-match journey demo
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D120 post-close action echo journey
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D121 monotonic realtime state broadcast
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D121 monotonic realtime state broadcast
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D122 source match confirmation handoff
 ```
 
 ## Progress Ledger
