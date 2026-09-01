@@ -117,15 +117,20 @@ const WATER_FRAG = `
   varying vec3 vWorld;
   varying float vWave;
   void main(){
-    vec3 deep = vec3(0.196, 0.384, 0.443);
-    vec3 shallow = vec3(0.424, 0.639, 0.616);
+    vec3 deep = vec3(0.226, 0.45, 0.51);
+    vec3 shallow = vec3(0.49, 0.7, 0.66);
     float depth = clamp((vWorld.x + 2.0) / -14.0, 0.0, 1.0);
     vec3 col = mix(shallow, deep, depth);
     col += vWave * 0.35;
     float glint = step(0.985, fract(sin(dot(floor(vWorld.xz * 6.0), vec2(12.9898, 78.233))) * 43758.5453 + uTime * 0.6));
     col += glint * 0.35;
+    vec3 viewDir = normalize(cameraPosition - vWorld);
+    float fres = pow(1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0), 2.1);
+    vec3 skyRef = vec3(0.66, 0.78, 0.84);
+    col = mix(col, skyRef, fres * 0.78);
     float shore = smoothstep(-1.0, 2.4, vWorld.x);
     col = mix(col, vec3(0.83, 0.76, 0.58), shore * 0.55);
+    col += 0.035;
     gl_FragColor = vec4(col, 0.94);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -494,7 +499,7 @@ export default function DioramaScene(props: DioramaProps) {
   return (
     <>
       <fog attach="fog" args={['#ddcfa9', 15, 42]} />
-      <hemisphereLight color="#d8ecff" groundColor="#6b7d5a" intensity={0.85} />
+      <hemisphereLight color="#d8ecff" groundColor="#6b7d5a" intensity={0.95} />
       <directionalLight color="#cfe0ef" intensity={0.5} position={[-4, 5, 12]} />
       <directionalLight
         color="#ffe2b0"

@@ -72,7 +72,7 @@ function ValleyCanvasPortal({ track, ...sceneProps }: ValleyCanvasPortalProps) {
         track={track}
         visible
         hideOffscreen={false}
-        camera={{ position: [8.8, 4.8, 14.6], fov: 42, near: .1, far: 90 }}
+        camera={{ position: [9.2, 3.9, 13.2], fov: 42, near: .1, far: 90 }}
       >
       {() => <Suspense fallback={null}><ValleySceneContent {...sceneProps} /></Suspense>}
     </ViewportScrollScene>

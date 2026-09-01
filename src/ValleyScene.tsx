@@ -8,7 +8,7 @@ export type ExperiencePhase = DioramaProps['phase']
 export type ValleySceneProps = DioramaProps
 
 const CAMERA_TARGETS: Record<ExperiencePhase, { pos: [number, number, number]; look: [number, number, number] }> = {
-  discovering: { pos: [8.8, 4.8, 14.6], look: [3.2, 0.7, 0.6] },
+  discovering: { pos: [9.2, 3.9, 13.2], look: [4.6, 0.8, 1.4] },
   approaching: { pos: [6.3, 2.5, 8.8], look: [4.2, 0.85, 2.2] },
   seated: { pos: [5.05, 1.55, 6.35], look: [4.05, 0.85, 2.0] },
 }
@@ -99,7 +99,7 @@ export default function ValleyScene(props: ValleySceneProps) {
   return (
     <Canvas
       className="valley-canvas"
-      camera={{ position: [8.8, 4.8, 14.6], fov: 42, near: 0.1, far: 90 }}
+      camera={{ position: [9.2, 3.9, 13.2], fov: 42, near: 0.1, far: 90 }}
       dpr={[1, 1.65]}
       shadows
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
