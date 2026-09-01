@@ -674,6 +674,13 @@
 - **替代方案**: 让评委手写多组 `POST /tables`、把种子做成可访问的 API、或提交一份不可重放的静态 JSON；这些方案分别增加操作误差、扩大线上写权限、或无法在 JSON 重启后验证。
 - **代价**: 种子题目与角色是演示固定资产，领域字段演进时需要同步更新；命令不会替代正式知乎授权 source 或真实用户数据。
 
+### ADR-94: 用只读 CLI 演示公开机会发现
+
+- **决策**: 增加 `python -m app.cli.opportunity_demo [--query {text}]`，使用仓库内标记为 `public` 的确定性演示信号调用现有 `build_opportunity_preview`，向 stdout 输出标准 JSON；命令不写仓储、不调用网络、不读取个人上下文，也不把演示信号伪装成线上知乎授权结果。
+- **理由**: 产品第一入口需要能现场证明“多作者公开内容 → 未完成性证据 → 角色缺口 → 候选种子”，单靠手写请求体会掩盖字段边界和解释链。只读 CLI 可与 D116 的三桌种子并列作为评委验收脚本，且不会新增生产写权限。
+- **替代方案**: 让评委手工拼装 JSON、在启动时自动写入机会数据、或直接联网抓取知乎；这些方案分别容易偏离契约、污染运行状态、或依赖未确认的授权/接口。
+- **代价**: 演示信号是合成固定资产，只用于验证编排和公开字段；接入正式 source 仍必须走 D17/D25 的适配器和 fail-closed 约束。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -942,7 +949,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D113 Lobby personalized fit preview
                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D114 active-intent Lobby projection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D115 bounded Lobby discovery collection
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D116 idempotent demo seed CLI
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D116 idempotent demo seed CLI
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D117 read-only public opportunity demo CLI
 ```
 
 ## Progress Ledger
@@ -1069,6 +1077,7 @@ master
 | D114 active-intent Lobby projection | complete | Carry the bounded public Lobby view inside matching active-demand candidates so one preview can render the recommendation card | 394 tests + compileall + diff check | `24354a5` + `c26e25f` |
 | D115 bounded Lobby discovery collection | complete | Provide a bounded batch of public Lobby cards for homepage table discovery without exposing full TableState | 395 tests + compileall + diff check | `c235285` + `ef6fca7` |
 | D116 idempotent demo seed CLI | complete | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | 398 tests + compileall + diff check | `f1824f7` + `92cde69` + `012b10a` |
+| D117 read-only public opportunity demo CLI | in_progress | Demonstrate public-signal opportunity discovery and explainable candidate output without network, persistence, or private-context access | pending | |
 
 ## 已知坑位（Running Gotchas）
 
