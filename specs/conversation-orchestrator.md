@@ -765,6 +765,13 @@
 - **替代方案**: 仅依赖 URL、把完整 `ContentSignal` 塞进每条干预、或让前端回传 signal ID；这些方案分别不稳定、扩大快照与隐私面、或允许客户端伪造来源关联。
 - **代价**: 公开 GROUND 响应与回放卡片增加一个可选字符串；source 仍需自行保证 ID 在其授权范围内唯一，服务端不把它当作跨桌全局账号标识。
 
+### ADR-108: 桌内安全按成员逐级升级
+
+- **决策**: 保留现有严重威胁/明确诈骗等 `CRITICAL` 硬暂停；新增窄词表的气氛风险和边界风险。气氛风险仍允许真人消息落账，但向全桌广播不含原文的通用 `safety_soft_intervention`；首次边界风险不落真人消息，只向发送连接返回通用 `safety_private_reminder`，并在仓储私有 strike 账本累计该成员次数；同一成员第二次边界风险升级为现有 `CRITICAL` 安全暂停。strike 账本按桌/成员有界、随 JSON 持久化，绝不进入公开 `TableState` 投影。正常分歧和讨论安全词不改变现有路径。
+- **理由**: 最终产品文档要求“观点可以激烈，人物不被伤害；Agent 先主持，再提醒，最后才执法”。当前实现只有关键词命中即整桌暂停，既会过度处理气氛变差，也缺少首次私下提醒和重复越界升级的证据链。把升级计数放在服务端私有账本，能覆盖 WebSocket 重连与 JSON 重启，又不把违规文本广播给其他成员。
+- **替代方案**: 所有风险一律 `CRITICAL`、让前端自行计数、或把违规文本写进公共 turn；这些方案分别过度打断正常交流、在重连/多客户端下不可信、或扩大隐私和伤害暴露面。
+- **代价**: V1 使用窄词表，不能替代平台级内容审核；私下提醒通过 WebSocket 发送，REST 评论促成遇到首次边界风险时返回安全冲突并累计 strike；跨实例部署需将 strike 计数迁移到共享事务/审核服务。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1066,7 +1073,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ←── D127 timed sync window
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D128 Lobby sync deadline projection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D129 grounded source signal link
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D130 atomic grounded intervention commit
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ←── D130 atomic grounded intervention commit
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D131 safety escalation ladder
 ```
 
 ## Progress Ledger
