@@ -213,6 +213,35 @@ def test_rest_invitation_acceptance_broadcasts_invitation_and_membership() -> No
     assert changed["state"]["participants"]["p2"]["declared_position"] is None
 
 
+def test_rest_join_request_broadcasts_redacted_request_events_without_state_migration() -> None:
+    client, repository = _client_with_table()
+    candidate = {
+        **_participant("p2", "研究"),
+        "declared_position": "候选人的私有立场",
+        "relevant_experience": [{"text": "候选人的私有经历", "source_ref": "private:p2"}],
+    }
+    with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:
+        created = client.post(
+            "/tables/table-rest/join-requests?participant_id=p2",
+            json={"request_id": "jr-1", "candidate": candidate, "message": "补充研究视角"},
+        )
+        assert created.status_code == 201
+        created_event = websocket.receive_json()
+        approved = client.post(
+            "/tables/table-rest/join-requests/jr-1/approve?participant_id=p1",
+            json={"reason": "请补充研究视角"},
+        )
+        assert approved.status_code == 200
+        approved_event = websocket.receive_json()
+
+    assert created_event["type"] == "join_request_created"
+    assert created_event["request"]["participant_id"] == "p2"
+    assert "私有" not in str(created_event)
+    assert approved_event["type"] == "join_request_approved"
+    assert approved_event["invitation"]["participant_id"] == "p2"
+    assert repository.get("table-rest").version == 0
+
+
 def test_rest_consent_and_soft_expiry_broadcast_state_transitions() -> None:
     client, _ = _client_with_table()
     with client.websocket_connect("/ws/tables/table-rest?participant_id=p1") as websocket:
