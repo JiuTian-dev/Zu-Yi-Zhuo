@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -278,6 +278,13 @@ class OpportunitySourceRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=120)
     limit: int = Field(default=20, ge=2, le=20)
+
+
+class GroundingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str | None = Field(default=None, min_length=1, max_length=120)
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class PersonalContextSourceRequest(BaseModel):
@@ -1027,6 +1034,59 @@ def create_app(
             raise HTTPException(status_code=502, detail="personal context source returned invalid signals") from error
         except Exception as error:
             raise HTTPException(status_code=502, detail="personal context source unavailable") from error
+
+    @api.post("/tables/{table_id}/grounding", response_model=GroundingCard)
+    async def stage_grounding_card(
+        table_id: str,
+        payload: GroundingRequest,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> GroundingCard:
+        """Fetch one public source excerpt for the next evidence-backed GROUND."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if state.conversation.closed:
+            raise HTTPException(status_code=409, detail="table is closed")
+        if state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is soft-expired")
+        if content_source is None:
+            raise HTTPException(status_code=503, detail="content source is not configured")
+        try:
+            raw_signals = await asyncio.wait_for(
+                content_source.search(
+                    query=payload.query or state.core_question,
+                    limit=payload.limit,
+                ),
+                timeout=content_source_timeout_seconds,
+            )
+            signals = [
+                item if isinstance(item, ContentSignal)
+                else ContentSignal.model_validate(item)
+                for item in _bounded_source_rows(raw_signals, payload.limit)
+            ]
+        except ContentSignalSourceError as error:
+            raise HTTPException(status_code=502, detail="content source unavailable") from error
+        except TimeoutError as error:
+            raise HTTPException(status_code=502, detail="content source timed out") from error
+        except (TypeError, ValueError, ValidationError) as error:
+            raise HTTPException(status_code=502, detail="content source returned invalid signals") from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="content source unavailable") from error
+        if not signals:
+            raise HTTPException(status_code=404, detail="no grounding source signal found")
+        signal = signals[0]
+        card = GroundingCard(
+            title=signal.title,
+            excerpt=signal.excerpt,
+            source_ref=signal.source_ref,
+        )
+        try:
+            repo.set_trusted_grounding_card(table_id, card)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return card
 
     @api.post("/matches/preview", response_model=MatchPlan)
     def preview_match(payload: MatchRequest) -> MatchPlan:

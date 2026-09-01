@@ -1,11 +1,13 @@
 import asyncio
 import json
 import sys
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
+from app.domain import Action, GateDecision, RouteDecision
 from app.sources import CommandContentSignalSource, ContentSignalSourceError
 
 
@@ -23,6 +25,18 @@ class _HangingSource:
     async def search(self, *, query, limit):
         await asyncio.sleep(0.2)
         return []
+
+
+def _table(client: TestClient, table_id: str = "grounding-table") -> None:
+    response = client.post("/tables", json={
+        "table_id": table_id,
+        "core_question": "企业 Agent 如何落地？",
+        "participants": [
+            {"participant_id": "p1", "display_name": "p1", "role": "产品", "declared_position": "看价值"},
+            {"participant_id": "p2", "display_name": "p2", "role": "架构师", "declared_position": "看技术"},
+        ],
+    })
+    assert response.status_code == 201
 
 
 def _signal(signal_id: str, author_id: str, content_type: str = "answer") -> dict:
@@ -54,6 +68,101 @@ def test_source_opportunity_preview_reuses_detector_and_preserves_public_contrac
     assert payload["signal_ids"] == ["s1", "s2"]
     assert {item["participant_id"] for item in payload["candidates"]} == {"u1", "u2"}
     assert source.calls == [("企业 Agent 如何落地？", 2)]
+
+
+def test_grounding_endpoint_stages_public_card_for_the_real_ground_action() -> None:
+    source = _Source([_signal("s1", "u1"), _signal("s2", "u2")])
+    client = TestClient(create_app(content_source=source))
+    _table(client)
+
+    staged = client.post(
+        "/tables/grounding-table/grounding?participant_id=p1",
+        json={"query": "企业 Agent 责任边界", "limit": 2},
+    )
+
+    assert staged.status_code == 200
+    assert staged.json() == {
+        "title": "企业 Agent 如何落地？",
+        "excerpt": "试点需要明确责任和验收边界。",
+        "source_ref": "authorized:public:s1",
+    }
+    assert source.calls == [("企业 Agent 责任边界", 2)]
+    assert client.get("/tables/grounding-table/state").json()["version"] == 0
+
+    decision = (
+        GateDecision(should_speak=True, evidence_turns=[1], reasons_to_speak=["ground"], confidence=.9),
+        RouteDecision(action=Action.GROUND, evidence_turns=[1], confidence=.9),
+    )
+    with patch("app.api.websocket.decide_intervention", return_value=decision):
+        with client.websocket_connect("/ws/tables/grounding-table?participant_id=p1") as websocket:
+            websocket.send_json({
+                "type": "human_message",
+                "message_id": "grounding-message",
+                "participant_id": "p1",
+                "text": "这个事实需要核对。",
+                "client_ts": 1756728000000,
+            })
+            assert websocket.receive_json()["type"] == "message_committed"
+            action = websocket.receive_json()
+            card = websocket.receive_json()
+            assert websocket.receive_json()["type"] == "table_state_changed"
+
+    assert action["action"] == "GROUND"
+    assert card["type"] == "grounding_card"
+    assert card["source_ref"] == "authorized:public:s1"
+    assert source.calls == [("企业 Agent 责任边界", 2)]
+
+
+def test_grounding_endpoint_is_member_scoped_and_fails_closed_on_missing_results() -> None:
+    source = _Source([])
+    client = TestClient(create_app(content_source=source))
+    _table(client, "grounding-guards")
+
+    assert client.post(
+        "/tables/grounding-guards/grounding?participant_id=ghost", json={}
+    ).status_code == 403
+    empty = client.post(
+        "/tables/grounding-guards/grounding?participant_id=p1", json={}
+    )
+    assert empty.status_code == 404
+    assert empty.json() == {"detail": "no grounding source signal found"}
+
+    missing = TestClient(create_app())
+    _table(missing, "grounding-missing")
+    response = missing.post(
+        "/tables/grounding-missing/grounding?participant_id=p1", json={}
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "content source is not configured"}
+
+
+def test_grounding_endpoint_hides_source_failures_and_respects_table_lifecycle() -> None:
+    invalid = _Source([{"signal_id": "only-partial"}])
+    invalid_client = TestClient(create_app(content_source=invalid))
+    _table(invalid_client, "grounding-invalid")
+    invalid_response = invalid_client.post(
+        "/tables/grounding-invalid/grounding?participant_id=p1", json={}
+    )
+    assert invalid_response.status_code == 502
+    assert invalid_response.json() == {"detail": "content source returned invalid signals"}
+
+    timeout_client = TestClient(create_app(
+        content_source=_HangingSource(), content_source_timeout_seconds=0.01,
+    ))
+    _table(timeout_client, "grounding-timeout")
+    timeout_response = timeout_client.post(
+        "/tables/grounding-timeout/grounding?participant_id=p1", json={}
+    )
+    assert timeout_response.status_code == 502
+    assert timeout_response.json() == {"detail": "content source timed out"}
+
+    repository = invalid_client.app.state.repository
+    repository.close_table("grounding-invalid")
+    closed = invalid_client.post(
+        "/tables/grounding-invalid/grounding?participant_id=p1", json={}
+    )
+    assert closed.status_code == 409
+    assert closed.json() == {"detail": "table is closed"}
 
 
 def test_source_opportunity_preview_fails_closed_without_source_or_with_bad_signals() -> None:
