@@ -16,6 +16,7 @@ python -m uvicorn app.main:app --reload
 - `GET /capabilities`：公开当前运行能力开关（仓储、确定性/自定义 provider、三类 source 是否注入、WebSocket 和 5 席上限）；不返回命令、模型名、token 或身份配置。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
+- `GET /tables/discovery?limit=...`：首页批量桌卡；默认最多 20 张仍开放且未软过期桌，复用有界公开 Lobby 投影，不返回完整 `TableState`、消息或私有资料。
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
 - `POST /intents/preview`：接收用户主动提出的一段自然语言需求，返回 `clarify`、`join_existing` 或 `new_table` 路由和最多 5 个有空席的公开桌候选（含 `available_seats`、可选 `origin_signal_ids` 与内嵌的 Lobby 公开投影）；不读取个人 source、不自动建桌或入席。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。

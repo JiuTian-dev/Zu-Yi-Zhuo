@@ -96,6 +96,36 @@ def test_lobby_preview_returns_not_found_for_unknown_table() -> None:
     assert response.status_code == 404
 
 
+def test_lobby_discovery_returns_bounded_stable_public_cards() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("z-open", "Z 题目", [_seed("p1", "产品")])
+    repository.create("a-open", "A 题目", [_seed("p2", "研究")])
+    repository.create("closed", "已结束题目", [_seed("p3", "实践者")])
+    repository.create("soft", "已暂停题目", [_seed("p4", "产品")])
+    repository.soft_expire_table("soft", "暂时没有新证据")
+    repository.close_table("closed")
+    client = TestClient(create_app(repository))
+
+    response = client.get("/tables/discovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["table_id"] for item in payload] == ["a-open", "z-open"]
+    assert payload[0]["participant_count"] == 1
+    assert payload[0]["available_seats"] == 4
+    assert payload[0]["members"] == [
+        {"participant_id": "p2", "display_name": "p2 展示名", "role": "研究"},
+    ]
+    assert "私有立场" not in response.text
+    assert "私有经历" not in response.text
+    assert "conversation" not in response.text
+
+    limited = client.get("/tables/discovery?limit=1")
+    assert limited.status_code == 200
+    assert [item["table_id"] for item in limited.json()] == ["a-open"]
+    assert client.get("/tables/discovery?limit=21").status_code == 422
+
+
 def test_lobby_fit_preview_explains_role_gap_without_persisting_private_profile() -> None:
     repository = InMemoryTableRepository()
     repository.create("lobby", "Q", [_seed("p1", "产品"), _seed("p2", "研究")])
