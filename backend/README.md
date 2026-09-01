@@ -34,6 +34,14 @@ python -m app.cli.journey_demo
 
 该命令每次从空内存仓储开始，依次走过公开机会预览、4 人匹配建桌、动态第 5 席候选预览与票据邀请、候选接受入席、Lobby、真人消息、Agent 动作、收桌卡片、行动回报、四维反馈、评估指标和回放摘要；不会读取或写入 `TABLE_REPOSITORY_PATH`，也不会访问网络。
 
+验证“相反事实 → 授权 source → GROUND → replay”窄闭环时，可运行隔离演示：
+
+```powershell
+python -m app.cli.grounding_demo
+```
+
+该命令只使用内存仓储和确定性公开 source，通过真实 REST/WebSocket 契约触发 D132 事实冲突检测，输出有限 JSON；不会读取或写入 `TABLE_REPOSITORY_PATH`，也不会访问网络或前端资源。
+
 启动后可用：
 
 - `GET /healthz`：进程存活探针。

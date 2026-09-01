@@ -9,6 +9,7 @@
 | 从公开知乎信号发现值得发生的问题 | `POST /opportunities/preview`、`POST /opportunities/source-preview` | `backend/app/opportunities/`、`backend/app/sources/`；`tests/test_opportunities.py`、`tests/test_content_source.py` |
 | 一键验证公开机会发现首入口 | `python -m app.cli.opportunity_demo` | `backend/app/demo/public_signals.py`、`backend/app/cli/opportunity_demo.py`；`tests/test_opportunity_demo.py`；只读、确定性、无网络 |
 | 一条命令验证公开机会到收桌后回响 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→4 人匹配→动态第 5 席邀请/入席→REST/WS→行动回报/反馈→确定性 JSON |
+| 一键验证授权 source 驱动的 GROUND 闭环 | `python -m app.cli.grounding_demo` | `backend/app/demo/grounding.py`、`backend/app/cli/grounding_demo.py`；`tests/test_grounding_demo.py`；真实 REST/WS→事实冲突→GROUND→来源卡消费→replay，隔离内存且可重复 |
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview` | `backend/app/intake.py`；`tests/test_intake.py`；支持 `clarify`、`join_existing`、`new_table` |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...`；同步桌透传 `sync_expires_at` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
@@ -63,7 +64,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **437 passed**。最近一个后端功能切片是 D132（Observer 事实冲突检测）；对应实现提交为 `b7a3854`，设计提交为 `c5a3415`。上一切片 D131（桌内安全按成员逐级升级）为 `432 passed`，实现提交 `2578f70` + `0d832be`，设计提交 `53ced60`。
+当前基线为 **439 passed**。最近一个后端功能切片是 D133（GROUND 黑盒演示）；对应实现提交为 `0e78505`，设计提交为 `deb9e0a`。上一切片 D132（Observer 事实冲突检测）为 `437 passed`，实现提交 `b7a3854`，设计提交 `c5a3415`。
 
 ## 不把以下事项误报为已完成
 

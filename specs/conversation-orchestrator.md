@@ -1233,7 +1233,7 @@ master
 | D130 atomic grounded intervention commit | complete | Consume the staged GROUND card in the same in-memory/JSON commit as the next `TableState` and `InterventionRecord`, preserving the card when persistence fails | 425 tests + compileall + diff check | `b025edf` |
 | D131 safety escalation ladder | complete | Keep normal disagreement allowed, add generic atmosphere soft intervention, privately remind the first boundary violation, and escalate the same actor's repeat violation to critical with bounded private JSON-persisted strikes | 432 tests + compileall + diff check | `2578f70` + `0d832be` |
 | D132 observer fact conflict detection | complete | Detect explicit opposite assertions on the same bounded fact topic from real human turns so the existing GROUND/source-card path can trigger without client-supplied disagreements; no trusted card safely falls back to PROBE | 437 tests + compileall + diff check | `c5a3415` + `b7a3854` |
-| D133 grounding black-box demo | in progress | Add an isolated deterministic CLI that drives the real grounding REST/WS/replay path without persistent or frontend writes | design committed; implementation pending | — |
+| D133 grounding black-box demo | complete | Add an isolated deterministic CLI that drives the real grounding REST/WS/replay path without persistent or frontend writes | 439 tests + compileall + diff check | `deb9e0a` + `0e78505` |
 
 ## 已知坑位（Running Gotchas）
 
