@@ -436,7 +436,7 @@ export default function App() {
   const showWorld = appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing'
   return (
     <>
-      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: false, antialias: true }} onError={() => setEnhanced(false)} />}
+      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: false, antialias: true }} shadows onError={() => setEnhanced(false)} />}
       {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} />}
       {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} entryIntent={entryIntent} onExit={exitTable} />}
       {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}

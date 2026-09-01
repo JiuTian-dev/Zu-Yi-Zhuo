@@ -184,10 +184,29 @@ function StarDust() {
 }
 
 function SkyDome() {
+  const uniforms = useMemo(() => ({}), [])
   return (
     <mesh position={[0, 0, 0]} renderOrder={-1}>
-      <sphereGeometry args={[48, 24, 16]} />
-      <meshBasicMaterial color="#0a0f1c" side={THREE.BackSide} fog={false} />
+      <sphereGeometry args={[54, 28, 18]} />
+      <shaderMaterial
+        uniforms={uniforms}
+        side={THREE.BackSide}
+        depthWrite={false}
+        fog={false}
+        vertexShader="varying vec3 vWorld; void main(){ vWorld = (modelMatrix * vec4(position,1.)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }"
+        fragmentShader={`varying vec3 vWorld;
+        void main(){
+          float h = clamp(vWorld.y / 30.0 + 0.18, 0.0, 1.0);
+          vec3 top = vec3(0.09, 0.14, 0.27);
+          vec3 mid = vec3(0.22, 0.31, 0.52);
+          vec3 horizon = vec3(0.45, 0.47, 0.61);
+          vec3 warm = vec3(0.62, 0.47, 0.36);
+          vec3 col = h > 0.5 ? mix(mid, top, (h - 0.5) / 0.5) : mix(mix(warm, horizon, smoothstep(0.0, 0.14, h)), mid, h / 0.5);
+          gl_FragColor = vec4(col, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`}
+      />
     </mesh>
   )
 }
@@ -330,7 +349,7 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
     if (glow.current) {
       const mat = glow.current.material as THREE.SpriteMaterial
       mat.opacity = THREE.MathUtils.damp(mat.opacity, focused ? 0.9 : 0.34, 4, 0.016)
-      glow.current.scale.setScalar(THREE.MathUtils.damp(glow.current.scale.x, focused ? 4.6 : 3.0, 4, 0.016))
+      glow.current.scale.setScalar(THREE.MathUtils.damp(glow.current.scale.x, focused ? 9.4 : 6.2, 4, 0.016))
     }
   })
 
@@ -338,18 +357,18 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
   return (
     <group ref={group}>
       <mesh position={[0, -0.06, 0]}>
-        <cylinderGeometry args={[1.12, 1.32, 0.14, 20]} />
+        <cylinderGeometry args={[2.55, 2.95, 0.3, 24]} />
         <meshStandardMaterial color={def.ground} roughness={0.95} />
       </mesh>
       <mesh position={[0, 0.045, 0]}>
-        <cylinderGeometry args={[1.12, 1.12, 0.02, 20]} />
-        <meshStandardMaterial color={def.ground} roughness={1} emissive={lampColor} emissiveIntensity={focused ? 0.32 : 0.15} toneMapped={false} />
+        <cylinderGeometry args={[2.55, 2.55, 0.03, 24]} />
+        <meshStandardMaterial color={def.ground} roughness={1} emissive={lampColor} emissiveIntensity={focused ? 0.4 : 0.22} toneMapped={false} />
       </mesh>
       <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.05, 1.1, 28]} />
+        <ringGeometry args={[2.4, 2.52, 32]} />
         <meshBasicMaterial color={def.rim} transparent opacity={focused ? 0.36 : 0.12} toneMapped={false} depthWrite={false} />
       </mesh>
-      <group scale={1.22}>
+      <group scale={2.45}>
       <MiniTable />
       <MiniPeople count={def.feature === 'fire' ? 5 : def.feature === 'house' || def.feature === 'shelf' ? 5 : 4} />
       {theme === 'campfire' && (<>
@@ -411,10 +430,10 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
         <GltfFit src="/assets/sea/kenney/rock_smallB.glb" height={0.07} position={[-0.72, 0.02, -0.2]} />
       </>)}
       </group>
-      <sprite ref={glow} position={[0, 0.3, 0]} scale={[2.4, 2.4, 1]}>
+      <sprite ref={glow} position={[0, 0.62, 0]} scale={[5.2, 5.2, 1]}>
         <spriteMaterial map={getRadialGlow()} color={def.lamp} transparent opacity={0.34} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </sprite>
-      <pointLight position={[0, 0.9, 0]} color={def.lamp} intensity={focused ? 2.2 : 0.85} distance={4.2} decay={2} />
+      <pointLight position={[0, 1.9, 0]} color={def.lamp} intensity={focused ? 4.6 : 1.7} distance={8.5} decay={2} />
     </group>
   )
 }
@@ -442,8 +461,8 @@ function SeaCamera() {
     if (!entry) return
     // slow auto-orbit + drag input
     if (!seaState.drag) seaState.orbit += delta * 0.05
-    const r = 3.9
-    const height = 2.05 + Math.sin(clock.elapsedTime * 0.24) * 0.16
+    const r = 5.6
+    const height = 1.7 + Math.sin(clock.elapsedTime * 0.24) * 0.16
     const angle = seaState.orbit
     current.set(
       focusPoint.x + Math.cos(angle) * r + pointer.x * 0.42,
@@ -454,7 +473,7 @@ function SeaCamera() {
     camera.position.x = THREE.MathUtils.damp(camera.position.x, current.x, l, delta)
     camera.position.y = THREE.MathUtils.damp(camera.position.y, current.y, l, delta)
     camera.position.z = THREE.MathUtils.damp(camera.position.z, current.z, l, delta)
-    lookAt.current.lerp(focusPoint.clone().add(new THREE.Vector3(0, 0.35, 0)), 1 - Math.exp(-5 * delta))
+    lookAt.current.lerp(focusPoint.clone().add(new THREE.Vector3(0, 0.85, 0)), 1 - Math.exp(-5 * delta))
     camera.lookAt(lookAt.current)
     const projected = focusPoint.clone().add(new THREE.Vector3(0, 0.55, 0)).project(camera)
     seaGlow.x = projected.x * 0.5 + 0.5
@@ -470,15 +489,29 @@ function SeaWorld() {
   return (
     <>
       <color attach="background" args={['#070b14']} />
-      <fog attach="fog" args={['#0a0f1c', 7, 34]} />
+      <fog attach="fog" args={['#10192e', 12, 48]} />
       <SkyDome />
       <GroundSea />
       <StarDust />
-      <FogPlane position={[0, -0.62, 0]} opacity={0.34} color="#3a4668" />
-      <FogPlane position={[0, -0.74, 0]} opacity={0.26} color="#2c3a5c" />
-      <hemisphereLight color="#4a5d9e" groundColor="#0d1220" intensity={0.5} />
-      <directionalLight color="#a8bee8" intensity={0.22} position={[5, 9, 3]} />
-      <ambientLight intensity={0.1} />
+      <FogPlane position={[0, -0.62, 0]} opacity={0.42} color="#4a5c85" />
+      <FogPlane position={[0, -0.74, 0]} opacity={0.34} color="#3a4a70" />
+      <hemisphereLight color="#8aa4d8" groundColor="#1c2438" intensity={0.85} />
+      <directionalLight
+        color="#e2d8ff"
+        intensity={1.05}
+        position={[9, 14, 7]}
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+        shadow-camera-left={-16}
+        shadow-camera-right={16}
+        shadow-camera-top={16}
+        shadow-camera-bottom={-16}
+        shadow-camera-near={2}
+        shadow-camera-far={38}
+      />
+      <directionalLight color="#ffb37a" intensity={0.3} position={[-7, 8, -5]} />
+      <ambientLight intensity={0.16} />
       <Suspense fallback={null}>
         {entries.map((entry) => (
           <group key={entry.index} position={[entry.pos.x, entry.pos.y, entry.pos.z]}>
