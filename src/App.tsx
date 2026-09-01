@@ -3,9 +3,8 @@ import { Suspense, useEffect, useRef, useState, type CSSProperties, type Mutable
 import * as THREE from 'three'
 import { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
-import Hallway, { type GalleryMediaRect } from './Hallway'
+import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
-import GalleryFlow, { type GalleryFlowTextureRef } from './GalleryFlow'
 import type { AppPhase, TableSummary } from './domain'
 import { useLive } from './live/store'
 import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from './live/backend'
@@ -34,9 +33,6 @@ function speakerRole(participantId: string): string {
   if (participantId === 'viewer') return '第五席'
   return turns.find((turn) => turn.id === participantId)?.role ?? '嘉宾'
 }
-const zeroFlowTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType)
-zeroFlowTexture.needsUpdate = true
-
 function canEnhance() {
   if (!matchMedia('(pointer:fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return false
   const canvas = document.createElement('canvas')
@@ -392,7 +388,6 @@ export default function App() {
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
   const [lobbyTable, setLobbyTable] = useState<TableSummary | null>(null)
   const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(null)
-  const flowTexture = useRef<THREE.Texture | null>(zeroFlowTexture) as GalleryFlowTextureRef
   const transitionTimer = useRef<number | null>(null)
   const pendingRectRef = useRef<GalleryMediaRect | null>(null)
   const reducedMotion = useReducedMotion()
@@ -441,8 +436,8 @@ export default function App() {
   const showWorld = appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing'
   return (
     <>
-      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: true, antialias: true }} onError={() => setEnhanced(false)}>{(appPhase === 'gallery' || appPhase === 'lobby') && <GalleryFlow textureRef={flowTexture} />}</GlobalCanvas>}
-      {showGallery && <Hallway phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} flowTexture={flowTexture} />}
+      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: false, antialias: true }} onError={() => setEnhanced(false)} />}
+      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} />}
       {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} entryIntent={entryIntent} onExit={exitTable} />}
       {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}

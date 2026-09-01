@@ -17,6 +17,9 @@ importers:
       '@react-three/fiber':
         specifier: ^9.4.0
         version: 9.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(three@0.180.0)
+      '@react-three/postprocessing':
+        specifier: 3.1.1
+        version: 3.1.1(@react-three/fiber@9.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(three@0.180.0))(@types/three@0.185.4)(postprocessing@6.39.4(three@0.180.0))(react@19.2.8)(three@0.180.0)
       gsap:
         specifier: ^3.13.0
         version: 3.15.0
@@ -223,6 +226,14 @@ packages:
         optional: true
       react-native:
         optional: true
+
+  '@react-three/postprocessing@3.1.1':
+    resolution: {integrity: sha512-WG0dhAt/JDGU3eimwq21wuajvXS7SYN5u1kBau/ElTkllFB3CSpwILJNpNctZGxo4Dz157shB66CQb9ZSU/zMQ==}
+    peerDependencies:
+      '@react-three/fiber': '>=9.7.0'
+      postprocessing: ^6.36.0
+      react: ^19.0.0
+      three: '>= 0.156.0'
 
   '@rolldown/binding-android-arm-eabi@1.2.5':
     resolution: {integrity: sha512-DLe/i+l8ynIBY7XEQ191TeZvCoowIGa18R+dIV30GW7DiOtp74i/xX8hs8GUjW5ARV7VZuie3d6AumSmCwbeRA==}
@@ -647,6 +658,12 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
+  n8ao@2.0.1:
+    resolution: {integrity: sha512-MoP1QKUdj4/3cKEnhFl917t0eQwWGER1l43ckz5mNOPyYWGRDGQbVoTOQz/VBvy01in6QVNG+AL6Xxx5AjZBYA==}
+    peerDependencies:
+      postprocessing: '>=6.30.0'
+      three: '>=0.137'
+
   nanoid@3.3.18:
     resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -670,6 +687,11 @@ packages:
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
+
+  postprocessing@6.39.4:
+    resolution: {integrity: sha512-oAS/PjAbc/xT3OzjUrGsorJ4J064XwhVD2t0OwKLP/E8QwDMUJ0oOv6ZI1SYMtLchv4g0ySEx+JcLy92+48vlA==}
+    peerDependencies:
+      three: '>= 0.168.0 < 0.186.0'
 
   potpack@1.0.2:
     resolution: {integrity: sha512-choctRBIV9EMT9WGAZHn3V7t0Z2pMQyl0EZE6pFc/6ml3ssw7Dlf/oAOvFwjm1HVsqfQN8GfeFyJ+d8tRzqueQ==}
@@ -1155,6 +1177,17 @@ snapshots:
       - '@types/react'
       - immer
 
+  '@react-three/postprocessing@3.1.1(@react-three/fiber@9.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(three@0.180.0))(@types/three@0.185.4)(postprocessing@6.39.4(three@0.180.0))(react@19.2.8)(three@0.180.0)':
+    dependencies:
+      '@react-three/fiber': 9.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(three@0.180.0)
+      maath: 0.10.8(@types/three@0.185.4)(three@0.180.0)
+      n8ao: 2.0.1(postprocessing@6.39.4(three@0.180.0))(three@0.180.0)
+      postprocessing: 6.39.4(three@0.180.0)
+      react: 19.2.8
+      three: 0.180.0
+    transitivePeerDependencies:
+      - '@types/three'
+
   '@rolldown/binding-android-arm-eabi@1.2.5':
     optional: true
 
@@ -1460,6 +1493,11 @@ snapshots:
 
   ms@2.1.3: {}
 
+  n8ao@2.0.1(postprocessing@6.39.4(three@0.180.0))(three@0.180.0):
+    dependencies:
+      postprocessing: 6.39.4(three@0.180.0)
+      three: 0.180.0
+
   nanoid@3.3.18: {}
 
   node-releases@2.0.53: {}
@@ -1475,6 +1513,10 @@ snapshots:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  postprocessing@6.39.4(three@0.180.0):
+    dependencies:
+      three: 0.180.0
 
   potpack@1.0.2: {}
 
