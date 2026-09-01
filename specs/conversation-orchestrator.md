@@ -828,6 +828,13 @@
 - **替代方案**: 只在浏览器本地保存、把收藏公开成点赞数、复用 `table_selected` 事件临时拼列表、或收藏后自动申请入席；这些方案分别无法跨设备/重启恢复、改变低压力互动的社会含义、把行为日志误当当前资源，或绕过人的加入决定。
 - **代价**: V1 没有收藏时间戳、分组和提醒，最近顺序只按持久列表位置定义；最多 100 张且只支持 offset/limit。收藏不会直接改善 D138 推荐排序，这是刻意的意图隔离，而非最终推荐质量结论。
 
+### ADR-117: Agent 只推荐外围评论候选，核心成员确认后才递进主桌
+
+- **决策**: 新增成员作用域的只读 `GET /tables/{id}/comment-promotion-candidates?participant_id={member_id}&limit={n}`，返回当前桌版本和最多 10 条 `CommentPromotionCandidate`。服务端只检查最近最多 100 条既有 `PeripheralComment`，排除已促成和命中阻断级安全策略的评论，再依据与当前核心问题/子问题/桌面认知摘要的有界词项重合、明确问句和案例/经历线索做确定性排序。每项返回原有公开评论、自然语言理由、最多 5 个命中主题词和有限信号类型，不返回内部数值分数、隐藏推理或安全命中详情。关闭、软过期或 critical 暂停桌拒绝生成候选；读取不写状态、不累计 strike、不广播、不自动促成。真正进入主桌仍由核心成员调用 D37 的既有 `promote` 端点，重新执行安全与并发版本检查并原子提交来源链。
+- **理由**: 产品文档明确写出“外围评论活跃观众交流，优质问题由 Agent 递进主桌”，而当前实现只有人工遍历和促成，没有 Agent 帮忙从评论流里识别哪条值得递进。2026 年 cMOOC 的[协作式 AI-in-the-loop 讨论研究](https://arxiv.org/abs/2603.29285)在 606 人、五周实验中采用 AI 目标选择与强制人工复核，并指出协作复核是有效 AI 参与的重要条件；[Google DialogLab 研究](https://research.google/pubs/dialoglab-authoring-simulating-and-testing-dynamic-group-conversations-in-hybrid-human-ai-conversations-2/)也报告人类控制模式在多人对话原型中更具参与感、有效性和真实感。另有 600 人的[建设性评论人机协作实验](https://arxiv.org/abs/2411.03295)发现模型与人对“建设性”的判断存在错位及细微语义损失。因此 V1 让 Agent 缩小注意范围并解释依据，但不替人决定谁的话获得主桌权重。
+- **替代方案**: Agent 自动把最高分评论写进主桌、让 LLM 自由读取所有评论并输出不可审计判断、按长度/点赞排序，或继续完全人工翻阅；这些方案分别扩大错误放大与作者权责风险、缺少稳定回归边界、把热度误当认知价值，或没有兑现 Agent 的外围递进职责。
+- **代价**: V1 使用确定性中文双字词项和窄问句/案例词表，无法理解隐喻、反讽或跨语言深层相关性；候选质量必须通过真实评论流内测验证。候选预览只减少成员筛选成本，不改变外围作者仍由促成人承担主桌 turn 责任的既有来源契约。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1302,6 +1309,7 @@ master
 | D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
 | D138 explainable personalized table discovery | complete | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | 463 tests + compileall + diff check | `a3aba9c` + `9ebeeee` |
 | D139 private saved-table library | complete | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | 470 tests + compileall + diff check | `a49ad58` + `3f64c9c` |
+| D140 evidence-backed peripheral comment candidates | in progress | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
