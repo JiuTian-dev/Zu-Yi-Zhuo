@@ -411,6 +411,7 @@ def test_json_intervention_bundle_recovers_state_and_audit_together(tmp_path) ->
             title="采购流程",
             excerpt="试点与正式采购由不同责任链承接。",
             source_ref="demo:42",
+            signal_id="signal-42",
         ),
     )
 
@@ -422,4 +423,5 @@ def test_json_intervention_bundle_recovers_state_and_audit_together(tmp_path) ->
         title="采购流程",
         excerpt="试点与正式采购由不同责任链承接。",
         source_ref="demo:42",
+        signal_id="signal-42",
     )

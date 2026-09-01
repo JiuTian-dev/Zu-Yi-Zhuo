@@ -1095,6 +1095,7 @@ def create_app(
             title=signal.title,
             excerpt=signal.excerpt,
             source_ref=signal.source_ref,
+            signal_id=signal.signal_id,
         )
         try:
             repo.set_trusted_grounding_card(table_id, card)

@@ -649,6 +649,12 @@ class GroundingCard(ContractModel):
     title: str = Field(min_length=1)
     excerpt: str = Field(min_length=1)
     source_ref: str = Field(min_length=1)
+    signal_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        exclude_if=lambda value: value is None,
+    )
 
 class TokenUsage(ContractModel):
     input_tokens: int = Field(ge=0)
