@@ -73,31 +73,34 @@ const entries: Ent[] = (() => {
     transitionPreset: 'cover-only',
     coverFocus: { x: 0.5, y: 0.5 },
   }))
-  // spiral rings: ring radii with jittered angles (organic, not a grid)
-  const ringSpecs = [
-    { count: 5, radius: 4.6, phase: 0 },
-    { count: 5, radius: 8.6, phase: 0.55 },
-    { count: 3, radius: 12.4, phase: 1.3 },
+  // one continent: clusters spread over a large organic field
+  const clump = [
+    [0, 0], [0.55, 0.35], [-0.5, 0.4], [0.5, -0.42], [-0.55, -0.35],
+    [0, 0.62], [0.62, 0], [-0.62, 0], [0, -0.62], [0.35, 0.35],
+    [-0.35, 0.35], [0.35, -0.35], [-0.35, -0.35],
   ]
-  const positions: THREE.Vector3[] = []
-  ringSpecs.forEach((ring) => {
-    for (let i = 0; i < ring.count; i += 1) {
-      const a = ring.phase + (i / ring.count) * Math.PI * 2 + (Math.sin(i * 7.3) * 0.12)
-      const r = ring.radius + Math.sin(i * 3.1) * 0.7
-      positions.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a * 2 + i) * 0.04, Math.sin(a) * r))
-    }
+  const positions = clump.map(([x, z], i) => {
+    const a2 = (i * 2.399963) // golden angle spiral jitter
+    return new THREE.Vector3(
+      x * 12 + Math.sin(a2) * 1.7,
+      0,
+      z * 12 + Math.cos(a2) * 1.7,
+    )
   })
   const all = [
     ...core.map((table, i) => ({ theme: ['valley', 'campfire', 'workshop'][i] as ThemeId, table })),
     ...decoThemes.map((theme, i) => ({ theme, table: decoTables[i] })),
   ]
-  return all.map((entry, index) => ({
-    theme: entry.theme,
-    accent: THEMES[entry.theme].rim,
-    table: entry.table,
-    pos: positions[index] ?? new THREE.Vector3((index - 6) * 3.2, 0, 0),
-    index,
-  }))
+  return all.map((entry, index) => {
+    const base = positions[index] ?? new THREE.Vector3((index - 6) * 3.2, 0, 0)
+    return {
+      theme: entry.theme,
+      accent: THEMES[entry.theme].rim,
+      table: entry.table,
+      pos: new THREE.Vector3(base.x, groundHeight(base.x, base.z) + 0.08, base.z),
+      index,
+    }
+  })
 })()
 
 const isCore = (entry: Ent) => entry.table.entryMode === 'immersive'
@@ -105,6 +108,7 @@ const isCore = (entry: Ent) => entry.table.entryMode === 'immersive'
 /** shared mutable state between canvas and DOM (portals freeze props) */
 const seaState = { index: 0, orbit: 0, drag: false, lastPointer: 0 }
 const seaGlow = { x: 0.5, y: 0.4, on: false }
+const clusterY = (x: number, z: number) => 0.1
 
 /* ------------------------------------------------------------- assets */
 
@@ -140,15 +144,66 @@ function FogPlane({ position, opacity, color }: { position: [number, number, num
   )
 }
 
-function GroundSea() {
-  const geo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(120, 120)
-    g.rotateX(-Math.PI / 2)
-    return g
+function groundHeight(x: number, z: number): number {
+  const n =
+    Math.sin(x * 0.16) * Math.cos(z * 0.14) * 0.9 +
+    Math.sin(x * 0.05 + z * 0.07) * 1.4 +
+    Math.cos(x * 0.31 - z * 0.24) * 0.3
+  const edge = THREE.MathUtils.smoothstep(Math.sqrt(x * x + z * z), 20, 30)
+  return n - 1.1 - edge * 2.4
+}
+
+function SeaTerrain() {
+  const geometry = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(78, 78, 130, 130)
+    geo.rotateX(-Math.PI / 2)
+    const pos = geo.attributes.position as THREE.BufferAttribute
+    const colors = new Float32Array(pos.count * 3)
+    const grassA = new THREE.Color('#79a86d')
+    const grassB = new THREE.Color('#5d8a55')
+    const sand = new THREE.Color('#c9b98a')
+    const rock = new THREE.Color('#8e98a8')
+    const color = new THREE.Color()
+    for (let i = 0; i < pos.count; i += 1) {
+      const x = pos.getX(i)
+      const z = pos.getZ(i)
+      const y = groundHeight(x, z)
+      pos.setY(i, y)
+      const n = (Math.sin(x * 1.3) + Math.cos(z * 1.7)) * 0.5 + 0.5
+      color.copy(grassA).lerp(grassB, n * 0.55)
+      if (y > 0.25) color.lerp(rock, THREE.MathUtils.clamp((y - 0.25) / 2.0, 0, 0.75))
+      if (y < -0.4) color.lerp(sand, THREE.MathUtils.clamp((-0.4 - y) / 0.7, 0, 1))
+      colors[i * 3] = color.r
+      colors[i * 3 + 1] = color.g
+      colors[i * 3 + 2] = color.b
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    geo.computeVertexNormals()
+    return geo
   }, [])
   return (
-    <mesh geometry={geo} position={[0, -0.9, 0]}>
-      <meshBasicMaterial color="#8fa4b8" />
+    <mesh geometry={geometry} receiveShadow>
+      <meshStandardMaterial vertexColors roughness={0.95} flatShading />
+    </mesh>
+  )
+}
+
+function SeaWater() {
+  const mat = useRef<THREE.ShaderMaterial>(null)
+  const uniforms = useMemo(() => ({ uTime: { value: 0 } }), [])
+  useFrame(({ clock }) => {
+    if (mat.current) mat.current.uniforms.uTime.value = clock.elapsedTime
+  })
+  return (
+    <mesh position={[-7, -0.52, -6]} rotation={[-Math.PI / 2, 0, 0]} scale={[18, 12, 1]}>
+      <planeGeometry args={[1, 1, 48, 32]} />
+      <shaderMaterial
+        ref={mat}
+        uniforms={uniforms}
+        transparent
+        vertexShader="uniform float uTime; varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.); w.y += sin(w.x*1.3+uTime*1.2)*0.03 + cos(w.z*1.7+uTime*0.9)*0.025; vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }"
+        fragmentShader="uniform float uTime; varying vec3 vW; void main(){ vec3 deep = vec3(0.28,0.5,0.62); vec3 shallow = vec3(0.55,0.72,0.74); float d = clamp((vW.y + 0.7) / 1.2, 0.0, 1.0); vec3 c = mix(deep, shallow, d); c += 0.03 * sin(vW.x*6.0 + uTime*2.1); gl_FragColor = vec4(c, 0.92); #include <tonemapping_fragment> #include <colorspace_fragment> }"
+      />
     </mesh>
   )
 }
@@ -384,17 +439,13 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
   const lampColor = new THREE.Color(def.lamp)
   return (
     <group ref={group}>
-      <mesh position={[0, -0.06, 0]}>
-        <cylinderGeometry args={[2.55, 2.95, 0.3, 24]} />
-        <meshStandardMaterial color={def.ground} roughness={0.95} />
+      <mesh position={[0, 0.02, 0]} receiveShadow>
+        <circleGeometry args={[2.55, 26]} />
+        <meshStandardMaterial color={def.ground} roughness={1} emissive={lampColor} emissiveIntensity={focused ? 0.5 : 0.3} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.045, 0]}>
-        <cylinderGeometry args={[2.55, 2.55, 0.03, 24]} />
-        <meshStandardMaterial color={def.ground} roughness={1} emissive={lampColor} emissiveIntensity={focused ? 0.55 : 0.34} toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[2.4, 2.52, 32]} />
-        <meshBasicMaterial color={def.rim} transparent opacity={focused ? 0.36 : 0.12} toneMapped={false} depthWrite={false} />
+      <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.4, 2.5, 32]} />
+        <meshBasicMaterial color={def.rim} transparent opacity={focused ? 0.3 : 0.1} toneMapped={false} depthWrite={false} />
       </mesh>
       <group scale={2.45}>
       <MiniTable />
@@ -480,6 +531,40 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
 
 /* ------------------------------------------------------------- camera + scene */
 
+function SeascapeScatter() {
+  const spots = useMemo(() => {
+    type Spot = { x: number; z: number; kind: number; s: number; rot: number }
+    const out: Spot[] = []
+    const nearCluster = (x: number, z: number) => entries.some((e) => Math.hypot(e.pos.x - x, e.pos.z - z) < 3.4)
+    for (let i = 0; i < 150; i += 1) {
+      const a = i * 2.399963
+      const r = 4 + (i % 23) / 23 * 22
+      const x = Math.cos(a) * r
+      const z = Math.sin(a) * r
+      if (nearCluster(x, z)) continue
+      if (groundHeight(x, z) < -0.45) continue
+      if (groundHeight(x, z) > 2.6) continue
+      out.push({ x, z, kind: i % 10, s: 0.7 + ((i * 13) % 10) / 18, rot: (i * 1.7) % (Math.PI * 2) })
+    }
+    return out
+  }, [])
+  return (
+    <group>
+      {spots.map((sp, i) => (
+        <group key={i} position={[sp.x, groundHeight(sp.x, sp.z) + 0.02, sp.z]} rotation={[0, sp.rot, 0]} scale={sp.s}>
+          {sp.kind < 4 && <GltfFit src="/assets/sea/pine.glb" height={1.1} />}
+          {sp.kind === 4 && <GltfFit src="/assets/sea/autumn-tree.glb" height={1.2} />}
+          {sp.kind === 5 && <GltfFit src="/assets/sea/kenney/tree_small.glb" height={0.9} />}
+          {sp.kind === 6 && <GltfFit src="/assets/sea/kenney/rock_smallB.glb" height={0.3} />}
+          {sp.kind === 7 && <GltfFit src="/assets/sea/kenney/grass_large.glb" height={0.25} />}
+          {sp.kind === 8 && <GltfFit src="/assets/sea/kenney/flower_yellowA.glb" height={0.18} />}
+          {sp.kind === 9 && <GltfFit src="/assets/sea/kenney/flower_redA.glb" height={0.18} />}
+        </group>
+      ))}
+    </group>
+  )
+}
+
 function TravelOrb() {
   const orb = useRef<THREE.Mesh>(null)
   const light = useRef<THREE.PointLight>(null)
@@ -488,7 +573,7 @@ function TravelOrb() {
     const entry = entries[seaState.index]
     if (!entry) return
     const k = 1 - Math.exp(-2.2 * delta)
-    orb.current.position.lerp(new THREE.Vector3(entry.pos.x, 1.5, entry.pos.z), k)
+    orb.current.position.lerp(new THREE.Vector3(entry.pos.x, entry.pos.y + 1.5, entry.pos.z), k)
     light.current.position.copy(orb.current.position)
   })
   return (
@@ -553,9 +638,11 @@ function SeaWorld() {
       <color attach="background" args={['#070b14']} />
       <fog attach="fog" args={['#9fb3c6', 13, 54]} />
       <SkyDome />
-      <GroundSea />
+      <SeaTerrain />
+      <SeaWater />
       <StarDust />
       <Pollen />
+      <SeascapeScatter />
       <FogPlane position={[0, -0.62, 0]} opacity={0.3} color="#c4d2e2" />
       <FogPlane position={[0, -0.74, 0]} opacity={0.24} color="#b0c2d6" />
       <hemisphereLight color="#d8e8f8" groundColor="#8a9278" intensity={1.05} />
