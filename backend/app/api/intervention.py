@@ -1,6 +1,6 @@
 """Shared construction helpers for explainable Host intervention records."""
 
-from app.domain import AgentActionEvent, InterventionRecord, RouteDecision, TableState
+from app.domain import AgentActionEvent, GroundingCard, InterventionRecord, RouteDecision, TableState
 from app.domain.schemas import EvidenceStatement
 from app.domain.schemas import TokenUsage
 
@@ -11,6 +11,7 @@ def build_intervention_record(
     route: RouteDecision,
     action: AgentActionEvent,
     model: str = "deterministic-demo",
+    grounding_card: GroundingCard | None = None,
 ) -> InterventionRecord:
     """Create an audit entry from a committed, validated Host event."""
     evidence = list(action.evidence_turns or route.evidence_turns)
@@ -26,4 +27,5 @@ def build_intervention_record(
         latency_ms=0,
         model=model,
         token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+        grounding_card=grounding_card,
     )

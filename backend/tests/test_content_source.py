@@ -111,6 +111,12 @@ def test_grounding_endpoint_stages_public_card_for_the_real_ground_action() -> N
     assert card["type"] == "grounding_card"
     assert card["source_ref"] == "authorized:public:s1"
     assert source.calls == [("企业 Agent 责任边界", 2)]
+    replay = client.get("/tables/grounding-table/replay").json()
+    assert replay["interventions"][0]["grounding_card"] == {
+        "title": "企业 Agent 如何落地？",
+        "excerpt": "试点需要明确责任和验收边界。",
+        "source_ref": "authorized:public:s1",
+    }
 
 
 def test_grounding_endpoint_is_member_scoped_and_fails_closed_on_missing_results() -> None:

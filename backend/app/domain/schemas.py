@@ -653,6 +653,10 @@ class InterventionRecord(AgentActionEvent):
     latency_ms: int = Field(ge=0)
     model: str = Field(min_length=1)
     token_usage: TokenUsage
+    grounding_card: GroundingCard | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     outcome: EvidenceStatement | None = None
     reflection: EvidenceStatement | None = None
 

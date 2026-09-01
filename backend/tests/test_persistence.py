@@ -386,9 +386,19 @@ def test_json_intervention_bundle_recovers_state_and_audit_together(tmp_path) ->
         latency_ms=0,
         model="test",
         token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+        grounding_card=GroundingCard(
+            title="采购流程",
+            excerpt="试点与正式采购由不同责任链承接。",
+            source_ref="demo:42",
+        ),
     )
 
     repository.append_intervention_bundle("bundle", next_state, record)
     restored = JsonTableRepository(path)
     assert restored.get("bundle").version == 1
     assert restored.interventions("bundle") == [record]
+    assert restored.interventions("bundle")[0].grounding_card == GroundingCard(
+        title="采购流程",
+        excerpt="试点与正式采购由不同责任链承接。",
+        source_ref="demo:42",
+    )

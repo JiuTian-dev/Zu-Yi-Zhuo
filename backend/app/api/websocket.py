@@ -500,7 +500,12 @@ def register_websocket_routes(
                                 or (type(provider).__name__ if provider is not None else "deterministic-demo")
                             )
                             record = build_intervention_record(
-                                table_id, final_state, route, action, model=model_name
+                                table_id,
+                                final_state,
+                                route,
+                                action,
+                                model=model_name,
+                                grounding_card=grounding_card,
                             )
                             state = repository.append_intervention_bundle(
                                 table_id, final_state, record
