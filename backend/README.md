@@ -2,6 +2,8 @@
 
 这是单桌闭环的 FastAPI 后端：真人消息进入后，系统维护 evidence-first Table State，经过安全检查、silence-first Gate、六动作 Router 和 Host，写入可回放的状态快照与 InterventionRecord。每张桌还公开携带固定的“圆桌 Agent”角色；它不占真人席位，但会随安全暂停、软过期和收桌进入对应生命周期。
 
+产品目标与后端契约的逐项对齐见 [ACCEPTANCE_MATRIX.md](D:/知乎黑客松/backend/ACCEPTANCE_MATRIX.md)。
+
 ## 本地运行
 
 ```powershell
