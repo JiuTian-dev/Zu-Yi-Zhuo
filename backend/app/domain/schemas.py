@@ -688,6 +688,13 @@ class TableEvaluation(ContractModel):
     phase: Phase
     closed: bool
     participant_count: int = Field(ge=0, le=5)
+    invitation_count: int = Field(ge=0)
+    invitation_pending_count: int = Field(ge=0)
+    invitation_accepted_count: int = Field(ge=0)
+    invitation_declined_count: int = Field(ge=0)
+    invitation_acceptance_rate: float | None = Field(default=None, ge=0, le=1)
+    peripheral_comment_count: int = Field(ge=0)
+    promoted_comment_count: int = Field(ge=0)
     human_turn_count: int = Field(ge=0)
     intervention_count: int = Field(ge=0)
     reflected_intervention_count: int = Field(ge=0)
@@ -706,6 +713,19 @@ class TableEvaluation(ContractModel):
             raise ValueError("reflected interventions cannot exceed interventions")
         if self.effective_intervention_count > self.reflected_intervention_count:
             raise ValueError("effective interventions cannot exceed reflections")
+        invitation_status_total = (
+            self.invitation_pending_count
+            + self.invitation_accepted_count
+            + self.invitation_declined_count
+        )
+        if invitation_status_total > self.invitation_count:
+            raise ValueError("invitation status counts cannot exceed invitations")
+        if self.invitation_count and self.invitation_acceptance_rate is None:
+            raise ValueError("invitations require an acceptance rate")
+        if not self.invitation_count and self.invitation_acceptance_rate is not None:
+            raise ValueError("empty invitation funnel must not have an acceptance rate")
+        if self.promoted_comment_count > self.peripheral_comment_count:
+            raise ValueError("promoted comments cannot exceed peripheral comments")
         if self.follow_up_reported_count > self.follow_up_count:
             raise ValueError("reported follow-ups cannot exceed follow-up items")
         if self.follow_up_completed_count > self.follow_up_reported_count:

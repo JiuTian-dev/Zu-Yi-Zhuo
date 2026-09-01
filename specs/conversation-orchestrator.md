@@ -597,6 +597,13 @@
 - **替代方案**: 让前端缓存每桌行动、把所有桌行动公开给用户、或复制一份全局 action 表；这些方案分别易丢失、扩大他人行动/备注暴露面、或引入第二事实源。
 - **代价**: 只覆盖当前收桌状态仍保留该成员的桌，且不做跨桌趋势分析；未来若需要提醒/通知，应在此只读视图之上另建调度层，不把接口变成后台任务系统。
 
+### ADR-83: 单桌评估补齐邀请漏斗与外围关注
+
+- **决策**: 扩展 D103 的 `TableEvaluation`，加入桌级邀请总数、`pending / accepted / declined` 计数、邀请接受率，以及外围评论总数和被核心成员促成进入主桌的评论数。所有字段从现有邀请/评论/促成账本实时派生，仍只允许桌内成员读取；接受率在没有邀请时返回 `null`。不返回候选人身份、邀请理由、评论正文或行为事件明细。
+- **理由**: 产品文档把邀请接受率、4/5 人结构、外围关注和主持质量列为真实内测/比赛 Demo 的验证重点。单桌评估已经是统一读模型，把漏斗和外围信号并入同一版本快照可以让评委直接复核“召集是否成功、外部是否关注”，避免前端自行拼接造成口径漂移。
+- **替代方案**: 新建运营后台接口、让前端分别读取邀请与评论账本、或返回每个候选人的明细；这些方案分别扩大权限面、产生竞态和重复计算、或泄露未入席用户的信息。
+- **代价**: 计数是单桌快照级别且不做跨桌报表；评论被促成只表示核心成员显式采纳，不等同于外部关注质量，后续仍需结合真实内测解释。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -941,6 +948,7 @@ master
 | D103 single-table evaluation projection | complete | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | 370 tests + compileall + diff check | `800d5f3` |
 | D104 question footprint projection | complete | Add self-scoped bounded contribution/changed-evidence view derived from closed table snapshots | 372 tests + compileall + diff check | `698f2b9` |
 | D105 action echoes projection | complete | Add self-scoped bounded action outcome history derived from closed follow-up ledgers | 374 tests + compileall + diff check | `8554116` |
+| D106 evaluation funnel and attention metrics | in_progress | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | pending | — |
 
 ## 已知坑位（Running Gotchas）
 

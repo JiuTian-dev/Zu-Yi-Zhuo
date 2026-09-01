@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
-from app.domain import FollowUpOutcome, HumanTurn, ParticipantSeed
+from app.domain import FollowUpOutcome, HumanTurn, ParticipantSeed, PeripheralComment
 
 
 def _seed(participant_id: str) -> ParticipantSeed:
@@ -89,3 +89,39 @@ def test_closed_evaluation_aggregates_feedback_and_follow_up_outcomes() -> None:
         "would_join_again_count": 1,
     }
     assert "note" not in response.text and "participant_id" not in response.text
+
+
+def test_evaluation_includes_invitation_funnel_and_peripheral_attention_counts() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("evaluation-funnel", "如何把讨论变成行动？", [_seed("p1"), _seed("p2")])
+    candidate_one = _seed("p3")
+    candidate_two = _seed("p4")
+    first = repository.create_invitation("evaluation-funnel", "p1", candidate_one, "补充实践视角")
+    second = repository.create_invitation("evaluation-funnel", "p1", candidate_two, "补充行业视角")
+    repository.respond_invitation("evaluation-funnel", first.invitation_id, "p3", True)
+    repository.respond_invitation("evaluation-funnel", second.invitation_id, "p4", False)
+    state = repository.get("evaluation-funnel")
+    repository.append_comment_once(PeripheralComment(
+        comment_id="comment-1",
+        table_id="evaluation-funnel",
+        author_id="observer",
+        display_name="旁听者",
+        text="我也想知道如何验证这个行动。",
+        state_version=state.version,
+    ))
+    repository.promote_comment_once("evaluation-funnel", "comment-1", "p1")
+    repository.close_table("evaluation-funnel")
+    client = TestClient(create_app(repository))
+
+    response = client.get("/tables/evaluation-funnel/evaluation?participant_id=p1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["invitation_count"] == 2
+    assert payload["invitation_pending_count"] == 0
+    assert payload["invitation_accepted_count"] == 1
+    assert payload["invitation_declined_count"] == 1
+    assert payload["invitation_acceptance_rate"] == 0.5
+    assert payload["peripheral_comment_count"] == 1
+    assert payload["promoted_comment_count"] == 1
+    assert "observer" not in response.text

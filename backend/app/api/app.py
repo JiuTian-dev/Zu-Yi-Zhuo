@@ -1809,6 +1809,13 @@ def create_app(
 
         turns = repo.turns(table_id)
         interventions = repo.interventions(table_id)
+        invitations = repo.invitations(table_id)
+        invitation_count = len(invitations)
+        invitation_pending_count = sum(item.status.value == "pending" for item in invitations)
+        invitation_accepted_count = sum(item.status.value == "accepted" for item in invitations)
+        invitation_declined_count = sum(item.status.value == "declined" for item in invitations)
+        comments = repo.comments(table_id)
+        promoted_comments = repo.comment_promotions(table_id)
         follow_up_items: list[FollowUpItem] = []
         if state.conversation.closed:
             try:
@@ -1832,6 +1839,16 @@ def create_app(
             phase=state.phase,
             closed=state.conversation.closed,
             participant_count=len(state.participants),
+            invitation_count=invitation_count,
+            invitation_pending_count=invitation_pending_count,
+            invitation_accepted_count=invitation_accepted_count,
+            invitation_declined_count=invitation_declined_count,
+            invitation_acceptance_rate=(
+                round(invitation_accepted_count / invitation_count, 2)
+                if invitation_count else None
+            ),
+            peripheral_comment_count=len(comments),
+            promoted_comment_count=len(promoted_comments),
             human_turn_count=len(turns),
             intervention_count=len(interventions),
             reflected_intervention_count=sum(item.reflection is not None for item in interventions),
