@@ -625,6 +625,13 @@
 - **替代方案**: 让前端硬编码环境差异、把 `/readyz` 扩成包含敏感运行细节、或通过触发真实 source 请求探测；这些方案分别容易漂移、扩大配置泄露面、或产生不必要的外部调用与限流消耗。
 - **代价**: 能力开关只表示适配器已注入，不代表上游凭据有效或每次调用成功；source 的实时健康仍由对应请求的 502/503 语义表达。新增响应是公开元数据，不替代认证和权限检查。
 
+### ADR-87: 主动需求候选携带公开来源归因
+
+- **决策**: 扩展 `ActiveIntentTableCandidate`，返回当前公开桌已有的 `origin_signal_ids`（最多 20 条）；无来源的旧桌省略该字段。来源 ID 只用于跳转到公开问题谱系或来源卡片，不返回来源正文、作者私密资料、成员信息或个人上下文。候选排序、空席过滤和不自动入席规则保持不变。
+- **理由**: 主动需求入口是产品的第二条发现路径。仅返回“公开问题词项相近”的文本理由，用户仍无法判断这桌是从哪些知乎公开信号长出来的；把已持久化的公开 ID 传给前端，可以复用 D96–D100 的证据链，形成从主动需求到问题谱系的可解释跳转。
+- **替代方案**: 在候选里复制完整来源快照、让前端逐桌再请求并自行拼接、或把私有个人上下文用于推荐理由；这些方案分别扩大响应体/隐私面、产生额外竞态和请求、或越过个人授权边界。
+- **代价**: 只有建桌时保存过公开来源 ID 的桌会有归因；ID 本身不保证来源仍可访问，真实来源内容仍由公开谱系/回放接口按各自边界提供。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -758,7 +765,8 @@ QuestionFootprintNextTable(table_id, state_version, core_question,
 ActiveIntentPreview(normalized_question, route=clarify|join_existing|new_table,
                     clarifying_question?, candidates<=5)
 ActiveIntentTableCandidate(table_id, core_question, current_subquestion?,
-                           mode, participant_count, available_seats, reason)
+                           mode, participant_count, available_seats, reason,
+                           origin_signal_ids?<=20)
 CapabilitiesResponse(repository, conversation_provider,
                      candidate_source_configured,
                      content_source_configured,
@@ -983,6 +991,7 @@ master
 | D107 production replay identity gate | complete | Require authenticated current-table membership for raw replay reads when an identity resolver is configured | 376 tests + compileall + diff check | `0797f56` |
 | D108 question footprint next-table links | complete | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | 377 tests + compileall + diff check | `1703bfa` + `9e39151` |
 | D109 capabilities introspection | complete | Expose a no-secret runtime capability projection so the frontend can choose configured source and provider paths without probing business endpoints | 379 tests + compileall + diff check | `aa59e80` + `6e273ea` |
+| D110 active-intent public signal attribution | in_progress | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | pending |
 
 ## 已知坑位（Running Gotchas）
 
