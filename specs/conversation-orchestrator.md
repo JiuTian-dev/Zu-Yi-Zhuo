@@ -786,6 +786,13 @@
 - **替代方案**: 在 `journey_demo` 中强行插入第二桌、让 CLI 直接调用 orchestrator 内部函数、或要求评委先手工运行多条 HTTP/WS 请求；这些方案分别污染既有报告、绕过边界或不可重复。
 - **代价**: 新增一个确定性 demo runner/CLI 和少量回归测试；它只是验收工具，不是生产 endpoint，不代表真实知乎 source 已接入。
 
+### ADR-111: TableEvaluation 暴露主持节奏指标但不扩展隐私账本
+
+- **决策**: 扩展现有成员可读的 `TableEvaluation`，增加 `intervention_rate`、`effective_intervention_rate` 和 `intervention_phase_counts`。前者按真人轮次计算主持非 `SILENCE` 动作占比（无真人轮次返回 `0.0`），后者按已有反思记录计算有效介入占比（无反思返回 `null`）；阶段分布从干预记录的 `state_version` 对应快照派生，只保留五个公开 `Phase` 键及计数。字段只读、聚合、有界，不返回主持文案、成员身份、违规 strike 或评分备注。
+- **理由**: 产品文档把“开场高、过程低、收束高，讨论顺时少出现”列为 Agent 主持节奏；现有评估只有总量和效果计数，内测无法区分过度插话、有效插话和阶段失衡。复用版本化状态/干预账本可以让 REST、JSON 重启和回放保持同一结果，不引入第二套埋点。
+- **替代方案**: 前端按事件自行统计、写入新的实时埋点表、或返回每条干预的详细时间线；这些方案分别会因断线/版本漂移不可信、扩大持久化复杂度，或泄露主持推理与成员行为细节。
+- **代价**: 评估响应增加三个向后兼容字段；阶段统计依赖保留的状态快照，未来若改为外部分析仓库需保持相同聚合语义。指标是调优信号而非产品评分，不自动触发主持策略。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1091,6 +1098,7 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D131 safety escalation ladder
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ←── D132 observer fact conflict detection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D133 grounding black-box demo
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D134 evaluation rhythm metrics
 ```
 
 ## Progress Ledger
@@ -1234,6 +1242,7 @@ master
 | D131 safety escalation ladder | complete | Keep normal disagreement allowed, add generic atmosphere soft intervention, privately remind the first boundary violation, and escalate the same actor's repeat violation to critical with bounded private JSON-persisted strikes | 432 tests + compileall + diff check | `2578f70` + `0d832be` |
 | D132 observer fact conflict detection | complete | Detect explicit opposite assertions on the same bounded fact topic from real human turns so the existing GROUND/source-card path can trigger without client-supplied disagreements; no trusted card safely falls back to PROBE | 437 tests + compileall + diff check | `c5a3415` + `b7a3854` |
 | D133 grounding black-box demo | complete | Add an isolated deterministic CLI that drives the real grounding REST/WS/replay path without persistent or frontend writes | 439 tests + compileall + diff check | `deb9e0a` + `0e78505` |
+| D134 evaluation rhythm metrics | in progress | Derive member-scoped intervention/effect rates and bounded phase distribution from existing turn, snapshot, and intervention ledgers | pending | design committed; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
