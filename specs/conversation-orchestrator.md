@@ -1007,7 +1007,7 @@ master
 | D108 question footprint next-table links | complete | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | 377 tests + compileall + diff check | `1703bfa` + `9e39151` |
 | D109 capabilities introspection | complete | Expose a no-secret runtime capability projection so the frontend can choose configured source and provider paths without probing business endpoints | 379 tests + compileall + diff check | `aa59e80` + `6e273ea` |
 | D110 active-intent public signal attribution | complete | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | 380 tests + compileall + diff check | `cabd773` + `2c3c67e` |
-| D111 candidate-initiated join request | in_progress | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | pending |
+| D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 385 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` |
 
 ## 已知坑位（Running Gotchas）
 
