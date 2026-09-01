@@ -44,6 +44,7 @@ python -m app.cli.journey_demo
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
 - `POST /intents/preview`：接收用户主动提出的一段自然语言需求，返回 `clarify`、`join_existing` 或 `new_table` 路由和最多 5 个有空席的公开桌候选（含 `available_seats`、可选 `origin_signal_ids` 与内嵌的 Lobby 公开投影）；不读取个人 source、不自动建桌或入席。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
+- `POST /tables/{table_id}/grounding?participant_id=...`：桌内成员从已授权公开内容 source 请求一条资料卡；服务端暂存为下一次 evidence-backed `GROUND` 的 trusted card，响应只返回公开标题、摘要和来源，不修改 Table State。无结果返回 404，source 故障统一 fail-closed。
 - `POST /personal-context/source-preview?viewer_id=...`：调用服务端注入的用户授权个人 source，生成本人可见的兴趣/表达主题预览；不创建桌、不广播、不落盘。
 - `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由；来自机会预览的理由会附带 `evidence_signal_ids`，确认时可把公开 `signal_ids` 作为 `origin_signal_ids` 写入桌状态。

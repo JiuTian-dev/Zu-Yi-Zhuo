@@ -1161,6 +1161,7 @@ master
 | D122 source match confirmation handoff | complete | Return a short-lived opaque `preview_token` from authorized source matching, keep validated candidate seeds server-side, confirm a table without re-calling the source, and enforce expiry/single-use/conflict retry semantics | 410 tests + compileall + diff check | `abc70f8` |
 | D123 candidate invitation handoff | complete | Attach a bounded short-lived `preview_token` to each dynamic candidate recommendation, bind it to table/inviter, create a normal pending invitation without exposing the private seed, and preserve retry-on-conflict semantics | 413 tests + compileall + diff check | `5ce913a` |
 | D124 invitation journey demo | complete | Extend the isolated black-box journey through dynamic fifth-seat preview, ticket-backed invitation, candidate acceptance, then continue the real Lobby/WS/close/post-close path without leaking the private seed | 413 tests + compileall + diff check | `2231bf9` |
+| D125 content source grounding handoff | complete | Add member-scoped `POST /tables/{id}/grounding` to validate one public content signal into a trusted card; the next real `GROUND` action consumes and broadcasts it without accepting client-supplied evidence | 416 tests + compileall + diff check | `8c66c51` |
 
 ## 已知坑位（Running Gotchas）
 
