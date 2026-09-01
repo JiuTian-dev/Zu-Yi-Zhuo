@@ -16,6 +16,7 @@ python -m uvicorn app.main:app --reload
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
+- `POST /intents/preview`：接收用户主动提出的一段自然语言需求，返回 `clarify`、`join_existing` 或 `new_table` 路由和最多 5 个公开桌候选；不读取个人 source、不自动建桌或入席。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
 - `POST /personal-context/source-preview?viewer_id=...`：调用服务端注入的用户授权个人 source，生成本人可见的兴趣/表达主题预览；不创建桌、不广播、不落盘。
 - `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。

@@ -562,6 +562,13 @@
 - **替代方案**: 继续让前端逐桌请求并自行拼接、把所有祖先状态复制进当前 `TableState`、或提供无上限的图查询；这些方案分别容易出现竞态/隐私错误、膨胀不可变状态、或被深链/循环数据拖垮。
 - **代价**: 当前谱系只沿单一 `origin_table_id` 链，最多 10 代且不分页；未来多父问题图需要独立图模型和游标契约。旧桌没有来源快照时仍只显示其 ID。
 
+### ADR-78: 主动需求入口只做路由预览，不自动建桌
+
+- **决策**: 增加 `POST /intents/preview`，接收用户的一段有界自然语言需求，做轻量归一化并与当前开放桌的公开问题/子问题做确定性词项匹配。响应只返回 `clarify`、`join_existing` 或 `new_table` 路由、可选澄清问题和最多 5 个公开桌候选（桌 ID、问题、模式、人数、匹配理由）。该入口不读取个人 source、不写行为/桌状态、不自动加入、邀请或创建桌。
+- **理由**: 产品文档要求“偶遇发现”和“主动想找人聊”双入口；直接把一句自然语言需求塞进匹配确认会跳过用户确认和邀请边界。独立预览可以先验证需求是否具体、优先复用已有桌，仍把最终建桌/入席留给现有服务端事务。
+- **替代方案**: 直接把需求转成新桌、让前端自行搜索桌、或立即调用个人 source 生成画像；这些方案分别会产生未经确认的状态、绕过后端公开匹配约束、或扩大隐私授权面。
+- **代价**: V1 词项匹配不能替代语义检索；没有命中时只给出新桌方向，后续可在同一响应契约后接向量/模型召回而不改变写入边界。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -571,6 +578,7 @@ POST /tables
 POST /matches/preview
 POST /matches/source-preview
 POST /matches/confirm
+POST /intents/preview
 POST /opportunities/source-preview
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
@@ -683,6 +691,10 @@ ReplayResponse(..., source_signals?<=20)
 TableLineageResponse(table_id, items<=10)
 TableLineageItem(table_id, origin_table_id?, version, core_question,
                  origin_signal_ids?<=20, source_signals?<=20)
+ActiveIntentPreview(normalized_question, route=clarify|join_existing|new_table,
+                    clarifying_question?, candidates<=5)
+ActiveIntentTableCandidate(table_id, core_question, current_subquestion?,
+                           mode, participant_count, reason)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -778,7 +790,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                              ←── D97 public opportunity evidence projection
                                                                                                                                                                                                                                                                                                                                                                                   ←── D98 dynamic candidate evidence attribution
                                                                                                                                                                                                                                                                                                                                                                                        ←── D99 persisted public source snapshot ledger
-                                                                                                                                                                                                                                                                                                                                                                                             ←── D100 bounded public table lineage view
+                                                                                                                                                                                                                                                                                                                                                                                            ←── D100 bounded public table lineage view
+                                                                                                                                                                                                                                                                                                                                                                                                  ←── D101 active intent routing preview
 ```
 
 ## Progress Ledger
@@ -889,6 +902,7 @@ master
 | D98 dynamic candidate evidence attribution | complete | Carry bounded public source IDs into dynamic fifth-seat recommendations without leaking candidate profile fields | 360 tests + compileall + diff check | `0536645` |
 | D99 public source snapshot ledger | complete | Persist bounded public `ContentSignal` snapshots outside `TableState`, expose them in replay, and recover them after JSON restart without accepting private fields | 362 tests + compileall + diff check | `de04494` + `f9de581` |
 | D100 bounded public table lineage view | complete | Expose a bounded oldest-to-current question lineage using `origin_table_id` and public source snapshots without leaking member data | 364 tests + compileall + diff check | `4805bdc` |
+| D101 active intent routing preview | complete | Add a non-persistent natural-language demand entry that routes to clarification, an existing public table, or a new table without bypassing invitation boundaries | 367 tests + compileall + diff check | `398ce10` |
 
 ## 已知坑位（Running Gotchas）
 
