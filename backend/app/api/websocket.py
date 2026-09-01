@@ -210,6 +210,7 @@ def _reflect_latest_intervention(repository, table_id: str, state: TableState) -
     updated = record.model_copy(update={
         "outcome": EvidenceStatement(text=outcome_text, evidence_turns=evidence),
         "reflection": EvidenceStatement(text=reflection.strategy_note, evidence_turns=evidence),
+        "reflection_effective": reflection.effective,
     })
     return repository.update_intervention_record(table_id, updated)
 

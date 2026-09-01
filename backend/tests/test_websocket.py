@@ -256,6 +256,7 @@ def test_intervention_audit_receives_post_turn_reflection() -> None:
     assert reflected["type"] == "intervention_reflected"
     assert reflected["record"]["outcome"] is not None
     assert reflected["record"]["reflection"] is not None
+    assert reflected["record"]["reflection_effective"] is False
     audit = client.get("/tables/table-ws/interventions").json()
     assert audit[0]["reflection"]["evidence_turns"] == [3]
 

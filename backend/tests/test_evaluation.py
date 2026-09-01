@@ -2,7 +2,8 @@ from fastapi.testclient import TestClient
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
-from app.domain import FollowUpOutcome, HumanTurn, ParticipantSeed, PeripheralComment
+from app.domain import Action, FollowUpOutcome, HumanTurn, InterventionRecord, ParticipantSeed, PeripheralComment
+from app.domain.schemas import EvidenceStatement, TokenUsage
 
 
 def _seed(participant_id: str) -> ParticipantSeed:
@@ -28,6 +29,11 @@ def test_open_evaluation_is_member_scoped_and_has_no_close_private_data() -> Non
     assert payload["participant_count"] == 2
     assert payload["human_turn_count"] == 0
     assert payload["intervention_count"] == 0
+    assert payload["intervention_rate"] == 0.0
+    assert payload["effective_intervention_rate"] is None
+    assert payload["intervention_phase_counts"] == {
+        "opening": 0, "explore": 0, "tension": 0, "deepen": 0, "close": 0,
+    }
     assert payload["follow_up_count"] == 0
     assert payload["follow_up_completion_rate"] is None
     assert payload["feedback_completion_rate"] == 0.0
@@ -89,6 +95,43 @@ def test_closed_evaluation_aggregates_feedback_and_follow_up_outcomes() -> None:
         "would_join_again_count": 1,
     }
     assert "note" not in response.text and "participant_id" not in response.text
+
+
+def test_evaluation_derives_intervention_rates_and_snapshot_phase_counts() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("evaluation-rhythm", "如何把讨论变成行动？", [_seed("p1"), _seed("p2")])
+    first = repository.append_turn(
+        "evaluation-rhythm", HumanTurn(turn_id=1, participant_id="p1", text="技术试点需要验证。")
+    )
+    repository.append_intervention_record("evaluation-rhythm", InterventionRecord(
+        action=Action.PROBE, text="能补充一个验证案例吗？", visual_hint={"kind": "probe"},
+        evidence_turns=[1], state_version=first.version, confidence=.8,
+        intervention_id="evaluation-rhythm:1", table_id="evaluation-rhythm", latency_ms=1,
+        model="test", token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+        reflection=EvidenceStatement(text="无效", evidence_turns=[1]), reflection_effective=False,
+    ))
+    second = repository.append_turn(
+        "evaluation-rhythm", HumanTurn(turn_id=2, participant_id="p2", text="采购责任也需要验证。")
+    )
+    repository.append_intervention_record("evaluation-rhythm", InterventionRecord(
+        action=Action.REFRAME, text="先区分技术与采购责任。", visual_hint={"kind": "reframe"},
+        evidence_turns=[1, 2], state_version=second.version, confidence=.8,
+        intervention_id="evaluation-rhythm:2", table_id="evaluation-rhythm", latency_ms=1,
+        model="test", token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+        reflection=EvidenceStatement(text="有效", evidence_turns=[2]), reflection_effective=True,
+    ))
+    client = TestClient(create_app(repository))
+
+    response = client.get("/tables/evaluation-rhythm/evaluation?participant_id=p1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intervention_rate"] == 1.0
+    assert payload["effective_intervention_rate"] == 0.5
+    assert payload["intervention_phase_counts"] == {
+        "opening": 0, "explore": 1, "tension": 1, "deepen": 0, "close": 0,
+    }
+    assert sum(payload["intervention_phase_counts"].values()) == payload["intervention_count"] == 2
 
 
 def test_evaluation_includes_invitation_funnel_and_peripheral_attention_counts() -> None:

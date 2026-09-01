@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
@@ -2244,6 +2244,14 @@ def create_app(
 
         turns = repo.turns(table_id)
         interventions = repo.interventions(table_id)
+        snapshot_phases = {
+            snapshot.version: snapshot.phase for snapshot in repo.replay(table_id)
+        }
+        intervention_phase_counts = {phase: 0 for phase in Phase}
+        for intervention in interventions:
+            phase = snapshot_phases.get(intervention.state_version)
+            if phase is not None:
+                intervention_phase_counts[phase] += 1
         invitations = repo.invitations(table_id)
         invitation_count = len(invitations)
         invitation_pending_count = sum(item.status.value == "pending" for item in invitations)
@@ -2288,9 +2296,16 @@ def create_app(
             intervention_count=len(interventions),
             reflected_intervention_count=sum(item.reflection is not None for item in interventions),
             effective_intervention_count=sum(
-                item.reflection is not None and item.reflection.effective
+                item.reflection_effective is True
                 for item in interventions
             ),
+            intervention_rate=(round(len(interventions) / len(turns), 2)) if turns else 0.0,
+            effective_intervention_rate=(
+                sum(item.reflection_effective is True for item in interventions)
+                / sum(item.reflection is not None for item in interventions)
+                if any(item.reflection is not None for item in interventions) else None
+            ),
+            intervention_phase_counts=intervention_phase_counts,
             follow_up_count=len(follow_up_items),
             follow_up_reported_count=len(valid_outcomes),
             follow_up_completed_count=completed_outcomes,

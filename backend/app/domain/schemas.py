@@ -675,11 +675,17 @@ class InterventionRecord(AgentActionEvent):
     )
     outcome: EvidenceStatement | None = None
     reflection: EvidenceStatement | None = None
+    # The compact reflection text is intentionally private; retain the
+    # boolean result separately so aggregate evaluation can distinguish
+    # effective from merely observed interventions.
+    reflection_effective: bool | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def action_must_be_intervention(self) -> "InterventionRecord":
         if self.action is Action.SILENCE:
             raise ValueError("SILENCE actions do not create intervention records")
+        if self.reflection_effective is not None and self.reflection is None:
+            raise ValueError("reflection_effective requires reflection")
         return self
 
 
@@ -829,6 +835,13 @@ class TableEvaluation(ContractModel):
     intervention_count: int = Field(ge=0)
     reflected_intervention_count: int = Field(ge=0)
     effective_intervention_count: int = Field(ge=0)
+    # This is a per-human-turn count, so it can exceed 1 when an explicit
+    # nudge or a legacy audit record adds more than one intervention per turn.
+    intervention_rate: float = Field(default=0.0, ge=0)
+    effective_intervention_rate: float | None = Field(default=None, ge=0, le=1)
+    intervention_phase_counts: dict[Phase, int] = Field(
+        default_factory=lambda: {phase: 0 for phase in Phase}
+    )
     follow_up_count: int = Field(ge=0)
     follow_up_reported_count: int = Field(ge=0)
     follow_up_completed_count: int = Field(ge=0)
@@ -843,6 +856,10 @@ class TableEvaluation(ContractModel):
             raise ValueError("reflected interventions cannot exceed interventions")
         if self.effective_intervention_count > self.reflected_intervention_count:
             raise ValueError("effective interventions cannot exceed reflections")
+        if any(count < 0 for count in self.intervention_phase_counts.values()):
+            raise ValueError("intervention phase counts cannot be negative")
+        if sum(self.intervention_phase_counts.values()) > self.intervention_count:
+            raise ValueError("intervention phase counts cannot exceed interventions")
         invitation_status_total = (
             self.invitation_pending_count
             + self.invitation_accepted_count
