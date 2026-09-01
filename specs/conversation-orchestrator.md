@@ -1028,7 +1028,7 @@ master
 | D109 capabilities introspection | complete | Expose a no-secret runtime capability projection so the frontend can choose configured source and provider paths without probing business endpoints | 379 tests + compileall + diff check | `aa59e80` + `6e273ea` |
 | D110 active-intent public signal attribution | complete | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | 380 tests + compileall + diff check | `cabd773` + `2c3c67e` |
 | D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 386 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` + `be700fd` |
-| D112 Lobby public read model | in_progress | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | pending | |
+| D112 Lobby public read model | complete | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | 390 tests + compileall + diff check | `b12a235` + `df0b1ce` + `507eed7` |
 
 ## 已知坑位（Running Gotchas）
 
