@@ -77,6 +77,7 @@ python -m app.cli.journey_demo
 - `PATCH /tables/{table_id}/safety-reports/{report_id}`：审核器将举报状态单向推进为 `acknowledged` 或 `resolved`；可带 `reason`，重复当前状态幂等，已解决举报不可回退，状态更新不广播给桌内连接。
 - `GET /tables/{table_id}/safety-reports/{report_id}/history`：审核器读取该举报的受信状态迁移链（审核器身份、原/目标状态和可选理由）；普通成员不可见，旧 JSON 快照按空链兼容加载。
 - `POST /tables/{table_id}/safety/resolve` / `GET /tables/{table_id}/safety/resolutions`：仅对注入的 `moderator_resolver` 开放；可原子恢复 critical 暂停或移除一名成员，并读取不可变处置审计。未配置审核器时返回 503，不能用请求体自报 moderator。
+- WebSocket 安全阶梯：正常分歧照常落账；窄词表识别到气氛升温时广播不含原文的 `safety_soft_intervention`，首次人身边界风险只向发送连接返回 `safety_private_reminder`，同一 actor 第二次才升级为 critical 暂停。私有 strike 计数随 JSON 重启恢复，不进入成员状态投影。
 - `POST /tables/{table_id}/recompose?participant_id=...`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。生产注入 `identity_resolver` 后要求由当前桌成员发起。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
 - `GET /participants/{participant_id}/question-footprint?viewer_id=...&limit=...`：本人查询有界的问题足迹，回顾已收桌中自己补上的视角、桌级认知变化，以及由 `origin_table_id` 直接长出的最多 3 张下一桌（仅公开桌 ID、问题、阶段和关闭标记）；不返回下一桌成员、消息或他人私密资料。

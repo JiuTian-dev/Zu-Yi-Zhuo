@@ -865,7 +865,7 @@ WS   /ws/tables/{table_id}?participant_id={participant_id}&viewer_mode={particip
 
 Client events: `human_message`, `participant_joined`, `participant_left`, `participant_consent`, `participant_invitation_preference`, `request_debug_state`, `request_nudge`。
 
-Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `participant_consent_changed`, `participant_invitation_preference_changed`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`, `peripheral_comment`, `safety_enforced`, `safety_resolved`。
+Server events: `message_committed`, `agent_action`, `table_state_changed`, `grounding_card`, `close_started`, `close_artifact_ready`, `intervention_reflected`, `comment_promoted`, `participant_added`, `participant_left`, `participant_consent_changed`, `participant_invitation_preference_changed`, `invitation_updated`, `table_mode_changed`, `table_soft_expired`, `table_closed`, `comment_added`, `peripheral_comment`, `safety_soft_intervention`, `safety_private_reminder`, `safety_enforced`, `safety_resolved`。
 
 广播边界：同桌客户端共享公共事件；`request_debug_state` 与 `close_artifact_ready.personal_card` 仅发送给请求连接。
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
@@ -884,7 +884,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 行动回响边界：follow-up 只在关闭后可读写；承诺由 owner 回报，建议项首位成员回报后锁定 reporter；结果不改变原始 Table State 或收桌底稿。
 不再匹配边界：no-match 关系只能由本人写入/删除/读取；关系对两端对称生效，命中时不允许创建邀请且从当前桌候选预览中过滤；不修改既有桌成员、历史 turn、旧邀请或收桌产物。
 举报边界：SafetyReport 只能由当前桌成员自证提交；`report_id` 桌级幂等；举报正文只对举报人本人回读，审核侧通过受控仓储/适配器读取，不向同桌广播，也不自动改写对话状态。
-安全处置边界：critical 安全暂停只能由服务端注入的 `moderator_resolver` 认证后恢复或移除成员；处置记录和状态迁移原子落账，普通参与者/前端传入的 moderator 字段不具备权限；恢复保留原风险证据，移除不删除历史 turn。
+安全处置边界：正常分歧不拦截；气氛升温广播不含原文的通用软介入；首次人身边界风险只私下提醒且不写真人 turn；同一 actor 重复触发才升级 critical。critical 安全暂停只能由服务端注入的 `moderator_resolver` 认证后恢复或移除成员；处置记录和状态迁移原子落账，普通参与者/前端传入的 moderator 字段不具备权限；恢复保留原风险证据，移除不删除历史 turn。strike 计数按桌/actor 有界、私有、随 JSON 快照恢复，不进入公开 TableState 投影。
 桌级权限边界：生产注入 `identity_resolver` 后，close、直接加席位、recompose 和 interventions 查询都必须由当前桌成员声明并通过服务端交叉校验；未注入时保留开发态兼容调用。
 实时同步边界：REST 补位、邀请接受、同步升级、离桌、软过期、收桌和外围评论写入会通过桌级 broadcaster 发出公开事件及投影状态；没有 WebSocket 客户端时不影响 REST 成功。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
@@ -1215,6 +1215,7 @@ master
 | D128 Lobby sync deadline projection | complete | Propagate the server-owned `sync_expires_at` into public `LobbyPreview` cards for `/tables/{id}/lobby` and discovery, omitting it for async/legacy tables | 424 tests + compileall + diff check | `e30fc16` |
 | D129 grounded source signal link | complete | Preserve the validated public `ContentSignal.signal_id` in trusted GROUND cards, realtime events, intervention replay, and JSON persistence while keeping manual/legacy cards compatible | 424 tests + compileall + diff check | `8dd07d3` |
 | D130 atomic grounded intervention commit | complete | Consume the staged GROUND card in the same in-memory/JSON commit as the next `TableState` and `InterventionRecord`, preserving the card when persistence fails | 425 tests + compileall + diff check | `b025edf` |
+| D131 safety escalation ladder | complete | Keep normal disagreement allowed, add generic atmosphere soft intervention, privately remind the first boundary violation, and escalate the same actor's repeat violation to critical with bounded private JSON-persisted strikes | 432 tests + compileall + diff check | `2578f70` + `0d832be` |
 
 ## 已知坑位（Running Gotchas）
 

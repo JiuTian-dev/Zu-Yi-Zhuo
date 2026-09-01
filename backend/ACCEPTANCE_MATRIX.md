@@ -47,6 +47,7 @@
 | 半公开资料，未同意不展示立场与经历 | viewer-scoped REST/WS 投影，个人卡定向返回 | `backend/app/api/privacy.py`、`backend/app/api/websocket.py`；`tests/test_identity.py`、`tests/test_privileged_identity.py` |
 | 不匹配、邀请偏好和离桌权利由服务端执行 | 对称 no-match、`many/few/none`、原子离桌 | `backend/app/api/repository.py`；`tests/test_no_match.py`、`tests/test_api.py` |
 | 举报只给本人或受控审核器，不能广播 | moderator resolver、状态迁移审计、分页队列 | `backend/app/api/app.py`；`tests/test_safety_reports.py`、`tests/test_safety_resolution.py` |
+| 安全按风险逐级处理，不误伤正常分歧 | 气氛升温 `safety_soft_intervention`、首次边界 `safety_private_reminder`、重复边界 critical 暂停；strike 计数私有且可重启恢复 | `backend/app/orchestrator/safety.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_safety.py`、`tests/test_websocket.py`、`tests/test_comment_promotion.py`、`tests/test_persistence.py` |
 | 重启后仍可恢复桌面与公开来源 | 原子 JSON snapshot repository，旧快照兼容 | `backend/app/api/repository.py`、`backend/app/main.py`；`tests/test_persistence.py` |
 | 外部 source 失败时 fail-closed | 无 shell 命令桥、全链路超时、输出上限和通用错误 | `backend/app/sources/`；`tests/test_source.py`、`tests/test_content_source.py` |
 | 前端可判断运行能力，不探测业务接口 | `GET /capabilities`、`/healthz`、`/readyz` | `backend/app/api/app.py`；`tests/test_api.py`、`tests/test_main.py` |
@@ -62,7 +63,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **425 passed**。最近一个后端功能切片是 D130（GROUND 卡消费与干预审计原子提交）；对应实现提交为 `b025edf`，设计提交为 `9074572`。
+当前基线为 **432 passed**。最近一个后端功能切片是 D131（桌内安全按成员逐级升级）；对应实现提交为 `2578f70` + `0d832be`，设计提交为 `53ced60`。
 
 ## 不把以下事项误报为已完成
 
