@@ -24,7 +24,7 @@
 | 真人消息驱动 evidence-first Table State | `WS /ws/tables/{id}`、`GET /tables/{id}/state`、`GET /tables/{id}/replay` | `backend/app/orchestrator/`、`backend/app/api/websocket.py`；`tests/test_websocket.py`、`tests/test_observer_websocket.py` |
 | Agent 固定为圆桌搭档，不占真人席位 | `TableState.agent` 生命周期字段 | `backend/app/domain/schemas.py`、`backend/app/api/repository.py`；`tests/test_agent_presence.py` |
 | 默认沉默、六动作、可解释证据与主持审计 | `SILENCE / PASS / PROBE / REFRAME / GROUND / CLOSE`、`GET /tables/{id}/interventions` | `backend/app/orchestrator/gate.py`、`router.py`、`host.py`；`tests/test_gate_router.py`、`tests/test_host.py` |
-| GROUND 可从授权公开 source 获取可信资料并可回放 | `POST /tables/{id}/grounding` 暂存一条带 `signal_id` 的 `GroundingCard`，后续 WS `GROUND` 只读 peek，最终由仓储原子消费、广播，并把已消费卡写入 `interventions[].grounding_card` | `backend/app/api/app.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_content_source.py`、`tests/test_websocket.py`、`tests/test_persistence.py`；客户端不能提交或伪造 trusted card |
+| GROUND 可从授权公开 source 获取可信资料并可回放 | `POST /tables/{id}/grounding` 暂存一条带 `signal_id` 的 `GroundingCard`；Observer 对同一窄事实主题的明确相反断言自动生成 `FACT_CONFLICT`，后续 WS `GROUND` 只读 peek，最终由仓储原子消费、广播，并把已消费卡写入 `interventions[].grounding_card`；无卡时 Host 回退 `PROBE` | `backend/app/orchestrator/observer.py`、`backend/app/api/app.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_observer.py`、`tests/test_content_source.py`、`tests/test_websocket.py`、`tests/test_persistence.py`；客户端不能提交或伪造 disagreement/trusted card |
 | Provider 可替换但不能越权改决策 | `CONVERSATION_PROVIDER` 与 `LLMProvider` | `backend/app/providers/`；`tests/test_providers.py`、`tests/test_openai_provider.py` |
 | 异步默认，满足条件后显式升级限时同步 | `/tables/{id}/sync/preview` → `/tables/{id}/sync/upgrade`；`ConversationState.sync_expires_at` 到期自动回异步 | `backend/app/orchestrator/mode.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_mode.py`、`tests/test_api.py`、`tests/test_rest_fanout.py`、`tests/test_persistence.py` |
 | 冷启动递话、安全暂停和实时广播 | `POST /tables/{id}/nudge`、WS `request_nudge`、安全事件 | `backend/app/api/nudge.py`、`backend/app/api/websocket.py`；`tests/test_websocket.py`、`tests/test_safety.py` |
@@ -63,7 +63,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **432 passed**。最近一个后端功能切片是 D131（桌内安全按成员逐级升级）；对应实现提交为 `2578f70` + `0d832be`，设计提交为 `53ced60`。
+当前基线为 **437 passed**。最近一个后端功能切片是 D132（Observer 事实冲突检测）；对应实现提交为 `b7a3854`，设计提交为 `c5a3415`。上一切片 D131（桌内安全按成员逐级升级）为 `432 passed`，实现提交 `2578f70` + `0d832be`，设计提交 `53ced60`。
 
 ## 不把以下事项误报为已完成
 
