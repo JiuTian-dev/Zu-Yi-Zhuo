@@ -920,7 +920,7 @@ master
 | D100 bounded public table lineage view | complete | Expose a bounded oldest-to-current question lineage using `origin_table_id` and public source snapshots without leaking member data | 364 tests + compileall + diff check | `4805bdc` |
 | D101 active intent routing preview | complete | Add a non-persistent natural-language demand entry that routes to clarification, an existing public table, or a new table without bypassing invitation boundaries | 367 tests + compileall + diff check | `398ce10` |
 | D102 active intent available-seat filter | complete | Filter full tables from active-demand routing and expose bounded available-seat counts | 368 tests + compileall + diff check | `506ff53` |
-| D103 single-table evaluation projection | in_progress | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | pending | — |
+| D103 single-table evaluation projection | complete | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | 370 tests + compileall + diff check | `800d5f3` |
 
 ## 已知坑位（Running Gotchas）
 
