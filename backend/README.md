@@ -18,6 +18,14 @@ python -m uvicorn app.main:app --reload
 python -m app.cli.seed_demo --path D:\知乎黑客松\runtime\demo-tables.json
 ```
 
+验证第一入口“公开信号 → 未完成性 → 候选种子”时，可运行只读机会预览：
+
+```powershell
+python -m app.cli.opportunity_demo
+```
+
+该命令只输出标准 JSON，不写入仓储、不联网，内置信号明确标记为 `public`。
+
 启动后可用：
 
 - `GET /healthz`：进程存活探针。

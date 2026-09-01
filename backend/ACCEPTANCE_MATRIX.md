@@ -7,6 +7,7 @@
 | 产品目标 | 后端契约 | 实现与证据 |
 |---|---|---|
 | 从公开知乎信号发现值得发生的问题 | `POST /opportunities/preview`、`POST /opportunities/source-preview` | `backend/app/opportunities/`、`backend/app/sources/`；`tests/test_opportunities.py`、`tests/test_content_source.py` |
+| 一键验证公开机会发现首入口 | `python -m app.cli.opportunity_demo` | `backend/app/demo/public_signals.py`、`backend/app/cli/opportunity_demo.py`；`tests/test_opportunity_demo.py`；只读、确定性、无网络 |
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview` | `backend/app/intake.py`；`tests/test_intake.py`；支持 `clarify`、`join_existing`、`new_table` |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
@@ -58,7 +59,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **398 passed**。最近一个后端功能切片是 D116（幂等三桌 Demo 种子）；对应实现提交为 `f1824f7`、`92cde69`、`012b10a`，账本提交为 `1e7cf32`。
+当前基线为 **398 passed**。最近一个后端功能切片是 D116（幂等三桌 Demo 种子）；D117（只读公开机会 Demo CLI）正在本轮验证，提交信息会在账本闭合后补齐。
 
 ## 不把以下事项误报为已完成
 
