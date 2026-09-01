@@ -24,6 +24,7 @@ python -m uvicorn app.main:app --reload
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由；来自机会预览的理由会附带 `evidence_signal_ids`，确认时可把公开 `signal_ids` 作为 `origin_signal_ids` 写入桌状态。
 - `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
 - `GET /tables/{table_id}/lobby`：入席前的公开 Lobby 读模型，集中返回谁在里面、当前聊到哪、空席/角色缺口和公共来源 ID；不返回消息、私有资料、邀请队列或个人卡。
+- `POST /tables/{table_id}/lobby-fit?participant_id=...`：候选人用自己的 `ParticipantSeed` 获取角色缺口级别的“为什么想到你”解释；这是只读预览，不保存资料、不创建申请或邀请，免邀请、no-match、满桌和已结束桌返回 `eligible=false`。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。

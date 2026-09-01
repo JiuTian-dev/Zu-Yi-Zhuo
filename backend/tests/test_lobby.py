@@ -94,3 +94,91 @@ def test_lobby_preview_returns_not_found_for_unknown_table() -> None:
     response = client.get("/tables/missing/lobby")
 
     assert response.status_code == 404
+
+
+def test_lobby_fit_preview_explains_role_gap_without_persisting_private_profile() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("lobby", "Q", [_seed("p1", "产品"), _seed("p2", "研究")])
+    client = TestClient(create_app(repository))
+    candidate = _seed("candidate", "实践者")
+
+    response = client.post(
+        "/tables/lobby/lobby-fit?participant_id=candidate",
+        json=candidate.model_dump(mode="json"),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "table_id": "lobby",
+        "participant_id": "candidate",
+        "eligible": True,
+        "matched_role_gap": "实践者",
+        "reason": "这一桌缺少实践者视角，你的实践者可以补上这块经验。",
+    }
+    assert "私有" not in response.text
+    assert repository.join_requests("lobby") == []
+    assert repository.get("lobby").version == 0
+
+
+def test_lobby_fit_preview_returns_ineligible_reasons_for_boundaries() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("lobby", "Q", [_seed("p1", "产品")])
+    client = TestClient(create_app(repository))
+    candidate = _seed("candidate", "实践者")
+
+    none_response = client.post(
+        "/tables/lobby/lobby-fit?participant_id=candidate",
+        json={**candidate.model_dump(mode="json"), "roundtable_invite_preference": "none"},
+    )
+    assert none_response.json()["eligible"] is False
+    assert none_response.json()["matched_role_gap"] is None
+    assert "不接收圆桌邀请" in none_response.json()["reason"]
+
+    repository.set_no_match("p1", "candidate")
+    blocked_response = client.post(
+        "/tables/lobby/lobby-fit?participant_id=candidate",
+        json=candidate.model_dump(mode="json"),
+    )
+    assert blocked_response.json() == {
+        "table_id": "lobby",
+        "participant_id": "candidate",
+        "eligible": False,
+        "matched_role_gap": None,
+        "reason": "当前匹配偏好不适合这张桌。",
+    }
+
+
+def test_lobby_fit_preview_rejects_identity_mismatch_and_handles_full_or_closed_tables() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("lobby", "Q", [_seed("p1", "产品")])
+    client = TestClient(create_app(repository))
+    candidate = _seed("candidate", "实践者")
+
+    mismatch = client.post(
+        "/tables/lobby/lobby-fit?participant_id=other",
+        json=candidate.model_dump(mode="json"),
+    )
+    assert mismatch.status_code == 403
+
+    full_repository = InMemoryTableRepository()
+    full_repository.create(
+        "full",
+        "Q",
+        [_seed("p1", "产品"), _seed("p2", "研究"), _seed("p3", "实践者"),
+         _seed("p4", "运营"), _seed("p5", "架构")],
+    )
+    full_client = TestClient(create_app(full_repository))
+    full = full_client.post(
+        "/tables/full/lobby-fit?participant_id=candidate",
+        json=candidate.model_dump(mode="json"),
+    )
+    assert full.json()["eligible"] is False
+    assert "坐满" in full.json()["reason"]
+
+    repository.close_table("lobby")
+    closed = client.post(
+        "/tables/lobby/lobby-fit?participant_id=candidate",
+        json=candidate.model_dump(mode="json"),
+    )
+    assert closed.json()["eligible"] is False
+    assert "已经结束" in closed.json()["reason"]
