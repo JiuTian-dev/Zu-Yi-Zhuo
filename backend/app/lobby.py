@@ -1,7 +1,11 @@
 """Public, deterministic pre-entry table summaries."""
 
+from collections.abc import Sequence
+
 from app.domain import InvitationPreference, LobbyFitPreview, LobbyMemberView, LobbyPreview, ParticipantSeed, TableState
 from app.matching import infer_role_gaps
+
+MAX_LOBBY_DISCOVERY = 20
 
 
 def build_lobby_preview(state: TableState) -> LobbyPreview:
@@ -47,6 +51,25 @@ def build_lobby_preview(state: TableState) -> LobbyPreview:
         missing_perspective=missing_perspective,
         origin_signal_ids=list(state.origin_signal_ids),
     )
+
+
+def build_lobby_discovery(
+    states: Sequence[TableState],
+    *,
+    limit: int = MAX_LOBBY_DISCOVERY,
+) -> list[LobbyPreview]:
+    """Build a stable, bounded directory of public open-table cards."""
+    if limit < 1 or limit > MAX_LOBBY_DISCOVERY:
+        raise ValueError(f"lobby discovery limit must be between 1 and {MAX_LOBBY_DISCOVERY}")
+    open_states = sorted(
+        (
+            state
+            for state in states
+            if not state.conversation.closed and not state.conversation.soft_expired
+        ),
+        key=lambda state: state.table_id,
+    )
+    return [build_lobby_preview(state) for state in open_states[:limit]]
 
 
 _ROLE_GAP_TERMS = {
@@ -134,4 +157,9 @@ def build_lobby_fit_preview(
     )
 
 
-__all__ = ("build_lobby_fit_preview", "build_lobby_preview")
+__all__ = (
+    "MAX_LOBBY_DISCOVERY",
+    "build_lobby_discovery",
+    "build_lobby_fit_preview",
+    "build_lobby_preview",
+)

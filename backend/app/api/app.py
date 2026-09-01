@@ -28,7 +28,7 @@ from .identity import ModeratorResolver, IdentityResolver, require_moderator_ide
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview
-from app.lobby import build_lobby_fit_preview, build_lobby_preview
+from app.lobby import build_lobby_discovery, build_lobby_fit_preview, build_lobby_preview
 
 
 def _bounded_source_rows(rows: object, limit: int) -> list[object]:
@@ -611,6 +611,13 @@ def create_app(
             project_state_for_viewer(state, participant_id)
             for state in repo.list_tables(include_closed=include_closed)
         ]
+
+    @api.get("/tables/discovery", response_model=list[LobbyPreview])
+    def discover_lobbies(
+        limit: int = Query(default=20, ge=1, le=20),
+    ) -> list[LobbyPreview]:
+        """Return bounded public Lobby cards for homepage table discovery."""
+        return build_lobby_discovery(repo.list_tables(), limit=limit)
 
     @api.get("/tables/{table_id}/lobby", response_model=LobbyPreview)
     def get_lobby_preview(table_id: str) -> LobbyPreview:
