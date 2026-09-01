@@ -849,6 +849,13 @@
 - **替代方案**: 让前端直接调用 `/matches/source-preview` 并重复发送问题、在会话创建时自动搜索候选、返回 `ParticipantSeed` 让客户端排序，或把 source 结果写入会话以便多次确认；这些方案分别造成跨入口语义漂移、用户尚未确认就产生外部检索/资源消耗、扩大私有字段暴露，或制造第二份会漂移的候选真相。
 - **代价**: 候选 source 未配置时仍返回 503，查询质量受当前确定性归一化限制；预览票据仍沿用 D99 的 bearer capability 语义，跨实例部署需将 owner/TTL/票据存储一起迁移到共享服务。`join_existing` 分支仍由 Lobby/JoinRequest 流程承接，不在此入口重复召回候选人。
 
+### ADR-120: 第二入口用隔离黑盒 Demo 验证完整候选链
+
+- **决策**: 增加只读 CLI `python -m app.cli.intent_demo`，在独立的 `InMemoryTableRepository` 和确定性候选 source 上穿过真实 REST 契约：创建主动需求会话、提交澄清轮次、触发 `new_table` 候选 source、拿到短期票据并显式确认建桌。命令默认输出脱敏 JSON 摘要（澄清/就绪状态、归一化查询、选中候选 ID、最终桌 ID），不输出票据、候选私有立场/经历、完整会话文本，不读取或写入 `TABLE_REPOSITORY_PATH`，也不访问网络。每次运行从空仓储开始，重复结果完全一致。
+- **理由**: 产品文档把“用户明确需求 → Agent 理解目标 → 找到合适的人 → 组一桌”列为第二入口，但只有 API 契约时评委仍需手工拼接多步请求，容易绕过会话 owner、source 脱敏和确认边界。既有 `journey_demo` 证明第一入口与桌内闭环；单独的隔离 Demo 能在不污染主 Demo 数据的前提下把 D141–D142 的新增语义变成一条可复制的黑盒验收命令。
+- **替代方案**: 让 `journey_demo` 混入第二入口、在 CLI 里直接调用 `build_active_intent_preview`/匹配函数、复用持久化种子文件，或把票据/token 写进输出；这些方案分别让失败定位和演示叙事变差、绕过真实身份/HTTP 边界、污染用户数据，或泄露可重放能力。
+- **代价**: Demo 的候选 source 只是本地确定性夹具，不能证明正式知乎授权 source 的召回质量；报告只保留摘要，调试需回到真实 API 测试。若未来扩展更多用户路径，应继续保持每个 Demo 独立内存、无网络、无生产 bootstrap 写入口。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1333,6 +1340,7 @@ master
 | D140 evidence-backed peripheral comment candidates | complete | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | 474 tests + compileall + diff check | `22c4faa` + `14a4124` |
 | D141 bounded multi-turn active intent | complete | Preserve a user's short-term clarification context across bounded self-scoped turns, support explicit correction, and keep every final route non-mutating | 480 tests + compileall + diff check | `053ec7f` + `515c85c` |
 | D142 active intent candidate source handoff | complete | Reuse an owner-scoped clarified intent to trigger the existing authorized candidate preview and ticket-backed confirmation path without exposing private seeds or auto-creating a table | 483 tests + compileall + diff check | `9d11601` + `7c662f1` |
+| D143 second-entry black-box demo | in progress | Provide a deterministic isolated CLI covering multi-turn active intent, authorized candidate preview, and explicit ticket confirmation without persistence or private-field leakage | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
