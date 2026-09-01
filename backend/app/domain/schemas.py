@@ -401,6 +401,48 @@ class CandidateRecommendation(ContractModel):
     )
 
 
+RecruitmentTrigger = Literal[
+    "below_minimum",
+    "wait_for_discussion",
+    "live_role_gap",
+    "composition_sufficient",
+    "table_full",
+    "table_unavailable",
+    "safety_paused",
+]
+
+
+class TableRecruitmentDecision(ContractModel):
+    """Privacy-safe advice about whether an open table should recruit now."""
+
+    should_recruit: bool
+    trigger: RecruitmentTrigger
+    open_seats: int = Field(ge=0, le=5)
+    role_gaps: list[str] = Field(default_factory=list, max_length=3)
+    reason: str = Field(min_length=1, max_length=240)
+    evidence_turns: list[PositiveInt] = Field(default_factory=list, max_length=10)
+    suggested_query: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        exclude_if=lambda value: value is None,
+    )
+
+    @model_validator(mode="after")
+    def recommendation_has_required_support(self) -> "TableRecruitmentDecision":
+        positive_triggers = {"below_minimum", "live_role_gap"}
+        if self.should_recruit != (self.trigger in positive_triggers):
+            raise ValueError("should_recruit must match the recruitment trigger")
+        if len(self.evidence_turns) != len(set(self.evidence_turns)):
+            raise ValueError("recruitment evidence_turns must be unique")
+        if self.trigger == "live_role_gap":
+            if len(self.evidence_turns) < 2 or not self.role_gaps or self.suggested_query is None:
+                raise ValueError("live role gaps require evidence, a role gap, and a query")
+        if self.trigger == "below_minimum" and self.suggested_query is None:
+            raise ValueError("below-minimum recruitment requires a query")
+        return self
+
+
 class TableCandidatePreview(ContractModel):
     """Current table gap plus source-backed candidate recommendations."""
 
@@ -408,6 +450,7 @@ class TableCandidatePreview(ContractModel):
     core_question: str = Field(min_length=1)
     open_seats: int = Field(ge=1, le=5)
     role_gaps: list[str] = Field(default_factory=list, max_length=5)
+    recruitment: TableRecruitmentDecision
     candidates: list[CandidateRecommendation] = Field(default_factory=list, max_length=20)
 
 

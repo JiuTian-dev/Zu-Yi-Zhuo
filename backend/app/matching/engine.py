@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 import re
 
-from app.domain import CandidateRecommendation, InvitationPreference, MatchPlan, MatchReason, MatchRequest, MatchSeat, ParticipantSeed, TableState
+from app.domain import CandidateRecommendation, HumanTurn, InvitationPreference, Level, MatchPlan, MatchReason, MatchRequest, MatchSeat, ParticipantSeed, SafetyLevel, TableRecruitmentDecision, TableState
 
 _CJK = re.compile(r"[\u4e00-\u9fff]+")
 _WORD = re.compile(r"[a-z0-9]{2,}")
@@ -37,6 +37,105 @@ def infer_role_gaps(roles: Iterable[str]) -> list[str]:
     if not any(term in text for term in ("产品", "用户", "处境", "一线", "提问", "product", "user")):
         gaps.append("处境者")
     return gaps
+
+
+def _recruitment_query(
+    state: TableState,
+    role_gaps: list[str],
+    topic: str | None = None,
+) -> str:
+    topic = topic or state.current_subquestion or state.core_question
+    suffix = f" {role_gaps[0]}" if role_gaps else ""
+    return f"{topic}{suffix}"[:120]
+
+
+def evaluate_recruitment_need(
+    state: TableState,
+    turns: Iterable[HumanTurn],
+) -> TableRecruitmentDecision:
+    """Explain whether a table needs another person without choosing or inviting one."""
+    role_gaps = infer_role_gaps(person.role for person in state.participants.values())
+    open_seats = max(0, 5 - len(state.participants))
+    common = {"open_seats": open_seats, "role_gaps": role_gaps}
+
+    if state.conversation.closed or state.conversation.soft_expired:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=False,
+            trigger="table_unavailable",
+            reason="桌已关闭或暂时过期，不再建议补位。",
+        )
+    if state.conversation.safety_level is SafetyLevel.CRITICAL:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=False,
+            trigger="safety_paused",
+            reason="桌处于安全暂停状态，应先完成安全处置。",
+        )
+    if open_seats == 0:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=False,
+            trigger="table_full",
+            reason="桌已达到五位真人上限。",
+        )
+    if len(state.participants) < 4:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=True,
+            trigger="below_minimum",
+            reason="当前少于四位真人，建议补足基本开桌人数。",
+            suggested_query=_recruitment_query(state, role_gaps),
+        )
+
+    high_loops = [item for item in state.open_loops if item.priority is Level.HIGH]
+    if not high_loops:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=False,
+            trigger="wait_for_discussion",
+            reason="已有四位真人，但讨论尚未形成有充分证据的关键缺口。",
+        )
+
+    turn_by_id = {turn.turn_id: turn for turn in turns}
+    supported_loop = None
+    supported_evidence: list[int] = []
+    first_evidence: list[int] = []
+    for open_loop in high_loops:
+        valid_evidence = sorted({
+            turn_id for turn_id in open_loop.evidence_turns if turn_id in turn_by_id
+        })
+        if not first_evidence:
+            first_evidence = valid_evidence[:10]
+        speakers = {turn_by_id[turn_id].participant_id for turn_id in valid_evidence}
+        if len(valid_evidence) >= 2 and len(speakers) >= 2:
+            supported_loop = open_loop
+            supported_evidence = valid_evidence[:10]
+            break
+    if supported_loop is None:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=False,
+            trigger="wait_for_discussion",
+            reason="关键缺口还没有得到至少两位真人的讨论证据支持。",
+            evidence_turns=first_evidence,
+        )
+    if not role_gaps:
+        return TableRecruitmentDecision(
+            **common,
+            should_recruit=False,
+            trigger="composition_sufficient",
+            reason="讨论已有真实分歧证据，但当前信息角色结构已经足够。",
+            evidence_turns=supported_evidence,
+        )
+    return TableRecruitmentDecision(
+        **common,
+        should_recruit=True,
+        trigger="live_role_gap",
+        reason=f"真实讨论暴露出关键未决问题，当前最缺{role_gaps[0]}视角。",
+        evidence_turns=supported_evidence,
+        suggested_query=_recruitment_query(state, role_gaps, supported_loop.question),
+    )
 
 
 def _candidate_value(candidate: ParticipantSeed, question_terms: set[str]) -> tuple[int, int, str]:

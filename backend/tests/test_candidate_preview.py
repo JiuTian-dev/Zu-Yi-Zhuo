@@ -73,7 +73,7 @@ def test_candidate_preview_returns_gap_aware_recommendations_without_mutation() 
     assert payload["candidates"][1]["preview_token"]
     assert "relevant_experience" not in payload["candidates"][0]
     assert "source_ref" not in payload["candidates"][0]
-    assert source.calls == [("AI 采购如何真正落地？", 2)]
+    assert source.calls == [("AI 采购如何真正落地？ 实践者", 2)]
     assert client.get("/tables/candidate-table").json()["version"] == 0
     assert client.get("/tables/candidate-table/invitations?participant_id=p1").json() == []
 
@@ -102,7 +102,7 @@ def test_candidate_preview_ticket_creates_invitation_without_exposing_candidate_
     assert "preview_token" not in payload
     assert "公开立场" not in invitation.text
     assert "公开经历" not in invitation.text
-    assert source.calls == [("AI 采购如何真正落地？", 1)]
+    assert source.calls == [("AI 采购如何真正落地？ 实践者", 1)]
 
     accepted = client.post(
         f"/tables/ticket-table/invitations/{payload['invitation_id']}/respond?participant_id=p3",
@@ -143,7 +143,7 @@ def test_candidate_preview_ticket_is_bound_to_table_and_inviter_and_can_retry_af
     assert wrong_inviter.status_code == 403
     assert invitation.status_code == 201
     assert invitation.json()["reason"] == "补充实践视角"
-    assert source.calls == [("AI 采购如何真正落地？", 1)]
+    assert source.calls == [("AI 采购如何真正落地？ 实践者", 1)]
 
 
 def test_candidate_invitation_ticket_store_is_single_use_and_expires_with_injected_clock() -> None:

@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
-from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
 from app.providers import LLMProvider
@@ -1431,6 +1431,19 @@ def create_app(
         await broadcast_table_state(table_id, state)
         return projected(state)
 
+    @api.get("/tables/{table_id}/recruitment", response_model=TableRecruitmentDecision)
+    async def get_table_recruitment_decision(
+        table_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> TableRecruitmentDecision:
+        """Explain to a current member whether live discussion supports recruiting now."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        return evaluate_recruitment_need(state, repo.turns(table_id))
+
     @api.post("/tables/{table_id}/candidate-preview", response_model=TableCandidatePreview)
     async def preview_table_candidates(
         table_id: str,
@@ -1450,12 +1463,13 @@ def create_app(
         open_seats = MAX_TABLE_PARTICIPANTS - len(state.participants)
         if open_seats <= 0:
             raise HTTPException(status_code=409, detail="table has no open seats")
+        recruitment = evaluate_recruitment_need(state, repo.turns(table_id))
         if candidate_source is None:
             raise HTTPException(status_code=503, detail="candidate source is not configured")
         try:
             raw_candidates = await asyncio.wait_for(
                 candidate_source.search(
-                    query=payload.query or state.core_question,
+                    query=payload.query or recruitment.suggested_query or state.core_question,
                     limit=payload.limit,
                 ),
                 timeout=candidate_source_timeout_seconds,
@@ -1505,6 +1519,7 @@ def create_app(
             core_question=state.core_question,
             open_seats=open_seats,
             role_gaps=infer_role_gaps(person.role for person in state.participants.values()),
+            recruitment=recruitment,
             candidates=recommendations,
         )
 
