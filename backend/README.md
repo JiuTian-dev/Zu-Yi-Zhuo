@@ -47,7 +47,7 @@ python -m app.cli.journey_demo
 - `POST /personal-context/source-preview?viewer_id=...`：调用服务端注入的用户授权个人 source，生成本人可见的兴趣/表达主题预览；不创建桌、不广播、不落盘。
 - `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由；来自机会预览的理由会附带 `evidence_signal_ids`，确认时可把公开 `signal_ids` 作为 `origin_signal_ids` 写入桌状态。
-- `POST /matches/source-preview`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约。
+- `POST /matches/source-preview` → `POST /matches/source-confirm`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约；预览只返回短期不透明 `preview_token`，确认由服务端复用已授权候选建桌，不把私有候选字段交给浏览器，也不会二次调用 source。票据默认 5 分钟、单次消费；过期、重复使用或无效票据返回 409。
 - `GET /tables/{table_id}/lobby`：入席前的公开 Lobby 读模型，集中返回谁在里面、当前聊到哪、空席/角色缺口和公共来源 ID；不返回消息、私有资料、邀请队列或个人卡。
 - `POST /tables/{table_id}/lobby-fit?participant_id=...`：候选人用自己的 `ParticipantSeed` 获取角色缺口级别的“为什么想到你”解释；这是只读预览，不保存资料、不创建申请或邀请，免邀请、no-match、满桌和已结束桌返回 `eligible=false`。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
@@ -150,6 +150,9 @@ python -m uvicorn app.main:app
 ```
 
 wrapper 自己负责知乎授权和 token 管理；不要把 secret、Cookie 或 MCP 配置交给浏览器或前端。
+
+匹配预览票据默认保留 300 秒，可用 `SOURCE_MATCH_PREVIEW_TTL_SECONDS` 调整；票据只保存在当前进程内存中，
+进程重启或多实例切换后不会继续有效。多实例部署需要在保持相同接口语义的前提下替换为共享、带 TTL 的票据存储。
 
 机会发现可额外设置 `CONTENT_SIGNAL_SOURCE_COMMAND` 接入公开内容 CLI/MCP/OAuth wrapper。stdin 同样是
 `{"query":"...","limit":20}`，stdout 返回信号数组或 `{"signals":[...]}`；每条信号必须符合

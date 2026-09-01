@@ -12,7 +12,7 @@
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview` | `backend/app/intake.py`；`tests/test_intake.py`；支持 `clarify`、`join_existing`、`new_table` |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
-| 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm` | `backend/app/matching/`；`tests/test_matching.py`、`tests/test_candidate_preview.py` |
+| 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm`；授权 source 使用 `POST /matches/source-preview` → `POST /matches/source-confirm` 短期票据闭环 | `backend/app/matching/`、`backend/app/api/match_tickets.py`；`tests/test_matching.py`、`tests/test_candidate_preview.py`、`tests/test_source.py`；票据单次消费、过期与冲突重试，不重复调用 source |
 | 4 人可开桌、5 席硬上限、邀请先于入席 | `/tables/{id}/invitations`、`/tables/{id}/join-requests` 及接受接口 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_join_requests.py`、`tests/test_api.py` |
 | 入席前回答“谁在里面 / 聊到哪 / 为什么缺我” | `GET /tables/{id}/lobby`、`POST /tables/{id}/lobby-fit` | `backend/app/lobby.py`；`tests/test_lobby.py`；公开成员摘要与角色缺口均有界 |
 
@@ -48,7 +48,7 @@
 | 重启后仍可恢复桌面与公开来源 | 原子 JSON snapshot repository，旧快照兼容 | `backend/app/api/repository.py`、`backend/app/main.py`；`tests/test_persistence.py` |
 | 外部 source 失败时 fail-closed | 无 shell 命令桥、全链路超时、输出上限和通用错误 | `backend/app/sources/`；`tests/test_source.py`、`tests/test_content_source.py` |
 | 前端可判断运行能力，不探测业务接口 | `GET /capabilities`、`/healthz`、`/readyz` | `backend/app/api/app.py`；`tests/test_api.py`、`tests/test_main.py` |
-| REST/WS 写入可控，避免重复和资源滥用 | message 幂等、WS 帧/事件限额、REST mutation rate limit、状态广播版本单调 | `backend/app/api/rate_limit.py`、`websocket.py`；`tests/test_rate_limit.py`、`tests/test_websocket.py` |
+| REST/WS 写入可控，避免重复和资源滥用 | message 幂等、WS 帧/事件限额、REST mutation rate limit、状态广播版本单调、source 匹配票据有界且单次消费 | `backend/app/api/rate_limit.py`、`websocket.py`、`match_tickets.py`；`tests/test_rate_limit.py`、`tests/test_websocket.py`、`tests/test_source.py` |
 
 ## 当前验证基线
 
@@ -60,7 +60,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **403 passed**。最近一个后端功能切片是 D121（状态广播版本单调保护）；对应实现提交为 `bc71c3c`，设计与账本同步随本次提交完成。
+当前基线为 **410 passed**。最近一个后端功能切片是 D122（授权 source 匹配预览短期票据确认）；对应实现提交为 `abc70f8`，设计提交为 `04dd573`。
 
 ## 不把以下事项误报为已完成
 

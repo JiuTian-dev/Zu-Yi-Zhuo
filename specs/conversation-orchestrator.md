@@ -1132,6 +1132,7 @@ master
 | D119 opportunity-to-match journey demo | complete | Start the isolated journey from public opportunity preview and match confirmation before entering Lobby and conversation | 402 tests + compileall + diff check | `d980873` |
 | D120 post-close action echo journey | complete | Continue the isolated journey through follow-up outcome, value feedback, action echoes, and behavior-event summary | 402 tests + compileall + diff check | `7d68c18` |
 | D121 monotonic realtime state broadcast | complete | Serialize per-table state fanout and suppress stale REST/WS projections so clients never roll back to an older `TableState.version` | 403 tests + compileall + diff check | `bc71c3c` |
+| D122 source match confirmation handoff | complete | Return a short-lived opaque `preview_token` from authorized source matching, keep validated candidate seeds server-side, confirm a table without re-calling the source, and enforce expiry/single-use/conflict retry semantics | 410 tests + compileall + diff check | `abc70f8` |
 
 ## 已知坑位（Running Gotchas）
 
