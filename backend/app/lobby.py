@@ -80,7 +80,7 @@ _ROLE_GAP_TERMS = {
 }
 
 
-def _role_covers_gap(role: str, gap: str) -> bool:
+def role_covers_gap(role: str, gap: str) -> bool:
     role_text = role.lower()
     return any(term in role_text for term in _ROLE_GAP_TERMS.get(gap, ()))
 
@@ -133,7 +133,7 @@ def build_lobby_fit_preview(
     )
     role_label = candidate.role.strip()[:80]
     matched_gap = next(
-        (gap for gap in role_gaps if _role_covers_gap(role_label, gap)),
+        (gap for gap in role_gaps if role_covers_gap(role_label, gap)),
         None,
     )
     if matched_gap is not None:
@@ -156,4 +156,5 @@ __all__ = (
     "build_lobby_discovery",
     "build_lobby_fit_preview",
     "build_lobby_preview",
+    "role_covers_gap",
 )

@@ -1018,6 +1018,59 @@ class BehaviorEvent(ContractModel):
         return self
 
 
+class PersonalizedTableRecommendation(ContractModel):
+    """One explainable public table suggestion derived for its viewer."""
+
+    table_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+    based_on_table_id: str | None = Field(
+        default=None,
+        min_length=1,
+        exclude_if=lambda value: value is None,
+    )
+    based_on_question: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        exclude_if=lambda value: value is None,
+    )
+    matched_role_gap: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        exclude_if=lambda value: value is None,
+    )
+    lobby: LobbyPreview
+
+    @model_validator(mode="after")
+    def explanation_matches_lobby(self) -> "PersonalizedTableRecommendation":
+        if self.table_id != self.lobby.table_id:
+            raise ValueError("recommendation table_id must match lobby table_id")
+        if (self.based_on_table_id is None) != (self.based_on_question is None):
+            raise ValueError("recommendation history table and question must appear together")
+        return self
+
+
+class ParticipantTableRecommendations(ContractModel):
+    """Self-scoped table discovery with transparent, resettable signal use."""
+
+    participant_id: str = Field(min_length=1)
+    personalized: bool
+    signal_count: int = Field(ge=0, le=100)
+    signal_types: list[BehaviorEventType] = Field(default_factory=list, max_length=3)
+    items: list[PersonalizedTableRecommendation] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def personalization_matches_signals(self) -> "ParticipantTableRecommendations":
+        if self.personalized != (self.signal_count > 0):
+            raise ValueError("personalized must match whether signals were used")
+        if len(self.signal_types) != len(set(self.signal_types)):
+            raise ValueError("personalization signal_types must be unique")
+        if not self.personalized and self.signal_types:
+            raise ValueError("cold-start recommendations cannot claim signal types")
+        return self
+
+
 class ReflectionResult(ContractModel):
     """Effect log for an intervention after enough human turns have passed."""
 

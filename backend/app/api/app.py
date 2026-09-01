@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
 from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
@@ -31,6 +31,7 @@ from app.sources import CandidateSource, CandidateSourceError, ContentSignalSour
 from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview
 from app.lobby import build_lobby_discovery, build_lobby_fit_preview, build_lobby_preview
+from app.recommendations import MAX_PERSONALIZED_TABLES, build_personalized_table_recommendations
 
 
 def _bounded_source_rows(rows: object, limit: int) -> list[object]:
@@ -964,6 +965,41 @@ def create_app(
             return repo.behavior_events(participant_id)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.get(
+        "/participants/{participant_id}/table-recommendations",
+        response_model=ParticipantTableRecommendations,
+    )
+    def get_personalized_table_recommendations(
+        participant_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+        limit: int = Query(default=5, ge=1, le=MAX_PERSONALIZED_TABLES),
+    ) -> ParticipantTableRecommendations:
+        """Rank eligible public tables from the caller's resettable behavior signals."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        refresh_sync_windows()
+        history = {
+            state.table_id: state
+            for state in repo.list_tables(include_closed=True)
+        }
+        candidates = [
+            state
+            for state in repo.list_tables()
+            if not any(
+                repo.is_no_match(participant_id, member_id)
+                for member_id in state.participants
+            )
+        ]
+        return build_personalized_table_recommendations(
+            participant_id,
+            candidates,
+            history,
+            repo.behavior_events(participant_id),
+            limit=limit,
+        )
 
     @api.delete(
         "/participants/{participant_id}/behavior-events",
