@@ -681,7 +681,24 @@
 - **替代方案**: 让评委手工拼装 JSON、在启动时自动写入机会数据、或直接联网抓取知乎；这些方案分别容易偏离契约、污染运行状态、或依赖未确认的授权/接口。
 - **代价**: 演示信号是合成固定资产，只用于验证编排和公开字段；接入正式 source 仍必须走 D17/D25 的适配器和 fail-closed 约束。
 
+### ADR-95: 用内存隔离 CLI 演示完整后端旅程
+
+- **决策**: 增加 `python -m app.cli.journey_demo`，在每次运行创建独立的 `InMemoryTableRepository`，通过真实 FastAPI REST/WebSocket 契约依次完成建桌、Lobby 读取、真人发言、收桌、收桌产物、评估和回放摘要，并向 stdout 输出有界 JSON。命令不读取或写入 `TABLE_REPOSITORY_PATH`，不联网，不调用外部 provider/source，也不输出其他参与者的私有卡片。
+- **理由**: D92 已用测试覆盖完整闭环，但评委/联调仍需手写多步请求才能现场证明“消息 → 主持 → 收桌 → 产物 → 回放”。内存隔离让命令每次都可重复，不会污染前端或持久化 Demo 数据；复用实际 API/WS 路径则能捕获集成层回归，而不是只验证内部函数。
+- **替代方案**: 只在 README 罗列 curl、让命令改写 JSON 种子仓储、或直接调用 orchestrator 内部函数；这些方案分别增加演示操作误差、重复运行会污染状态、或绕过 REST/WS 权限与事件契约。
+- **代价**: 该命令是本地验收工具，不代表生产压测或真实知乎数据；旅程中的演示题目、参与者和文本是合成固定资产，契约演进时需同步更新脚本与黑盒测试。
+
 ## 接口契约
+
+### 本地验收命令
+
+```text
+python -m app.cli.seed_demo --path {json_path}
+python -m app.cli.opportunity_demo [--query {text}]
+python -m app.cli.journey_demo
+```
+
+`journey_demo` 使用独立内存仓储，不读取或写入持久化 Demo 文件；它只是通过真实 REST/WebSocket 契约生成一份完整旅程 JSON。
 
 ### REST / WebSocket
 
@@ -951,6 +968,7 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D115 bounded Lobby discovery collection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D116 idempotent demo seed CLI
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D117 read-only public opportunity demo CLI
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D118 isolated full journey demo CLI
 ```
 
 ## Progress Ledger
@@ -1078,6 +1096,7 @@ master
 | D115 bounded Lobby discovery collection | complete | Provide a bounded batch of public Lobby cards for homepage table discovery without exposing full TableState | 395 tests + compileall + diff check | `c235285` + `ef6fca7` |
 | D116 idempotent demo seed CLI | complete | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | 398 tests + compileall + diff check | `f1824f7` + `92cde69` + `012b10a` |
 | D117 read-only public opportunity demo CLI | complete | Demonstrate public-signal opportunity discovery and explainable candidate output without network, persistence, or private-context access | 400 tests + compileall + diff check | `1b15f1b` + `12a6600` |
+| D118 isolated full journey demo CLI | in progress | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
