@@ -13,6 +13,7 @@
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview` | `backend/app/intake.py`；`tests/test_intake.py`；支持 `clarify`、`join_existing`、`new_table` |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...`；同步桌透传 `sync_expires_at` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 后续选桌随本人真实行为变聪明且可解释、可重置 | `GET /participants/{id}/table-recommendations`；`DELETE /participants/{id}/behavior-events` 立即恢复冷启动 | `backend/app/recommendations.py`、`backend/app/api/app.py`；`tests/test_table_recommendations.py`；弱信号按桌限权、过滤 no-match/不可入席桌、不返回原始消息或黑箱分数 |
+| 静默旁听者可私下收藏并稍后回访 | `PUT/DELETE /participants/{id}/saved-tables/{table_id}`、`GET /participants/{id}/saved-tables` | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_saved_tables.py`；本人作用域、幂等、最多 100 张、最近优先、JSON 原子恢复，不广播或自动训练推荐 |
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
 | 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm`；授权 source 使用 `POST /matches/source-preview` → `POST /matches/source-confirm` 短期票据闭环 | `backend/app/matching/`、`backend/app/api/match_tickets.py`；`tests/test_matching.py`、`tests/test_candidate_preview.py`、`tests/test_source.py`；票据单次消费、过期与冲突重试，不重复调用 source |
 | 4 人可开桌、5 席硬上限、邀请先于入席 | `/tables/{id}/invitations`、`/tables/{id}/join-requests` 及接受接口 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_join_requests.py`、`tests/test_api.py` |
@@ -68,7 +69,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **463 passed**。最近一个后端功能切片是 D138（可解释、可重置的个性化后续选桌）；实现提交为 `9ebeeee`，设计提交为 `a3aba9c`。上一切片 D137（基于真人讨论证据的动态补局判断）为 `457 passed`，实现提交 `78328da`，设计提交 `c12e338`。
+当前基线为 **470 passed**。最近一个后端功能切片是 D139（静默旁听者的私有收藏与回访）；实现提交为 `3f64c9c`，设计提交为 `a49ad58`。上一切片 D138（可解释、可重置的个性化后续选桌）为 `463 passed`，实现提交 `9ebeeee`，设计提交 `a3aba9c`。
 
 ## 不把以下事项误报为已完成
 

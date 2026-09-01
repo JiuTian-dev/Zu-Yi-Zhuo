@@ -874,6 +874,9 @@ GET  /participants/{participant_id}/invitation-preference?viewer_id={participant
 PUT  /participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 GET  /participants/{participant_id}/invitations?viewer_id={participant_id}&status={status}&offset={n}&limit={n}
 GET  /participants/{participant_id}/table-recommendations?viewer_id={participant_id}&limit={n}
+PUT  /participants/{participant_id}/saved-tables/{table_id}?viewer_id={participant_id}
+DELETE /participants/{participant_id}/saved-tables/{table_id}?viewer_id={participant_id}
+GET  /participants/{participant_id}/saved-tables?viewer_id={participant_id}&offset={n}&limit={n}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -953,6 +956,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
 评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
 行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；带身份的 REST/WS 收桌在同一仓储提交中生成稳定 `table_closed` 事件，旧的无身份 `close_table` 兼容入口只迁移桌状态；首次四维价值反馈在同一仓储提交中生成稳定 `value_feedback_submitted` 事件，更新反馈不重复生成；follow-up 与反馈事件只记录状态/动作摘要，不保存行动备注、反馈分数或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
+收藏边界：收藏只允许本人保存、读取或取消；账本只持久化最多 100 个桌 ID，读取时再投影当前公开 Lobby。它不广播、不改桌状态、不公开收藏人数、不创建申请/邀请，也不自动进入行为推荐信号；清除行为账本不会删除收藏。
 
 ### 数据模型 / 类型定义
 
@@ -1147,7 +1151,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D135 account invitation preference
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D136 participant invitation inbox
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D137 evidence-backed recruitment decision
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D138 explainable personalized table discovery
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D138 explainable personalized table discovery
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D139 private saved-table library
 ```
 
 ## Progress Ledger
@@ -1296,7 +1301,7 @@ master
 | D136 participant invitation inbox | complete | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with stable status ordering/filter/pagination, redacted invitation data, public Lobby context and server-derived actionability; reuse the existing durable invitation ledger | 451 tests + compileall + diff check | `cef8efb` + `656672f` |
 | D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
 | D138 explainable personalized table discovery | complete | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | 463 tests + compileall + diff check | `a3aba9c` + `9ebeeee` |
-| D139 private saved-table library | in progress | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | pending | design recorded; implementation next |
+| D139 private saved-table library | complete | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | 470 tests + compileall + diff check | `a49ad58` + `3f64c9c` |
 
 ## 已知坑位（Running Gotchas）
 
