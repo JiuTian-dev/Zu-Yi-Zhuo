@@ -779,6 +779,13 @@
 - **替代方案**: 让 LLM 自由标记事实冲突、把所有不同立场都视为事实冲突、或让客户端提交 `Disagreement`；这些方案分别不可重复、过度触发或允许伪造证据。
 - **代价**: V1 词表不能覆盖隐含语义和跨语言表达，后续可替换 Observer provider 但必须保留 turn evidence 与无来源回退；新增的确定性规则需要随领域词表维护。
 
+### ADR-110: GROUND 黑盒演示复用真实契约且与完整旅程隔离
+
+- **决策**: 增加只读演示命令 `python -m app.cli.grounding_demo`，在独立内存仓储中创建两席桌，先通过 `POST /tables/{id}/grounding` 暂存授权公开卡，再经两条真实 WebSocket 真人消息触发 D132 的 `FACT_CONFLICT` 与 `GROUND`，最后读取 replay 返回有限 JSON 报告。命令不读取/写入 `TABLE_REPOSITORY_PATH`、不依赖网络或前端，也不改变现有 `journey_demo` 的 PASS 主链与断言。
+- **理由**: GROUND 是产品差异化能力，但仅靠单元测试或手工注入状态不利于评委和前端联调验证。独立黑盒演示能证明 source 授权、Observer、Router、原子卡片消费、广播和 replay 是同一条真实 API/WS 链，同时避免为了演示改写完整收桌旅程。
+- **替代方案**: 在 `journey_demo` 中强行插入第二桌、让 CLI 直接调用 orchestrator 内部函数、或要求评委先手工运行多条 HTTP/WS 请求；这些方案分别污染既有报告、绕过边界或不可重复。
+- **代价**: 新增一个确定性 demo runner/CLI 和少量回归测试；它只是验收工具，不是生产 endpoint，不代表真实知乎 source 已接入。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1082,7 +1089,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D129 grounded source signal link
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D130 atomic grounded intervention commit
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D131 safety escalation ladder
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ←── D132 observer fact conflict detection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D132 observer fact conflict detection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ←── D133 grounding black-box demo
 ```
 
 ## Progress Ledger
@@ -1225,6 +1233,7 @@ master
 | D130 atomic grounded intervention commit | complete | Consume the staged GROUND card in the same in-memory/JSON commit as the next `TableState` and `InterventionRecord`, preserving the card when persistence fails | 425 tests + compileall + diff check | `b025edf` |
 | D131 safety escalation ladder | complete | Keep normal disagreement allowed, add generic atmosphere soft intervention, privately remind the first boundary violation, and escalate the same actor's repeat violation to critical with bounded private JSON-persisted strikes | 432 tests + compileall + diff check | `2578f70` + `0d832be` |
 | D132 observer fact conflict detection | complete | Detect explicit opposite assertions on the same bounded fact topic from real human turns so the existing GROUND/source-card path can trigger without client-supplied disagreements; no trusted card safely falls back to PROBE | 437 tests + compileall + diff check | `c5a3415` + `b7a3854` |
+| D133 grounding black-box demo | in progress | Add an isolated deterministic CLI that drives the real grounding REST/WS/replay path without persistent or frontend writes | design committed; implementation pending | — |
 
 ## 已知坑位（Running Gotchas）
 
