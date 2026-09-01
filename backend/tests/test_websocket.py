@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -5,6 +7,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
+from app.api.websocket import _MonotonicStateBroadcast
 from app.domain import Action, GateDecision, GroundingCard, RouteDecision
 
 
@@ -40,6 +43,31 @@ def _participant(participant_id: str, role: str = "产品") -> dict:
             {"text": "采购试点的现场经验", "source_ref": "本人经历"}
         ],
     }
+
+
+def test_state_broadcast_drops_stale_versions_after_concurrent_send() -> None:
+    gate = _MonotonicStateBroadcast()
+    calls: list[int] = []
+
+    async def exercise() -> list[bool]:
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+
+        async def send(version: int) -> None:
+            calls.append(version)
+            if version == 1:
+                first_started.set()
+                await release_first.wait()
+
+        first = asyncio.create_task(gate.send("table", 1, lambda: send(1)))
+        await first_started.wait()
+        stale = asyncio.create_task(gate.send("table", 0, lambda: send(0)))
+        newer = asyncio.create_task(gate.send("table", 2, lambda: send(2)))
+        release_first.set()
+        return list(await asyncio.gather(first, stale, newer))
+
+    assert asyncio.run(exercise()) == [True, False, True]
+    assert calls == [1, 2]
 
 
 def test_oversized_websocket_frame_closes_with_message_too_big() -> None:

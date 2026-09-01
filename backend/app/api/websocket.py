@@ -5,7 +5,7 @@ from collections import deque
 import json
 import math
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -33,6 +33,29 @@ from .identity import IdentityResolver, websocket_identity_error
 
 DEFAULT_MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024
 DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE = 120
+
+
+class _MonotonicStateBroadcast:
+    """Serialize state fanout and suppress projections older than the last send."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._last_versions: dict[str, int] = {}
+
+    async def send(
+        self,
+        table_id: str,
+        state_version: int,
+        callback: Callable[[], Awaitable[None]],
+    ) -> bool:
+        lock = self._locks.setdefault(table_id, asyncio.Lock())
+        async with lock:
+            previous = self._last_versions.get(table_id)
+            if previous is not None and state_version < previous:
+                return False
+            self._last_versions[table_id] = state_version
+            await callback()
+            return True
 WEBSOCKET_EVENT_WINDOW_SECONDS = 60.0
 
 
@@ -220,6 +243,7 @@ def register_websocket_routes(
 
     connections: dict[str, dict[WebSocket, str]] = {}
     table_locks: dict[str, asyncio.Lock] = {}
+    state_broadcast = _MonotonicStateBroadcast()
 
     async def _broadcast(table_id: str, factory: Callable[[str], dict]) -> None:
         """Fan out public table events and discard peers that already closed."""
@@ -242,9 +266,13 @@ def register_websocket_routes(
         await _broadcast(table_id, lambda _viewer_id: payload)
 
     async def broadcast_state(table_id: str, state: TableState) -> None:
-        await _broadcast(
+        await state_broadcast.send(
             table_id,
-            lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id or None)),
+            state.version,
+            lambda: _broadcast(
+                table_id,
+                lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id or None)),
+            ),
         )
 
     async def broadcast_safety(table_id: str, decision, state: TableState) -> None:
