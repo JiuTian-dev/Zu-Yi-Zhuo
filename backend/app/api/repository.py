@@ -21,6 +21,7 @@ MAX_QUESTION_FOOTPRINT_ITEMS = 50
 MAX_QUESTION_FOOTPRINT_NEXT_TABLES = 3
 MAX_ACTION_ECHO_ITEMS = 50
 MAX_JOIN_REQUESTS_PER_TABLE = 50
+MAX_SAFETY_STRIKES_PER_PARTICIPANT = 2
 
 
 def _index_public_source_signals(
@@ -143,6 +144,8 @@ class InMemoryTableRepository:
         self._safety_reports: dict[str, list[SafetyReport]] = {}
         self._safety_report_audits: dict[str, list[SafetyReportStatusAudit]] = {}
         self._safety_resolutions: dict[str, list[SafetyResolution]] = {}
+        # Private escalation counters; never projected to table members.
+        self._safety_strikes: dict[str, dict[str, int]] = {}
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
         self._behavior_events: dict[str, list[BehaviorEvent]] = {}
         self._public_source_signals: dict[str, dict[str, ContentSignal]] = {}
@@ -186,6 +189,7 @@ class InMemoryTableRepository:
         self._safety_reports[table_id] = []
         self._safety_report_audits[table_id] = []
         self._safety_resolutions[table_id] = []
+        self._safety_strikes[table_id] = {}
         self._public_source_signals[table_id] = public_signals
         return state.model_copy(deep=True)
 
@@ -556,6 +560,25 @@ class InMemoryTableRepository:
         """Return immutable moderator decisions for controlled review."""
         self.get(table_id)
         return [item.model_copy(deep=True) for item in self._safety_resolutions[table_id]]
+
+    @_synchronized
+    def safety_strike_count(self, table_id: str, participant_id: str) -> int:
+        """Read the private boundary-violation count for one table member."""
+        self.get(table_id)
+        return self._safety_strikes.get(table_id, {}).get(participant_id, 0)
+
+    @_synchronized
+    def record_safety_strike(self, table_id: str, participant_id: str) -> int:
+        """Increment a bounded private safety strike counter."""
+        state = self.get(table_id)
+        if participant_id not in state.participants:
+            raise ValueError("safety strike participant must be a table participant")
+        counts = dict(self._safety_strikes.setdefault(table_id, {}))
+        current = counts.get(participant_id, 0)
+        if current < MAX_SAFETY_STRIKES_PER_PARTICIPANT:
+            counts[participant_id] = current + 1
+            self._safety_strikes[table_id] = counts
+        return counts.get(participant_id, current)
 
     @_synchronized
     def resolve_safety(
@@ -1431,6 +1454,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._safety_reports,
                 self._safety_report_audits,
                 self._safety_resolutions,
+                self._safety_strikes,
                 self._personal_context_consents,
                 self._behavior_events,
                 self._public_source_signals,
@@ -1475,6 +1499,7 @@ class JsonTableRepository(InMemoryTableRepository):
         reports = {**self._safety_reports, table_id: []}
         report_audits = {**self._safety_report_audits, table_id: []}
         resolutions = {**self._safety_resolutions, table_id: []}
+        safety_strikes = {**self._safety_strikes, table_id: {}}
         public_source_signals = {
             **self._public_source_signals,
             table_id: public_signals,
@@ -1485,6 +1510,7 @@ class JsonTableRepository(InMemoryTableRepository):
             comment_promotions=comment_promotions,
             safety_report_audits=report_audits,
             safety_resolutions=resolutions,
+            safety_strikes=safety_strikes,
             public_source_signals=public_source_signals,
             join_requests=join_requests,
         )
@@ -1661,6 +1687,25 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_resolutions=resolutions,
         )
         return snapshot.model_copy(deep=True), resolution.model_copy(deep=True)
+
+    @_synchronized
+    def record_safety_strike(self, table_id: str, participant_id: str) -> int:
+        """Persist a bounded private boundary-violation count."""
+        state = self.get(table_id)
+        if participant_id not in state.participants:
+            raise ValueError("safety strike participant must be a table participant")
+        current = self._safety_strikes.get(table_id, {}).get(participant_id, 0)
+        if current >= MAX_SAFETY_STRIKES_PER_PARTICIPANT:
+            return current
+        counts = {
+            **self._safety_strikes,
+            table_id: {
+                **self._safety_strikes.get(table_id, {}),
+                participant_id: current + 1,
+            },
+        }
+        self._commit(self._states, self._turns, safety_strikes=counts)
+        return current + 1
 
     @_synchronized
     def set_personal_context_consent(
@@ -2368,6 +2413,7 @@ class JsonTableRepository(InMemoryTableRepository):
         safety_report_audits: dict[str, list[SafetyReportStatusAudit]] | None = None,
         public_source_signals: dict[str, dict[str, ContentSignal]] | None = None,
         join_requests: dict[str, list[JoinRequest]] | None = None,
+        safety_strikes: dict[str, dict[str, int]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -2401,6 +2447,11 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_resolutions
             if safety_resolutions is not None
             else self._safety_resolutions
+        )
+        strike_rows = (
+            safety_strikes
+            if safety_strikes is not None
+            else self._safety_strikes
         )
         public_source_rows = (
             public_source_signals
@@ -2456,6 +2507,9 @@ class JsonTableRepository(InMemoryTableRepository):
             },
             "trusted_grounding_cards": {
                 table_id: card.model_dump(mode="json") for table_id, card in cards.items()
+            },
+            "safety_strikes": {
+                table_id: dict(counts) for table_id, counts in strike_rows.items()
             },
             "no_match": {
                 participant_id: sorted(targets)
@@ -2542,6 +2596,9 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in resolution_rows.items()
         }
+        self._safety_strikes = {
+            table_id: dict(counts) for table_id, counts in strike_rows.items()
+        }
         self._public_source_signals = {
             table_id: {
                 signal_id: item.model_copy(deep=True)
@@ -2565,6 +2622,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[SafetyReport]],
         dict[str, list[SafetyReportStatusAudit]],
         dict[str, list[SafetyResolution]],
+        dict[str, dict[str, int]],
         dict[str, PersonalContextConsent],
         dict[str, list[BehaviorEvent]],
         dict[str, dict[str, ContentSignal]],
@@ -2577,7 +2635,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 or not set(payload).issubset({
                     "tables", "trusted_grounding_cards", "no_match",
                     "personal_context_consents", "behavior_events",
-                    "public_source_signals",
+                    "public_source_signals", "safety_strikes",
                 })
                 or not isinstance(payload["tables"], dict)):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
@@ -2910,6 +2968,28 @@ class JsonTableRepository(InMemoryTableRepository):
             public_source_signals[table_id] = {
                 signal.signal_id: signal for signal in signals
             }
+        raw_strikes = payload.get("safety_strikes", {})
+        if not isinstance(raw_strikes, dict):
+            raise ValueError("invalid persistence file: malformed safety_strikes")
+        safety_strikes: dict[str, dict[str, int]] = {}
+        for table_id, raw_counts in raw_strikes.items():
+            if table_id not in states or not isinstance(table_id, str) or not table_id:
+                raise ValueError("invalid persistence file: safety strikes for unknown table")
+            if not isinstance(raw_counts, dict) or len(raw_counts) > MAX_TABLE_PARTICIPANTS:
+                raise ValueError("invalid persistence file: malformed safety strikes")
+            counts: dict[str, int] = {}
+            for participant_id, count in raw_counts.items():
+                if (
+                    not isinstance(participant_id, str)
+                    or not participant_id
+                    or not isinstance(count, int)
+                    or isinstance(count, bool)
+                    or not 1 <= count <= MAX_SAFETY_STRIKES_PER_PARTICIPANT
+                    or not any(participant_id in snapshot.participants for snapshot in states[table_id])
+                ):
+                    raise ValueError("invalid persistence file: malformed safety strike entry")
+                counts[participant_id] = count
+            safety_strikes[table_id] = counts
         return (
             states,
             turns,
@@ -2925,6 +3005,7 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_reports,
             safety_report_audits,
             safety_resolutions,
+            safety_strikes,
             consents,
             behavior_events,
             public_source_signals,

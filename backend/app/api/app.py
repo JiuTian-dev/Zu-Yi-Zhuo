@@ -13,10 +13,10 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
-from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
+from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
 
@@ -1451,6 +1451,14 @@ def create_app(
             raise HTTPException(status_code=409, detail="table is paused for safety review")
         next_turn_id = max((item.turn_id for item in repo.turns(table_id)), default=0) + 1
         safety = evaluate_safety(comment.text, next_turn_id)
+        if safety.blocked and safety.level is SafetyLevel.ELEVATED:
+            strike_count = repo.record_safety_strike(table_id, comment.author_id)
+            if strike_count < 2:
+                raise HTTPException(
+                    status_code=409,
+                    detail="comment promotion requires a private safety reminder",
+                )
+            safety = escalate_boundary_safety(safety, next_turn_id)
         if safety.blocked:
             try:
                 paused = repo.append_safety_state(table_id, enforce_safety(state, safety))

@@ -75,6 +75,19 @@ def test_json_repository_persists_soft_expiry_and_keeps_close_available(tmp_path
     assert JsonTableRepository(path).get("stale").conversation.closed is True
 
 
+def test_json_repository_persists_private_safety_strikes(tmp_path) -> None:
+    path = tmp_path / "safety-strikes.json"
+    repository = JsonTableRepository(path)
+    repository.create("safety-strikes", "Q", flagship_participants[:2])
+    assert repository.record_safety_strike("safety-strikes", "architect") == 1
+    assert repository.record_safety_strike("safety-strikes", "architect") == 2
+    assert repository.record_safety_strike("safety-strikes", "architect") == 2
+
+    restored = JsonTableRepository(path)
+    assert restored.safety_strike_count("safety-strikes", "architect") == 2
+    assert restored.safety_strike_count("safety-strikes", "product") == 0
+
+
 def test_json_repository_persists_and_expires_sync_window_after_restart(tmp_path) -> None:
     path = tmp_path / "sync-window.json"
     repository = JsonTableRepository(path)

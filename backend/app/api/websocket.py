@@ -18,6 +18,7 @@ from app.orchestrator import (
     build_shared_baseline,
     decide_intervention,
     enforce_safety,
+    escalate_boundary_safety,
     evaluate_reflection,
     evaluate_safety,
     generate_host_event_with_provider,
@@ -28,7 +29,7 @@ from app.providers import LLMProvider
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .intervention import build_intervention_record
 from .privacy import project_state_for_viewer
-from .repository import InMemoryTableRepository
+from .repository import MAX_SAFETY_STRIKES_PER_PARTICIPANT, InMemoryTableRepository
 from .identity import IdentityResolver, websocket_identity_error
 
 DEFAULT_MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024
@@ -467,6 +468,19 @@ def register_websocket_routes(
                         # turn id inside the repository's atomic commit below.
                         turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
                         safety = evaluate_safety(event.text, turn_id)
+                        if safety.blocked and safety.level is SafetyLevel.ELEVATED:
+                            strike_count = repository.record_safety_strike(
+                                table_id, participant_id
+                            )
+                            if strike_count < MAX_SAFETY_STRIKES_PER_PARTICIPANT:
+                                await websocket.send_json({
+                                    "type": "safety_private_reminder",
+                                    "participant_id": participant_id,
+                                    "strike_count": strike_count,
+                                    "text": "先停一下，我们把观点和人分开，再继续这桌讨论。",
+                                })
+                                continue
+                            safety = escalate_boundary_safety(safety, turn_id)
                         if safety.blocked:
                             state = repository.append_safety_state(
                                 table_id, enforce_safety(repository.get(table_id), safety)
@@ -537,6 +551,12 @@ def register_websocket_routes(
                                 "client_ts": event.client_ts,
                             },
                         })
+                        if safety.level is SafetyLevel.ELEVATED:
+                            await broadcast(table_id, {
+                                "type": "safety_soft_intervention",
+                                "text": "我们先把观点和人分开，回到具体经历。",
+                                "state_version": state.version,
+                            })
                         if action is not None:
                             await broadcast(table_id, {
                                 "type": "agent_action",

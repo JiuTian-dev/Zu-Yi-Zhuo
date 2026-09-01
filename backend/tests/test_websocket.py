@@ -579,6 +579,54 @@ def test_unsafe_message_is_intercepted_before_turn_replay_or_host_action() -> No
     assert debug["state"]["conversation"]["state"] == "safety_paused"
 
 
+def test_boundary_risk_is_private_first_then_pauses_on_repeat() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "boundary-1", "participant_id": "p1",
+            "text": "你先闭嘴。", "client_ts": "2026-08-31T12:02:00Z",
+        })
+        reminder = websocket.receive_json()
+        websocket.send_json({
+            "type": "human_message", "message_id": "boundary-2", "participant_id": "p1",
+            "text": "你先闭嘴。", "client_ts": "2026-08-31T12:03:00Z",
+        })
+        paused = websocket.receive_json()
+
+    assert reminder == {
+        "type": "safety_private_reminder",
+        "participant_id": "p1",
+        "strike_count": 1,
+        "text": "先停一下，我们把观点和人分开，再继续这桌讨论。",
+    }
+    assert paused["type"] == "safety_enforced"
+    assert paused["decision"]["level"] == "critical"
+    assert repository.safety_strike_count("table-ws", "p1") == 2
+    assert repository.turns("table-ws") == []
+
+
+def test_atmosphere_risk_is_broadcast_as_generic_soft_intervention() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message", "message_id": "atmosphere-1", "participant_id": "p1",
+            "text": "先冷静，我们回到具体经历。", "client_ts": "2026-08-31T12:02:00Z",
+        })
+        events = [websocket.receive_json() for _ in range(3)]
+
+    soft = next(event for event in events if event["type"] == "safety_soft_intervention")
+    assert soft == {
+        "type": "safety_soft_intervention",
+        "text": "我们先把观点和人分开，回到具体经历。",
+        "state_version": repository.get("table-ws").version,
+    }
+    assert len(repository.turns("table-ws")) == 1
+
+
 def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
     client, repository = _client_with_table()
     assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
