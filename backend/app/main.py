@@ -78,6 +78,17 @@ def _build_personal_context_source():
         raise RuntimeError(f"invalid PERSONAL_CONTEXT_SOURCE_COMMAND: {error}") from error
 
 
+def _build_source_match_preview_ttl() -> float:
+    raw = os.environ.get("SOURCE_MATCH_PREVIEW_TTL_SECONDS", "300").strip()
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise RuntimeError("SOURCE_MATCH_PREVIEW_TTL_SECONDS must be a positive number") from error
+    if value <= 0:
+        raise RuntimeError("SOURCE_MATCH_PREVIEW_TTL_SECONDS must be a positive number")
+    return value
+
+
 def _build_app():
     path = os.environ.get("TABLE_REPOSITORY_PATH", "").strip()
     repository = JsonTableRepository(path) if path else None
@@ -87,6 +98,7 @@ def _build_app():
         _build_candidate_source(),
         content_source=_build_content_source(),
         personal_context_source=_build_personal_context_source(),
+        source_match_preview_ttl_seconds=_build_source_match_preview_ttl(),
     )
 
 

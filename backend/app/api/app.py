@@ -25,6 +25,7 @@ from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBS
 from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
+from .match_tickets import SourceMatchTicketStore
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview
@@ -251,6 +252,13 @@ class SourceMatchRequest(BaseModel):
     limit: int = Field(default=20, ge=2, le=20)
 
 
+class SourceMatchConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preview_token: str = Field(min_length=1, max_length=200)
+    table_id: str | None = Field(default=None, min_length=1)
+
+
 class CandidatePreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -436,6 +444,7 @@ def create_app(
     websocket_max_frame_bytes: int | None = None,
     websocket_max_events_per_minute: int | None = None,
     rest_max_mutations_per_minute: int | None = None,
+    source_match_preview_ttl_seconds: float = 300.0,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -444,6 +453,8 @@ def create_app(
         raise ValueError("content_source_timeout_seconds must be positive")
     if personal_context_source_timeout_seconds <= 0:
         raise ValueError("personal_context_source_timeout_seconds must be positive")
+    if source_match_preview_ttl_seconds <= 0:
+        raise ValueError("source_match_preview_ttl_seconds must be positive")
     raw_websocket_origins = (
         os.getenv("WS_ALLOWED_ORIGINS", "")
         if websocket_allowed_origins is None
@@ -494,12 +505,14 @@ def create_app(
     if max_rest_mutations_per_minute <= 0:
         raise ValueError("rest_max_mutations_per_minute must be a positive integer")
     repo = repository or InMemoryTableRepository()
+    source_match_tickets = SourceMatchTicketStore(ttl_seconds=source_match_preview_ttl_seconds)
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
     api.state.candidate_source = candidate_source
     api.state.content_source = content_source
     api.state.personal_context_source = personal_context_source
+    api.state.source_match_tickets = source_match_tickets
     api.state.identity_resolver = identity_resolver
     api.state.moderator_resolver = moderator_resolver
     rest_rate_limiter = MutationRateLimiter(max_rest_mutations_per_minute)
@@ -1038,7 +1051,42 @@ def create_app(
             raise HTTPException(status_code=502, detail="candidate source returned invalid candidates") from error
         except Exception as error:
             raise HTTPException(status_code=502, detail="candidate source unavailable") from error
-        return build_match_plan(request)
+        plan = build_match_plan(request)
+        try:
+            token = source_match_tickets.issue(
+                core_question=request.core_question,
+                table_size=request.table_size,
+                candidates=candidates,
+                plan=plan,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=503, detail="match preview temporarily unavailable") from error
+        return plan.model_copy(update={"preview_token": token})
+
+    @api.post("/matches/source-confirm", response_model=MatchedTableResponse, status_code=status.HTTP_201_CREATED)
+    def confirm_source_match(payload: SourceMatchConfirmRequest) -> MatchedTableResponse:
+        """Confirm one authorized source preview without re-querying the source."""
+        try:
+            ticket = source_match_tickets.claim(payload.preview_token)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail="source match preview is unavailable") from error
+        selected_ids = {seat.participant_id for seat in ticket.plan.selected}
+        selected = [
+            candidate
+            for candidate in ticket.candidates
+            if candidate.participant_id in selected_ids
+        ]
+        table_id = payload.table_id or uuid4().hex
+        try:
+            state = repo.create(table_id, ticket.core_question, selected)
+        except ValueError as error:
+            source_match_tickets.release(payload.preview_token)
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except Exception:
+            source_match_tickets.release(payload.preview_token)
+            raise
+        source_match_tickets.consume(payload.preview_token)
+        return MatchedTableResponse(plan=ticket.plan, state=projected(state))
 
     @api.post("/matches/confirm", response_model=MatchedTableResponse, status_code=status.HTTP_201_CREATED)
     def confirm_match(payload: ConfirmMatchRequest) -> MatchedTableResponse:

@@ -403,6 +403,13 @@ class MatchPlan(ContractModel):
     selected: list[MatchSeat] = Field(min_length=2, max_length=5)
     reasons: list[MatchReason] = Field(min_length=2, max_length=5)
     unmatched_participant_ids: list[str] = Field(default_factory=list)
+    # Opaque, short-lived capability returned only by source-backed previews.
+    preview_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        exclude_if=lambda value: value is None,
+    )
 
     @model_validator(mode="after")
     def selected_reasons_are_consistent(self) -> "MatchPlan":

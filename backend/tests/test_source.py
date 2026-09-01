@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
-from app.domain import ParticipantSeed
+from app.api.match_tickets import SourceMatchTicketStore
+from app.domain import MatchPlan, MatchReason, MatchSeat, ParticipantSeed
 from app.sources import CandidateSourceError, CommandCandidateSource
 
 
@@ -53,7 +54,105 @@ def test_source_preview_normalizes_candidates_and_reuses_public_match_contract()
     payload = response.json()
     assert {seat["participant_id"] for seat in payload["selected"]} == {"p1", "p2"}
     assert all("私有" not in reason["reason"] for reason in payload["reasons"])
+    assert payload["preview_token"]
+    assert "私有立场" not in response.text
+    assert "私有经历" not in response.text
     assert source.calls == [("采购 AI", 2)]
+
+
+def test_source_confirm_reuses_preview_ticket_without_recalling_source() -> None:
+    source = _Source([_candidate("p1", "研究员"), _candidate("p2", "采购负责人")])
+    client = TestClient(create_app(candidate_source=source))
+
+    preview = client.post(
+        "/matches/source-preview",
+        json={"core_question": "采购如何落地 AI？", "table_size": 2, "limit": 2},
+    )
+    token = preview.json()["preview_token"]
+
+    confirmed = client.post(
+        "/matches/source-confirm",
+        json={"preview_token": token, "table_id": "source-matched"},
+    )
+
+    assert confirmed.status_code == 201
+    payload = confirmed.json()
+    assert payload["state"]["table_id"] == "source-matched"
+    assert set(payload["state"]["participants"]) == {"p1", "p2"}
+    assert "preview_token" not in payload["plan"]
+    assert "私有立场" not in confirmed.text
+    assert "私有经历" not in confirmed.text
+    assert source.calls == [("采购如何落地 AI？", 2)]
+    assert client.post(
+        "/matches/source-confirm", json={"preview_token": token}
+    ).status_code == 409
+
+
+def test_source_confirm_releases_ticket_when_table_id_conflicts() -> None:
+    source = _Source([_candidate("p1", "研究员"), _candidate("p2", "采购负责人")])
+    client = TestClient(create_app(candidate_source=source))
+    assert client.post(
+        "/tables",
+        json={
+            "table_id": "already-there",
+            "core_question": "Q",
+            "participants": [_candidate("existing-1", "研究员"), _candidate("existing-2", "采购")],
+        },
+    ).status_code == 201
+    token = client.post(
+        "/matches/source-preview",
+        json={"core_question": "Q", "table_size": 2, "limit": 2},
+    ).json()["preview_token"]
+
+    conflict = client.post(
+        "/matches/source-confirm",
+        json={"preview_token": token, "table_id": "already-there"},
+    )
+    retry = client.post(
+        "/matches/source-confirm",
+        json={"preview_token": token, "table_id": "retry-table"},
+    )
+
+    assert conflict.status_code == 409
+    assert retry.status_code == 201
+    assert source.calls == [("Q", 2)]
+
+
+def test_source_match_ticket_store_is_single_use_and_expires_with_injected_clock() -> None:
+    now = [100.0]
+    store = SourceMatchTicketStore(ttl_seconds=5, clock=lambda: now[0])
+    plan = MatchPlan(
+        core_question="Q",
+        selected=[
+            MatchSeat(participant_id="p1", display_name="p1", role="研究员"),
+            MatchSeat(participant_id="p2", display_name="p2", role="采购"),
+        ],
+        reasons=[
+            MatchReason(participant_id="p1", reason="互补"),
+            MatchReason(participant_id="p2", reason="互补"),
+        ],
+    )
+    token = store.issue(
+        core_question="Q",
+        table_size=2,
+        candidates=[ParticipantSeed.model_validate(_candidate("p1", "研究员")), ParticipantSeed.model_validate(_candidate("p2", "采购"))],
+        plan=plan,
+    )
+
+    claimed = store.claim(token)
+    assert [candidate.participant_id for candidate in claimed.candidates] == ["p1", "p2"]
+    with pytest.raises(ValueError, match="unavailable"):
+        store.claim(token)
+    store.release(token)
+    assert store.claim(token).plan.core_question == "Q"
+    store.consume(token)
+    with pytest.raises(ValueError, match="unavailable"):
+        store.claim(token)
+
+    token = store.issue(core_question="Q", table_size=2, candidates=claimed.candidates, plan=plan)
+    now[0] = 105.0
+    with pytest.raises(ValueError, match="unavailable"):
+        store.claim(token)
 
 
 def test_source_preview_is_explicitly_unavailable_without_an_adapter() -> None:
