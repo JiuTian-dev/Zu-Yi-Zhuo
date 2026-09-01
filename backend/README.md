@@ -30,7 +30,8 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/participants/{participant_id}/leave?viewer_id=...`：参与者本人离桌；保留历史快照并立即停止该席位的后续写入。
 - `POST /tables/{table_id}/candidate-preview?participant_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和带公开 `evidence_signal_ids` 的候选推荐；不修改桌状态、不创建邀请、不自动入席。
 - `GET /tables/{table_id}/close-artifacts?participant_id=...`：收桌后重新取得共享基线和当前参与者的个人回响卡。
-- `GET /tables/{table_id}/replay`：返回原始真人消息和状态快照，并附带公开的 `interventions`、`comments`、`comment_promotions` 账本，重连时可直接恢复整桌叙事。
+- `GET /tables/{table_id}/replay`：返回原始真人消息和状态快照，并附带公开的 `interventions`、`comments`、`comment_promotions` 账本和已保存的 `source_signals`，重连时可直接恢复整桌叙事。
+- `GET /tables/{table_id}/lineage`：沿 `origin_table_id` 返回最多 10 代、从最早祖先到当前桌的公开问题谱系；每代只含问题、版本、来源 ID 和公开来源快照，不返回成员或个人卡。
 - `GET /tables/{table_id}/follow-ups?participant_id=...`：查询收桌底稿中的行动项及已回报结果。
 - `POST /tables/{table_id}/follow-ups/{index}/outcome?participant_id=...`：回报行动结果；承诺只能由 owner 回报，结果会写入 JSON 快照，并原子沉淀一条本人可见的 `follow_up_outcome` 行为事件（只记录状态摘要）。
 - `POST /tables/{table_id}/feedback?participant_id=...`：收桌后提交或更新认知、关系、行动、情绪四类 1–5 分价值反馈。

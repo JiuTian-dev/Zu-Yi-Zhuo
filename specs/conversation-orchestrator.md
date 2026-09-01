@@ -555,6 +555,13 @@
 - **替代方案**: 把完整信号塞入 `TableState`、每次回放重新调用外部 source、或要求前端永久保存来源；这些方案分别造成状态膨胀/过期、外部依赖漂移、或无法可靠恢复。
 - **代价**: 快照仍是创建时的公开副本，需未来补充保留/删除策略；ID-only 建桌没有可读快照，系统不会伪造来源内容。
 
+### ADR-77: 问题进化提供有界公开谱系视图
+
+- **决策**: 增加只读 `GET /tables/{id}/lineage`，沿 `origin_table_id` 追溯当前桌及其祖先，最多返回 10 代，按最早祖先到当前桌排序。每代只暴露桌 ID、来源桌 ID、当前版本、公开核心问题、`origin_signal_ids` 和 D99 独立账本中的 `source_signals`；不返回参与者、真人消息、私有资料或收桌个人卡。缺失父桌或检测到循环时 fail-closed。
+- **理由**: 产品的“问题进化”不是一次性收桌文案，而是从上一桌的问题继续形成下一桌；已有 `origin_table_id` 和公开来源账本足以构成轻量谱系，但前端无法可靠地跨桌拼接或判断祖先顺序。服务端有界遍历能让回放、评委验收和后续推荐共享同一条公开解释链。
+- **替代方案**: 继续让前端逐桌请求并自行拼接、把所有祖先状态复制进当前 `TableState`、或提供无上限的图查询；这些方案分别容易出现竞态/隐私错误、膨胀不可变状态、或被深链/循环数据拖垮。
+- **代价**: 当前谱系只沿单一 `origin_table_id` 链，最多 10 代且不分页；未来多父问题图需要独立图模型和游标契约。旧桌没有来源快照时仍只显示其 ID。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -579,6 +586,7 @@ POST /tables/{id}/sync/preview?participant_id={participant_id}
 POST /tables/{id}/sync/upgrade?participant_id={participant_id}
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
+GET  /tables/{id}/lineage
 GET  /tables/{id}/interventions?participant_id={member_id}
 GET  /tables/{id}/close-artifacts?participant_id={participant_id}
 GET  /tables/{id}/follow-ups?participant_id={participant_id}
@@ -672,6 +680,9 @@ MatchReason(participant_id, reason, evidence_terms, evidence_signal_ids?<=5)
 OpportunityPreview(..., source_signals?<=20)
 CandidateRecommendation(..., evidence_signal_ids?<=5)
 ReplayResponse(..., source_signals?<=20)
+TableLineageResponse(table_id, items<=10)
+TableLineageItem(table_id, origin_table_id?, version, core_question,
+                 origin_signal_ids?<=20, source_signals?<=20)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -767,6 +778,7 @@ master
                                                                                                                                                                                                                                                                                                                                                                              ←── D97 public opportunity evidence projection
                                                                                                                                                                                                                                                                                                                                                                                   ←── D98 dynamic candidate evidence attribution
                                                                                                                                                                                                                                                                                                                                                                                        ←── D99 persisted public source snapshot ledger
+                                                                                                                                                                                                                                                                                                                                                                                             ←── D100 bounded public table lineage view
 ```
 
 ## Progress Ledger
@@ -876,6 +888,7 @@ master
 | D97 public opportunity evidence projection | complete | Return bounded public source signals in opportunity previews for immediate explanation without copying them into table state | 360 tests + compileall + diff check | `2ca1ad6` |
 | D98 dynamic candidate evidence attribution | complete | Carry bounded public source IDs into dynamic fifth-seat recommendations without leaking candidate profile fields | 360 tests + compileall + diff check | `0536645` |
 | D99 public source snapshot ledger | complete | Persist bounded public `ContentSignal` snapshots outside `TableState`, expose them in replay, and recover them after JSON restart without accepting private fields | 362 tests + compileall + diff check | `de04494` + `f9de581` |
+| D100 bounded public table lineage view | complete | Expose a bounded oldest-to-current question lineage using `origin_table_id` and public source snapshots without leaking member data | 364 tests + compileall + diff check | `4805bdc` |
 
 ## 已知坑位（Running Gotchas）
 
