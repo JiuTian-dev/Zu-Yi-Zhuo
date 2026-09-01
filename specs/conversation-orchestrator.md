@@ -632,6 +632,13 @@
 - **替代方案**: 在候选里复制完整来源快照、让前端逐桌再请求并自行拼接、或把私有个人上下文用于推荐理由；这些方案分别扩大响应体/隐私面、产生额外竞态和请求、或越过个人授权边界。
 - **代价**: 只有建桌时保存过公开来源 ID 的桌会有归因；ID 本身不保证来源仍可访问，真实来源内容仍由公开谱系/回放接口按各自边界提供。
 
+### ADR-88: 候选人主动申请仍须经过邀请
+
+- **决策**: 增加候选人自证的 `POST /tables/{id}/join-requests` 和 `GET /tables/{id}/join-requests`，以及桌内成员批准/拒绝申请的操作。申请保存候选人的完整 `ParticipantSeed` 以便批准时复用，但所有列表和操作响应只投影申请 ID、公开姓名/角色、申请说明、状态和可选邀请 ID；不返回立场、经历或其他成员资料。批准只原子生成现有 `Invitation` 并把申请置为 `invited`，申请人仍必须通过原邀请接口接受后才能入席；拒绝或已处理的申请不会被同桌重复创建。申请最多保留 50 条/桌，使用客户端 `request_id` 幂等，JSON 重启恢复。
+- **理由**: 产品第二入口已经能把“我想找人聊”路由到已有桌，但没有可执行的加入意愿表达，导致用户只能等待桌内成员主动发现。让候选人先申请、由桌内成员批准、再由候选人接受邀请，补齐主动需求闭环，同时保留“人决定谁入席”的社区边界和 4/5 席位节奏。
+- **替代方案**: 申请直接写入 `TableState.participants`、前端本地保存申请、或批准后自动入席；这些方案分别绕过邀请/隐私边界、重启丢失事实、或让成员无法在入席前做最后确认。
+- **代价**: V1 没有通知调度和申请过期时间；桌内成员需要主动读取申请列表，批准后仍需候选人再确认。申请账本独立于 Table State，不改变对话版本。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -659,6 +666,10 @@ POST /tables/{id}/sync/upgrade?participant_id={participant_id}
 GET  /tables/{id}/state
 GET  /tables/{id}/replay
 GET  /tables/{id}/lineage
+POST /tables/{id}/join-requests?participant_id={candidate_id}
+GET  /tables/{id}/join-requests?participant_id={candidate_id_or_member_id}
+POST /tables/{id}/join-requests/{request_id}/approve?participant_id={member_id}
+POST /tables/{id}/join-requests/{request_id}/decline?participant_id={member_id}
 GET  /tables/{id}/interventions?participant_id={member_id}
 GET  /tables/{id}/close-artifacts?participant_id={participant_id}
 GET  /tables/{id}/follow-ups?participant_id={participant_id}
@@ -772,6 +783,10 @@ CapabilitiesResponse(repository, conversation_provider,
                      content_source_configured,
                      personal_context_source_configured,
                      websocket_available, max_table_participants)
+JoinRequest(request_id, table_id, candidate, message?, status,
+            invitation_id?)
+JoinRequestView(request_id, table_id, participant_id, display_name, role,
+                message?, status, invitation_id?)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -992,6 +1007,7 @@ master
 | D108 question footprint next-table links | complete | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | 377 tests + compileall + diff check | `1703bfa` + `9e39151` |
 | D109 capabilities introspection | complete | Expose a no-secret runtime capability projection so the frontend can choose configured source and provider paths without probing business endpoints | 379 tests + compileall + diff check | `aa59e80` + `6e273ea` |
 | D110 active-intent public signal attribution | complete | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | 380 tests + compileall + diff check | `cabd773` + `2c3c67e` |
+| D111 candidate-initiated join request | in_progress | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | pending |
 
 ## 已知坑位（Running Gotchas）
 
