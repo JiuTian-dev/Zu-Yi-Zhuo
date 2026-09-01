@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, ActiveIntentSessionView, ActiveIntentTurnRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, ActiveIntentSessionView, ActiveIntentSourcePreviewRequest, ActiveIntentTurnRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
 from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
@@ -1336,6 +1336,41 @@ def create_app(
                 detail="active intent session turn limit reached",
             ) from error
         return active_intent_session_view(session)
+
+    @api.post(
+        "/participants/{participant_id}/intent-sessions/{session_id}/source-preview",
+        response_model=MatchPlan,
+    )
+    async def preview_active_intent_source(
+        participant_id: str,
+        session_id: str,
+        payload: ActiveIntentSourcePreviewRequest,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> MatchPlan:
+        """Search authorized candidates for a clarified new-table intent."""
+        require_active_intent_owner(participant_id, request, viewer_id)
+        try:
+            session = intent_sessions.get(session_id, participant_id)
+        except IntentSessionUnavailable as error:
+            raise HTTPException(status_code=404, detail="active intent session not found") from error
+        session_view = active_intent_session_view(session)
+        if session_view.preview.route == "clarify":
+            raise HTTPException(
+                status_code=409,
+                detail="active intent session still needs clarification",
+            )
+        if session_view.preview.route == "join_existing":
+            raise HTTPException(
+                status_code=409,
+                detail="active intent session already has existing table candidates",
+            )
+        return await preview_source_match(SourceMatchRequest(
+            core_question=session_view.preview.normalized_question,
+            query=session_view.preview.normalized_question,
+            table_size=payload.table_size,
+            limit=payload.limit,
+        ))
 
     @api.delete(
         "/participants/{participant_id}/intent-sessions/{session_id}",

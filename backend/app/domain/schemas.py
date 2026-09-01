@@ -228,6 +228,13 @@ class ActiveIntentTurnRequest(ContractModel):
         return self
 
 
+class ActiveIntentSourcePreviewRequest(ContractModel):
+    """Bounded controls for searching authorized candidates after clarification."""
+
+    table_size: int = Field(default=4, ge=2, le=5)
+    limit: int = Field(default=20, ge=2, le=20)
+
+
 class ActiveIntentSessionView(ContractModel):
     """Self-scoped short-term context plus its current non-mutating route preview."""
 

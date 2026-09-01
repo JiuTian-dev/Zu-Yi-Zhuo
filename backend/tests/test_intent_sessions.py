@@ -21,6 +21,30 @@ def _seed(participant_id: str, role: str = "实践者") -> ParticipantSeed:
     )
 
 
+class _CandidateSource:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    async def search(self, *, query: str, limit: int):
+        self.calls.append((query, limit))
+        return [
+            {
+                "participant_id": "source-1",
+                "display_name": "source-1",
+                "role": "实践者",
+                "declared_position": "私有立场",
+                "relevant_experience": [{"text": "私有经历", "source_ref": "auth"}],
+            },
+            {
+                "participant_id": "source-2",
+                "display_name": "source-2",
+                "role": "专业者",
+                "declared_position": "私有立场",
+                "relevant_experience": [{"text": "私有经历", "source_ref": "auth"}],
+            },
+        ][:limit]
+
+
 def test_multi_turn_intent_session_clarifies_then_routes_existing_table_without_writing() -> None:
     repository = InMemoryTableRepository()
     repository.create(
@@ -101,6 +125,86 @@ def test_intent_session_supports_explicit_context_replacement() -> None:
     assert payload["turn_count"] == 2
     assert payload["preview"]["route"] == "join_existing"
     assert [item["table_id"] for item in payload["preview"]["candidates"]] == ["hiking-table"]
+
+
+def test_new_table_intent_hands_off_to_authorized_candidate_preview_and_ticket() -> None:
+    source = _CandidateSource()
+    repository = InMemoryTableRepository()
+    client = TestClient(create_app(repository, candidate_source=source))
+
+    started = client.post(
+        "/participants/visitor/intent-sessions?viewer_id=visitor",
+        json={"message": "我想找人聊城市徒步路线和装备选择"},
+    )
+    assert started.status_code == 201
+    assert started.json()["preview"]["route"] == "new_table"
+    session_id = started.json()["session_id"]
+
+    preview = client.post(
+        f"/participants/visitor/intent-sessions/{session_id}/source-preview?viewer_id=visitor",
+        json={"table_size": 2, "limit": 2},
+    )
+
+    assert preview.status_code == 200
+    plan = preview.json()
+    token = plan["preview_token"]
+    assert token
+    assert plan["core_question"] == "城市徒步路线和装备选择"
+    assert {seat["participant_id"] for seat in plan["selected"]} == {"source-1", "source-2"}
+    assert "私有立场" not in preview.text
+    assert "私有经历" not in preview.text
+    assert source.calls == [("城市徒步路线和装备选择", 2)]
+    assert repository.list_tables() == []
+
+    confirmed = client.post(
+        "/matches/source-confirm",
+        json={"preview_token": token, "table_id": "intent-source-table"},
+    )
+    assert confirmed.status_code == 201
+    assert confirmed.json()["state"]["table_id"] == "intent-source-table"
+    assert source.calls == [("城市徒步路线和装备选择", 2)]
+
+
+def test_intent_source_preview_requires_ready_new_table_route() -> None:
+    client = TestClient(create_app())
+    clarify = client.post(
+        "/participants/visitor/intent-sessions?viewer_id=visitor",
+        json={"message": "找人聊"},
+    )
+    clarify_response = client.post(
+        f"/participants/visitor/intent-sessions/{clarify.json()['session_id']}/source-preview?viewer_id=visitor",
+        json={},
+    )
+    assert clarify_response.status_code == 409
+    assert clarify_response.json()["detail"] == "active intent session still needs clarification"
+
+    repository = InMemoryTableRepository()
+    repository.create("existing", "城市徒步路线和装备", [_seed("m1")])
+    existing_client = TestClient(create_app(repository))
+    existing = existing_client.post(
+        "/participants/visitor/intent-sessions?viewer_id=visitor",
+        json={"message": "城市徒步路线和装备"},
+    )
+    existing_response = existing_client.post(
+        f"/participants/visitor/intent-sessions/{existing.json()['session_id']}/source-preview?viewer_id=visitor",
+        json={},
+    )
+    assert existing_response.status_code == 409
+    assert existing_response.json()["detail"] == "active intent session already has existing table candidates"
+
+
+def test_intent_source_preview_is_unavailable_without_candidate_source() -> None:
+    client = TestClient(create_app())
+    started = client.post(
+        "/participants/visitor/intent-sessions?viewer_id=visitor",
+        json={"message": "城市徒步路线和装备选择"},
+    )
+    response = client.post(
+        f"/participants/visitor/intent-sessions/{started.json()['session_id']}/source-preview?viewer_id=visitor",
+        json={},
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "candidate source is not configured"}
 
 
 def test_intent_session_is_bounded_and_reports_exhaustion() -> None:
