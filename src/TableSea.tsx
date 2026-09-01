@@ -650,7 +650,7 @@ function SeaWorld() {
       <Pollen />
       <SeascapeScatter />
       <FogPlane position={[0, -0.62, 0]} opacity={0.3} color="#cdd8e4" />
-      <FogPlane position={[0, -0.74, 0]} opacity={0.24} color="#bccadb" />
+      <FogPlane position={[0, -0.74, 0]} opacity={0.18} color="#9db4cc" />
       <hemisphereLight color="#d8e8f8" groundColor="#8a9278" intensity={1.05} />
       <directionalLight
         color="#ffe8bd"
@@ -676,7 +676,7 @@ function SeaWorld() {
         ))}
       </Suspense>
       <TravelOrb />
-      {false && <SeaGrass focus={focusPoint as any} wind={0.35} />}
+      {false && <SeaGrass focus={focusPoint as any} wind={0.45} />}
       <SeaCamera focusPoint={focusPoint} />
       <EffectComposer multisampling={0}>
         <Bloom mipmapBlur intensity={0.9} luminanceThreshold={0.75} luminanceSmoothing={0.22} radius={0.5} />

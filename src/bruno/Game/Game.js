@@ -108,12 +108,12 @@ export class Game
                 const dz = (y / size - cz)
                 const dist = Math.sqrt(dx * dx + dz * dz) * 2
                 const noise = Math.sin(x * 0.11) * Math.cos(y * 0.13) * 0.08
-                // meadow plateau (warm band of the gradient), water ring at the edges
-                const height = Math.max(0, Math.min(1, 0.82 + noise - Math.max(0, dist - 0.6) * 1.8))
-                const grass = Math.max(0, Math.min(1, height * 1.3 - 0.1)) * (0.72 + noise * 0.5)
+                // meadow plateau: B high = warm ground, edges B low = water blue
+                const meadow = Math.max(0, Math.min(1, 0.86 + noise - Math.max(0, dist - 0.62) * 2.2))
+                const grass = meadow * (0.72 + noise * 0.5)
                 data[i] = Math.round(grass * 255)
                 data[i + 1] = Math.round(grass * 255)
-                data[i + 2] = Math.round((1 - height) * 255)
+                data[i + 2] = Math.round((1 - meadow) * 255)
                 data[i + 3] = 255
             }
         }

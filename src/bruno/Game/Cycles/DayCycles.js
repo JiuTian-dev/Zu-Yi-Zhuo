@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu'
 import { Cycles } from './Cycles.js'
 
 const presets = {
-    day:   { revealColor: new THREE.Color('#5f7dff'), revealIntensity: 12, electricField: 0, temperature: 5, lightColor: new THREE.Color('#ffe9d8'), lightIntensity: 4.2, shadowColor: new THREE.Color('#8a7bd8'), fogColorA: new THREE.Color('#7ee8ff'), fogColorB: new THREE.Color('#b3a4ff'), fogNearRatio: 0.315, fogFarRatio: 1.25 },
+    day:   { revealColor: new THREE.Color('#5f7dff'), revealIntensity: 12, electricField: 0, temperature: 5, lightColor: new THREE.Color('#ffe9d8'), lightIntensity: 2.4, shadowColor: new THREE.Color('#8a7bd8'), fogColorA: new THREE.Color('#a8e0d8'), fogColorB: new THREE.Color('#bfb2ec'), fogNearRatio: 0.315, fogFarRatio: 1.25 },
     dusk:  { revealColor: new THREE.Color('#ff86d9'), revealIntensity: 5.55, electricField: 0.25, temperature: 0, lightColor: new THREE.Color('#ff8181'), lightIntensity: 1.2, shadowColor: new THREE.Color('#4e009c'), fogColorA: new THREE.Color('#3e53ff'), fogColorB: new THREE.Color('#ff4ce4'), fogNearRatio: 0, fogFarRatio: 1.25 },
     night: { revealColor: new THREE.Color('#b678ff'), revealIntensity: 10, electricField: 1, temperature: -7.5, lightColor: new THREE.Color('#3240ff'), lightIntensity: 3.8, shadowColor: new THREE.Color('#2f00db'), fogColorA: new THREE.Color('#10266f'), fogColorB: new THREE.Color('#490a42'), fogNearRatio: -0.85, fogFarRatio: 1 },
     dawn:  { revealColor: new THREE.Color('#ff9d9d'), revealIntensity: 4.85, electricField: 0.25, temperature: 0, lightColor: new THREE.Color('#ffa882'), lightIntensity: 1.2, shadowColor: new THREE.Color('#db004f'), fogColorA: new THREE.Color('#f885ff'), fogColorB: new THREE.Color('#ff7d24'), fogNearRatio: 0.3, fogFarRatio: 1.25 },
@@ -12,7 +12,7 @@ export class DayCycles extends Cycles
 {
     constructor()
     {
-        const forcedProgress = import.meta.env.VITE_DAY_CYCLE_PROGRESS ? parseFloat(import.meta.env.VITE_DAY_CYCLE_PROGRESS) : null
+        const forcedProgress = import.meta.env.VITE_DAY_CYCLE_PROGRESS ? parseFloat(import.meta.env.VITE_DAY_CYCLE_PROGRESS) : 0.05 // adaptation: always open at bright day
         super('🕜 Day Cycles', 4 * 60, forcedProgress, false)
     }
 

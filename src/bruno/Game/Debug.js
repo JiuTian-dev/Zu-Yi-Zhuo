@@ -1,16 +1,22 @@
 // Shim: debug disabled in the table runtime build.
-// The instance itself is a recursive no-op proxy: ANY method call
-// (addFolder/addBinding/addManualBinding/...) resolves silently.
-const noopTarget = function () {}
-const noopProxy = new Proxy(noopTarget, {
+// The instance is a no-op proxy, but primitives stay primitives:
+// `.active` MUST be false (truthy proxy here once poisoned WGSL
+// uniforms with NaN and invalidated every render pipeline).
+const shim = new Proxy(function () {}, {
     get: (target, key) =>
     {
+        if(key === 'active')
+            return false
+        if(key === 'value')
+            return 0
         if(key === Symbol.toPrimitive)
-            return () => ''
-        return noopProxy
+            return () => 0
+        if(key === Symbol.iterator)
+            return [][Symbol.iterator]()
+        return shim
     },
-    apply: () => noopProxy,
-    construct: () => noopProxy,
+    apply: () => shim,
+    construct: () => shim,
 })
 
 export class Debug
@@ -18,6 +24,6 @@ export class Debug
     constructor()
     {
         this.active = false
-        return noopProxy
+        return shim
     }
 }

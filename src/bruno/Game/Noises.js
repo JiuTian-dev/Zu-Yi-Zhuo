@@ -211,42 +211,60 @@ export class Noises
 
 	setPerlin()
 	{
-		// Render target
-        const renderTarget = new THREE.RenderTarget(
-            this.resolution,
-            this.resolution,
-            {
-                depthBuffer: false,
-				format: THREE.RedFormat,
-                type: THREE.HalfFloatType
-            }
-        )
-        this.perlin = renderTarget.texture
-        this.perlin.wrapS = THREE.RepeatWrapping
-        this.perlin.wrapT = THREE.RepeatWrapping
+		// Adaptation: CPU value-noise texture (the TSL perlin RT renders NaN
+		// on the WebGL2 fallback backend of this stack).
+		const size = 256
+		const canvas = document.createElement('canvas')
+		canvas.width = size
+		canvas.height = size
+		const context = canvas.getContext('2d')
+		if(context)
+		{
+			const image = context.createImageData(size, size)
+			const grid = 12
+			const lattice = []
+			for(let i = 0; i < (grid + 1) * (grid + 1); i++)
+				lattice.push(Math.random())
 
-        // Material
-        const material = new THREE.MeshBasicNodeMaterial()
+			const smooth = (t) => t * t * (3 - 2 * t)
+			const sample = (x, y) =>
+			{
+				const gx = Math.floor(x), gy = Math.floor(y)
+				const tx = smooth(x - gx), ty = smooth(y - gy)
+				const x0 = gx % grid, x1 = (gx + 1) % grid
+				const y0 = gy % grid, y1 = (gy + 1) % grid
+				const a = lattice[y0 * (grid + 1) + x0]
+				const b = lattice[y0 * (grid + 1) + x1]
+				const c = lattice[y1 * (grid + 1) + x0]
+				const d = lattice[y1 * (grid + 1) + x1]
+				return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty
+			}
 
-        material.outputNode = vec4(
-            perlinNode(uv(), 6.0, 6.0).remap(0.1, 0.9, 0.0, 1.0),
-            hash(uv().mul(128).floor().div(128)).x,
-            // 0,
-			0,
-			0
-        )
+			for(let y = 0; y < size; y++)
+			{
+				for(let x = 0; x < size; x++)
+				{
+					let value = 0, amp = 0.5, freq = grid / size
+					for(let o = 0; o < 4; o++)
+					{
+						value += sample(x * freq, y * freq) * amp
+						freq *= 2
+						amp *= 0.5
+					}
+					value = Math.max(0, Math.min(1, value / 0.9375))
+					const i = (y * size + x) * 4
+					image.data[i] = Math.round(value * 255)
+					image.data[i + 1] = Math.round(value * 255)
+					image.data[i + 2] = Math.round(value * 255)
+					image.data[i + 3] = 255
+				}
+			}
+			context.putImageData(image, 0, 0)
+		}
 
-		// Render
-		this.quadMesh.material = material
-		
-		const rendererState = THREE.RendererUtils.resetRendererState(this.game.rendering.renderer)
-
-        this.game.rendering.renderer.setPixelRatio(1)
-		this.game.rendering.renderer.setRenderTarget(renderTarget)
-		this.quadMesh.render(this.game.rendering.renderer)
-        this.game.rendering.renderer.setRenderTarget(null)
-
-		THREE.RendererUtils.restoreRendererState(this.game.rendering.renderer, rendererState)
+		this.perlin = new THREE.CanvasTexture(canvas)
+		this.perlin.wrapS = THREE.RepeatWrapping
+		this.perlin.wrapT = THREE.RepeatWrapping
 	}
 
 	setHash()

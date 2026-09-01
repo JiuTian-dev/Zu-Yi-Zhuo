@@ -48,10 +48,8 @@ export class Floor
             const baseColor = this.game.terrain.colorNode(terrainData)
             
             const slabTerrain = terrainData.r
-            const slabNoiseUv = positionWorld.xz.mul(slabNoiseFrequency)
-            const slabNoise = texture(this.game.noises.perlin, slabNoiseUv).r
-            const slabsTexture = texture(this.game.noises.perlin, positionWorld.xz.mul(slabTextureFrequency * 0.8)).r
-            const slabColor = mix(slabLowColor, slabHighColor, slabsTexture)
+            const slabNoise = 0.35
+            const slabColor = mix(slabLowColor, slabHighColor, 0.5)
             // return vec3(slabsTexture.mul(slabStrength))
 
             const slab = slabTerrain.mul(slabNoise)
@@ -76,7 +74,7 @@ export class Floor
             const uvDim = min(min(uv().x, uv().y).mul(20), 1)
 
             const newPosition = positionLocal
-            newPosition.y.addAssign(terrainData.b.mul(-1.5).mul(uvDim))
+            newPosition.y.addAssign(terrainData.b.mul(0.6).mul(uvDim))
 
             return newPosition
         })()
