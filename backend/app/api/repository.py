@@ -569,12 +569,14 @@ class InMemoryTableRepository:
 
     @_synchronized
     def record_safety_strike(self, table_id: str, participant_id: str) -> int:
-        """Increment a bounded private safety strike counter."""
-        state = self.get(table_id)
-        if participant_id not in state.participants:
-            raise ValueError("safety strike participant must be a table participant")
+        """Increment a bounded private safety strike counter for one actor."""
+        self.get(table_id)
+        if not participant_id.strip():
+            raise ValueError("safety strike actor must be non-empty")
         counts = dict(self._safety_strikes.setdefault(table_id, {}))
         current = counts.get(participant_id, 0)
+        if current == 0 and len(counts) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError("safety strike ledger is full")
         if current < MAX_SAFETY_STRIKES_PER_PARTICIPANT:
             counts[participant_id] = current + 1
             self._safety_strikes[table_id] = counts
@@ -1690,13 +1692,15 @@ class JsonTableRepository(InMemoryTableRepository):
 
     @_synchronized
     def record_safety_strike(self, table_id: str, participant_id: str) -> int:
-        """Persist a bounded private boundary-violation count."""
-        state = self.get(table_id)
-        if participant_id not in state.participants:
-            raise ValueError("safety strike participant must be a table participant")
+        """Persist a bounded private boundary-violation count for one actor."""
+        self.get(table_id)
+        if not participant_id.strip():
+            raise ValueError("safety strike actor must be non-empty")
         current = self._safety_strikes.get(table_id, {}).get(participant_id, 0)
         if current >= MAX_SAFETY_STRIKES_PER_PARTICIPANT:
             return current
+        if participant_id not in self._safety_strikes.get(table_id, {}) and len(self._safety_strikes.get(table_id, {})) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError("safety strike ledger is full")
         counts = {
             **self._safety_strikes,
             table_id: {

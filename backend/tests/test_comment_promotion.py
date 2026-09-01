@@ -87,6 +87,29 @@ def test_harmful_comment_is_safety_blocked_without_core_turn() -> None:
     assert repository.get("promotion-safety").conversation.state == "safety_paused"
 
 
+def test_boundary_comment_needs_private_reminder_before_repeat_pause() -> None:
+    repository = _repository("promotion-boundary")
+    client = _client(repository)
+    assert client.post(
+        "/tables/promotion-boundary/comments?author_id=guest",
+        json=_comment_payload(text="你先闭嘴。"),
+    ).status_code == 200
+
+    first = client.post(
+        "/tables/promotion-boundary/comments/c1/promote?participant_id=p1",
+    )
+    second = client.post(
+        "/tables/promotion-boundary/comments/c1/promote?participant_id=p1",
+    )
+
+    assert first.status_code == 409
+    assert "private safety reminder" in first.json()["detail"]
+    assert second.status_code == 422
+    assert repository.safety_strike_count("promotion-boundary", "guest") == 2
+    assert repository.get("promotion-boundary").conversation.state == "safety_paused"
+    assert repository.turns("promotion-boundary") == []
+
+
 def test_promotion_broadcasts_comment_and_projected_state() -> None:
     repository = _repository("promotion-broadcast")
     client = _client(repository)
