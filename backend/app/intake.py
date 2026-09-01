@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import re
 
 from app.domain import ActiveIntentPreview, ActiveIntentTableCandidate, TableState
+from app.lobby import build_lobby_preview
 
 MAX_INTENT_CANDIDATES = 5
 _GENERIC_INTENTS = {
@@ -122,6 +123,7 @@ def build_active_intent_preview(
                 + "、".join(sorted(overlap)[:3])
             ),
             origin_signal_ids=list(table.origin_signal_ids),
+            lobby=build_lobby_preview(table),
         )
         for _, _, table, overlap in ranked[:limit]
     ]
