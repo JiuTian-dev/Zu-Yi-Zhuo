@@ -45,9 +45,19 @@ class CreateTableRequest(BaseModel):
         max_length=20,
         exclude_if=lambda value: not value,
     )
+    origin_signals: list[ContentSignal] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
 
     @model_validator(mode="after")
     def origin_signal_ids_are_public_candidate_ids(self) -> "CreateTableRequest":
+        snapshot_ids = [signal.signal_id for signal in self.origin_signals]
+        if len(snapshot_ids) != len(set(snapshot_ids)):
+            raise ValueError("origin_signals signal_id values must be unique")
+        if self.origin_signals and not self.origin_signal_ids:
+            self.origin_signal_ids = snapshot_ids
         if len(self.origin_signal_ids) != len(set(self.origin_signal_ids)):
             raise ValueError("origin_signal_ids must be unique")
         available = {
@@ -57,6 +67,8 @@ class CreateTableRequest(BaseModel):
         }
         if any(signal_id not in available for signal_id in self.origin_signal_ids):
             raise ValueError("origin_signal_ids must reference participant public_signal_ids")
+        if any(signal_id not in set(self.origin_signal_ids) for signal_id in snapshot_ids):
+            raise ValueError("origin_signals must reference origin_signal_ids")
         return self
 
 
@@ -71,6 +83,11 @@ class ReplayResponse(BaseModel):
     interventions: list[InterventionRecord] = Field(default_factory=list)
     comments: list[PeripheralComment] = Field(default_factory=list)
     comment_promotions: list[CommentPromotion] = Field(default_factory=list)
+    source_signals: list[ContentSignal] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
 
 
 class ParticipantConsentRequest(BaseModel):
@@ -128,9 +145,19 @@ class ConfirmMatchRequest(MatchRequest):
         max_length=20,
         exclude_if=lambda value: not value,
     )
+    origin_signals: list[ContentSignal] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
 
     @model_validator(mode="after")
     def origin_signal_ids_are_candidate_ids(self) -> "ConfirmMatchRequest":
+        snapshot_ids = [signal.signal_id for signal in self.origin_signals]
+        if len(snapshot_ids) != len(set(snapshot_ids)):
+            raise ValueError("origin_signals signal_id values must be unique")
+        if self.origin_signals and not self.origin_signal_ids:
+            self.origin_signal_ids = snapshot_ids
         if len(self.origin_signal_ids) != len(set(self.origin_signal_ids)):
             raise ValueError("origin_signal_ids must be unique")
         available = {
@@ -140,6 +167,8 @@ class ConfirmMatchRequest(MatchRequest):
         }
         if any(signal_id not in available for signal_id in self.origin_signal_ids):
             raise ValueError("origin_signal_ids must reference candidate public_signal_ids")
+        if any(signal_id not in set(self.origin_signal_ids) for signal_id in snapshot_ids):
+            raise ValueError("origin_signals must reference origin_signal_ids")
         return self
 
 
@@ -481,6 +510,7 @@ def create_app(
                     payload.core_question,
                     payload.participants,
                     origin_signal_ids=payload.origin_signal_ids,
+                    origin_signals=payload.origin_signals,
                 )
             )
         except ValueError as error:
@@ -868,6 +898,7 @@ def create_app(
                 payload.core_question,
                 selected,
                 origin_signal_ids=payload.origin_signal_ids,
+                origin_signals=payload.origin_signals,
             )
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
@@ -1557,6 +1588,7 @@ def create_app(
                 interventions=repo.interventions(table_id),
                 comments=repo.comments(table_id),
                 comment_promotions=repo.comment_promotions(table_id),
+                source_signals=repo.public_source_signals(table_id),
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

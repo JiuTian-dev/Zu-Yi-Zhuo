@@ -91,17 +91,89 @@ def test_match_confirmation_persists_public_origin_signal_ids_and_replays_them(t
         "candidates": preview["candidates"],
         "table_size": 2,
         "origin_signal_ids": preview["signal_ids"],
+        "origin_signals": preview["source_signals"],
     })
 
     assert confirmed.status_code == 201
     assert confirmed.json()["state"]["origin_signal_ids"] == ["s1", "s2"]
+    assert "source_signals" not in confirmed.json()["state"]
     replay = client.get("/tables/lineage-table/replay")
     assert replay.status_code == 200
     assert replay.json()["snapshots"][0]["origin_signal_ids"] == ["s1", "s2"]
+    assert [signal["signal_id"] for signal in replay.json()["source_signals"]] == ["s1", "s2"]
+    assert replay.json()["source_signals"][0]["source_ref"] == "zhihu:public:s1"
+    assert "relevant_experience" not in replay.json()["source_signals"][0]
+    assert "private_stance" not in replay.json()["source_signals"][0]
 
     restored = JsonTableRepository(tmp_path / "lineage.json")
     assert restored.get("lineage-table").origin_signal_ids == ["s1", "s2"]
     assert restored.replay("lineage-table")[0].origin_signal_ids == ["s1", "s2"]
+    assert [signal.signal_id for signal in restored.public_source_signals("lineage-table")] == ["s1", "s2"]
+    assert restored.public_source_signals("lineage-table")[0].title == "企业 Agent 如何落地？"
+
+
+def test_direct_table_creation_derives_and_persists_public_source_snapshots(tmp_path) -> None:
+    repository = JsonTableRepository(tmp_path / "direct-lineage.json")
+    client = TestClient(create_app(repository))
+    response = client.post("/tables", json={
+        "table_id": "direct-lineage",
+        "core_question": "Q",
+        "participants": [
+            {
+                "participant_id": "p1",
+                "display_name": "甲",
+                "role": "产品",
+                "declared_position": "先验证价值",
+                "public_signal_ids": ["s1"],
+            },
+            {
+                "participant_id": "p2",
+                "display_name": "乙",
+                "role": "技术",
+                "declared_position": "先解决边界",
+                "public_signal_ids": ["s2"],
+            },
+        ],
+        "origin_signals": [_signal("s1", "p1", "question"), _signal("s2", "p2", "answer")],
+    })
+
+    assert response.status_code == 201
+    assert response.json()["origin_signal_ids"] == ["s1", "s2"]
+    replay = client.get("/tables/direct-lineage/replay").json()
+    assert [signal["signal_id"] for signal in replay["source_signals"]] == ["s1", "s2"]
+    restored = JsonTableRepository(tmp_path / "direct-lineage.json")
+    assert [signal.signal_id for signal in restored.public_source_signals("direct-lineage")] == [
+        "s1", "s2"
+    ]
+
+
+def test_origin_source_snapshot_must_match_origin_signal_ids() -> None:
+    client = TestClient(create_app())
+    response = client.post("/matches/confirm", json={
+        "table_id": "mismatched-lineage",
+        "core_question": "Q",
+        "candidates": [
+            {
+                "participant_id": "u1",
+                "display_name": "u1",
+                "role": "产品",
+                "declared_position": "先验证价值",
+                "public_signal_ids": ["s1"],
+            },
+            {
+                "participant_id": "u2",
+                "display_name": "u2",
+                "role": "技术",
+                "declared_position": "先解决边界",
+                "public_signal_ids": ["s2"],
+            },
+        ],
+        "table_size": 2,
+        "origin_signal_ids": ["s1"],
+        "origin_signals": [_signal("s2", "u2", "answer")],
+    })
+
+    assert response.status_code == 422
 
 
 def test_match_confirmation_rejects_unknown_origin_signal_ids() -> None:

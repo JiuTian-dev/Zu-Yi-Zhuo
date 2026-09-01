@@ -9,11 +9,29 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, BehaviorEvent, CommentPromotion, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
 MAX_TABLE_PARTICIPANTS = 5
+MAX_PUBLIC_SOURCE_SIGNALS = 20
+
+
+def _index_public_source_signals(
+    signals: Sequence[ContentSignal] | None,
+    origin_signal_ids: Sequence[str],
+) -> dict[str, ContentSignal]:
+    """Validate a bounded public snapshot without accepting private payloads."""
+    rows = list(signals or [])
+    if len(rows) > MAX_PUBLIC_SOURCE_SIGNALS:
+        raise ValueError(f"public source snapshot cannot exceed {MAX_PUBLIC_SOURCE_SIGNALS} signals")
+    ids = [signal.signal_id for signal in rows]
+    if len(ids) != len(set(ids)):
+        raise ValueError("public source snapshot signal_id values must be unique")
+    allowed = set(origin_signal_ids)
+    if any(signal_id not in allowed for signal_id in ids):
+        raise ValueError("public source snapshot must reference origin_signal_ids")
+    return {signal.signal_id: signal.model_copy(deep=True) for signal in rows}
 
 
 def _follow_up_behavior_event(
@@ -120,6 +138,7 @@ class InMemoryTableRepository:
         self._safety_resolutions: dict[str, list[SafetyResolution]] = {}
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
         self._behavior_events: dict[str, list[BehaviorEvent]] = {}
+        self._public_source_signals: dict[str, dict[str, ContentSignal]] = {}
 
     @_synchronized
     def create(
@@ -130,17 +149,20 @@ class InMemoryTableRepository:
         *,
         origin_table_id: str | None = None,
         origin_signal_ids: Sequence[str] | None = None,
+        origin_signals: Sequence[ContentSignal] | None = None,
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
         if len(participants) > MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
+        origin_ids = list(origin_signal_ids or [])
+        public_signals = _index_public_source_signals(origin_signals, origin_ids)
         state = build_initial_state(
             table_id,
             core_question,
             participants,
             origin_table_id,
-            origin_signal_ids,
+            origin_ids,
         )
         self._states[table_id] = [state]
         self._turns[table_id] = []
@@ -153,6 +175,7 @@ class InMemoryTableRepository:
         self._safety_reports[table_id] = []
         self._safety_report_audits[table_id] = []
         self._safety_resolutions[table_id] = []
+        self._public_source_signals[table_id] = public_signals
         return state.model_copy(deep=True)
 
     @_synchronized
@@ -664,6 +687,17 @@ class InMemoryTableRepository:
         return [item.model_copy(deep=True) for item in self._behavior_events.get(participant_id, [])]
 
     @_synchronized
+    def public_source_signals(self, table_id: str) -> list[ContentSignal]:
+        """Return the public snapshots attached to a table's origin IDs."""
+        state = self.get(table_id)
+        snapshots = self._public_source_signals.get(table_id, {})
+        return [
+            snapshots[signal_id].model_copy(deep=True)
+            for signal_id in state.origin_signal_ids
+            if signal_id in snapshots
+        ]
+
+    @_synchronized
     def clear_behavior_events(self, participant_id: str) -> bool:
         """Clear one participant's private behavior ledger without touching table facts."""
         if not participant_id.strip():
@@ -1086,6 +1120,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._safety_resolutions,
                 self._personal_context_consents,
                 self._behavior_events,
+                self._public_source_signals,
             ) = self._load()
 
     @_synchronized
@@ -1097,17 +1132,20 @@ class JsonTableRepository(InMemoryTableRepository):
         *,
         origin_table_id: str | None = None,
         origin_signal_ids: Sequence[str] | None = None,
+        origin_signals: Sequence[ContentSignal] | None = None,
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
         if len(participants) > MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
+        origin_ids = list(origin_signal_ids or [])
+        public_signals = _index_public_source_signals(origin_signals, origin_ids)
         state = build_initial_state(
             table_id,
             core_question,
             participants,
             origin_table_id,
-            origin_signal_ids,
+            origin_ids,
         )
         states = {**self._states, table_id: [state]}
         turns = {**self._turns, table_id: []}
@@ -1120,12 +1158,17 @@ class JsonTableRepository(InMemoryTableRepository):
         reports = {**self._safety_reports, table_id: []}
         report_audits = {**self._safety_report_audits, table_id: []}
         resolutions = {**self._safety_resolutions, table_id: []}
+        public_source_signals = {
+            **self._public_source_signals,
+            table_id: public_signals,
+        }
         self._commit(
             states, turns, self._trusted_grounding_cards, interventions, invitations,
             outcomes, feedback, comments, self._no_match, reports,
             comment_promotions=comment_promotions,
             safety_report_audits=report_audits,
             safety_resolutions=resolutions,
+            public_source_signals=public_source_signals,
         )
         return state.model_copy(deep=True)
 
@@ -1960,6 +2003,7 @@ class JsonTableRepository(InMemoryTableRepository):
         behavior_events: dict[str, list[BehaviorEvent]] | None = None,
         safety_resolutions: dict[str, list[SafetyResolution]] | None = None,
         safety_report_audits: dict[str, list[SafetyReportStatusAudit]] | None = None,
+        public_source_signals: dict[str, dict[str, ContentSignal]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -1993,6 +2037,11 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_resolutions
             if safety_resolutions is not None
             else self._safety_resolutions
+        )
+        public_source_rows = (
+            public_source_signals
+            if public_source_signals is not None
+            else self._public_source_signals
         )
         payload = {
             "tables": {
@@ -2046,6 +2095,10 @@ class JsonTableRepository(InMemoryTableRepository):
             "behavior_events": {
                 participant_id: [item.model_dump(mode="json") for item in rows]
                 for participant_id, rows in behavior_rows.items()
+            },
+            "public_source_signals": {
+                table_id: [item.model_dump(mode="json") for item in rows.values()]
+                for table_id, rows in public_source_rows.items()
             },
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -2112,6 +2165,13 @@ class JsonTableRepository(InMemoryTableRepository):
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in resolution_rows.items()
         }
+        self._public_source_signals = {
+            table_id: {
+                signal_id: item.model_copy(deep=True)
+                for signal_id, item in rows.items()
+            }
+            for table_id, rows in public_source_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -2126,9 +2186,10 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, set[str]],
         dict[str, list[SafetyReport]],
         dict[str, list[SafetyReportStatusAudit]],
+        dict[str, list[SafetyResolution]],
         dict[str, PersonalContextConsent],
         dict[str, list[BehaviorEvent]],
-        dict[str, list[SafetyResolution]],
+        dict[str, dict[str, ContentSignal]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -2138,6 +2199,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 or not set(payload).issubset({
                     "tables", "trusted_grounding_cards", "no_match",
                     "personal_context_consents", "behavior_events",
+                    "public_source_signals",
                 })
                 or not isinstance(payload["tables"], dict)):
             raise ValueError("invalid persistence file: expected {'tables': {...}}")
@@ -2412,4 +2474,51 @@ class JsonTableRepository(InMemoryTableRepository):
             if len(set(event_ids)) != len(event_ids):
                 raise ValueError("invalid persistence file: duplicate behavior event")
             behavior_events[participant_id] = events
-        return states, turns, cards, interventions, invitations, follow_up_outcomes, value_feedback, comments, comment_promotions, no_match, safety_reports, safety_report_audits, safety_resolutions, consents, behavior_events
+        raw_public_sources = payload.get("public_source_signals", {})
+        if not isinstance(raw_public_sources, dict):
+            raise ValueError("invalid persistence file: malformed public_source_signals")
+        public_source_signals: dict[str, dict[str, ContentSignal]] = {}
+        for table_id, raw_signals in raw_public_sources.items():
+            if table_id not in states or not isinstance(table_id, str) or not table_id:
+                raise ValueError("invalid persistence file: public source signal for unknown table")
+            if not isinstance(raw_signals, list) or len(raw_signals) > MAX_PUBLIC_SOURCE_SIGNALS:
+                raise ValueError(
+                    f"invalid persistence file: public source snapshot for table {table_id!r} is malformed"
+                )
+            try:
+                signals = [ContentSignal.model_validate(item) for item in raw_signals]
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"invalid persistence file: invalid public source signal for table {table_id!r}"
+                ) from error
+            signal_ids = [signal.signal_id for signal in signals]
+            if len(signal_ids) != len(set(signal_ids)):
+                raise ValueError(
+                    f"invalid persistence file: duplicate public source signal for table {table_id!r}"
+                )
+            allowed_ids = set(states[table_id][-1].origin_signal_ids)
+            if any(signal_id not in allowed_ids for signal_id in signal_ids):
+                raise ValueError(
+                    f"invalid persistence file: public source signal is not an origin signal for table {table_id!r}"
+                )
+            public_source_signals[table_id] = {
+                signal.signal_id: signal for signal in signals
+            }
+        return (
+            states,
+            turns,
+            cards,
+            interventions,
+            invitations,
+            follow_up_outcomes,
+            value_feedback,
+            comments,
+            comment_promotions,
+            no_match,
+            safety_reports,
+            safety_report_audits,
+            safety_resolutions,
+            consents,
+            behavior_events,
+            public_source_signals,
+        )
