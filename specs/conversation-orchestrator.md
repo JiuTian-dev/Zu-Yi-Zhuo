@@ -611,6 +611,13 @@
 - **替代方案**: 永久保留匿名回放、只让前端自行过滤，或新建一套与 replay 分叉的私有接口；这些方案分别直接泄露桌内内容、无法抵御恶意客户端、或造成两套回放口径。
 - **代价**: 生产接入方必须提供可用的身份解析器；本地无认证演示仍是显式开发模式，不应直接暴露到公网。
 
+### ADR-85: 问题足迹显式连接下一桌
+
+- **决策**: 扩展 D104 的 `QuestionFootprintEntry`，增加最多 3 条按稳定桌 ID 排序的 `next_tables`。每条只返回直接以当前桌为 `origin_table_id` 的下一桌 ID、当前状态版本、公开核心问题、阶段和关闭标记；下一桌可以尚未收桌，且不要求原桌成员自动入席。链接从仓储中已持久化的桌状态实时派生，不新建关系账本，也不返回下一桌成员、消息、邀请、个人卡或来源私密信息。
+- **理由**: 产品要求让用户看到“我补上的视角推动了什么问题、原问题是否长出了下一桌”。现有问题足迹只停留在单桌的 `what_changed`，而 D100 的全局谱系接口需要前端另行拼接，无法把个人贡献和后续桌直接连起来。服务端补一个有界的公开子投影，可以在不扩大隐私面的前提下形成可点击的认知进化闭环，并在 JSON 重启后保持一致。
+- **替代方案**: 让前端调用每个桌的 lineage 再自行匹配、返回完整 `TableState`、或为问题演化建立可写图账本；这些方案分别容易产生竞态/重复逻辑、泄露成员和过程数据、或引入第二事实源与复杂删除边界。
+- **代价**: 只覆盖当前桌的直接子桌，最多 3 条且无分页；多父问题图、跨代聚合和提醒仍需后续独立契约。下一桌的公开问题和生命周期不代表该成员已被邀请或已经入席。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -736,6 +743,10 @@ ReplayResponse(..., source_signals?<=20)
 TableLineageResponse(table_id, items<=10)
 TableLineageItem(table_id, origin_table_id?, version, core_question,
                  origin_signal_ids?<=20, source_signals?<=20)
+QuestionFootprintEntry(table_id, state_version, core_question,
+                       your_contribution, what_changed, next_tables<=3)
+QuestionFootprintNextTable(table_id, state_version, core_question,
+                           phase, closed)
 ActiveIntentPreview(normalized_question, route=clarify|join_existing|new_table,
                     clarifying_question?, candidates<=5)
 ActiveIntentTableCandidate(table_id, core_question, current_subquestion?,
@@ -957,6 +968,7 @@ master
 | D105 action echoes projection | complete | Add self-scoped bounded action outcome history derived from closed follow-up ledgers | 374 tests + compileall + diff check | `8554116` |
 | D106 evaluation funnel and attention metrics | complete | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | 375 tests + compileall + diff check | `c6a93d4` |
 | D107 production replay identity gate | complete | Require authenticated current-table membership for raw replay reads when an identity resolver is configured | 376 tests + compileall + diff check | `0797f56` |
+| D108 question footprint next-table links | in_progress | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | pending |
 
 ## 已知坑位（Running Gotchas）
 
