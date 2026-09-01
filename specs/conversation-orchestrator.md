@@ -930,7 +930,7 @@ master
 | D101 active intent routing preview | complete | Add a non-persistent natural-language demand entry that routes to clarification, an existing public table, or a new table without bypassing invitation boundaries | 367 tests + compileall + diff check | `398ce10` |
 | D102 active intent available-seat filter | complete | Filter full tables from active-demand routing and expose bounded available-seat counts | 368 tests + compileall + diff check | `506ff53` |
 | D103 single-table evaluation projection | complete | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | 370 tests + compileall + diff check | `800d5f3` |
-| D104 question footprint projection | in_progress | Add self-scoped bounded contribution/changed-evidence view derived from closed table snapshots | pending | — |
+| D104 question footprint projection | complete | Add self-scoped bounded contribution/changed-evidence view derived from closed table snapshots | 372 tests + compileall + diff check | `698f2b9` |
 
 ## 已知坑位（Running Gotchas）
 
