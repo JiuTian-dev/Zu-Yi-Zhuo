@@ -569,6 +569,13 @@
 - **替代方案**: 直接把需求转成新桌、让前端自行搜索桌、或立即调用个人 source 生成画像；这些方案分别会产生未经确认的状态、绕过后端公开匹配约束、或扩大隐私授权面。
 - **代价**: V1 词项匹配不能替代语义检索；没有命中时只给出新桌方向，后续可在同一响应契约后接向量/模型召回而不改变写入边界。
 
+### ADR-79: 主动需求候选只返回可执行空席
+
+- **决策**: `/intents/preview` 过滤掉已有 5 名真人成员的开放桌；每个返回候选补充 `available_seats`，按服务端五席硬上限计算。关闭、软过期桌本来就不进入候选。该过滤只影响路由预览，不改变邀请或入席事务。
+- **理由**: 用户主动需求的下一步必须可执行；把满桌返回为“加入已有桌”会造成前端二次失败，也会把“5 人最佳”的容量规则推迟到最后一步才暴露。
+- **替代方案**: 返回满桌并显示等待、让前端自行过滤、或自动挤出旧成员；这些方案分别增加不可执行路径、绕过服务端事实、或破坏成员退出/邀请边界。
+- **代价**: 满桌暂时不会出现在主动需求候选中；未来若支持候补队列，应新增显式 waitlist 契约，不复用 `available_seats`。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -694,7 +701,7 @@ TableLineageItem(table_id, origin_table_id?, version, core_question,
 ActiveIntentPreview(normalized_question, route=clarify|join_existing|new_table,
                     clarifying_question?, candidates<=5)
 ActiveIntentTableCandidate(table_id, core_question, current_subquestion?,
-                           mode, participant_count, reason)
+                           mode, participant_count, available_seats, reason)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -903,6 +910,7 @@ master
 | D99 public source snapshot ledger | complete | Persist bounded public `ContentSignal` snapshots outside `TableState`, expose them in replay, and recover them after JSON restart without accepting private fields | 362 tests + compileall + diff check | `de04494` + `f9de581` |
 | D100 bounded public table lineage view | complete | Expose a bounded oldest-to-current question lineage using `origin_table_id` and public source snapshots without leaking member data | 364 tests + compileall + diff check | `4805bdc` |
 | D101 active intent routing preview | complete | Add a non-persistent natural-language demand entry that routes to clarification, an existing public table, or a new table without bypassing invitation boundaries | 367 tests + compileall + diff check | `398ce10` |
+| D102 active intent available-seat filter | complete | Filter full tables from active-demand routing and expose bounded available-seat counts | 368 tests + compileall + diff check | `506ff53` |
 
 ## 已知坑位（Running Gotchas）
 
