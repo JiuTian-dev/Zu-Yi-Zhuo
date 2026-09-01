@@ -1253,9 +1253,14 @@ class InMemoryTableRepository:
 
     @_synchronized
     def append_intervention_bundle(
-        self, table_id: str, state: TableState, record: InterventionRecord
+        self,
+        table_id: str,
+        state: TableState,
+        record: InterventionRecord,
+        *,
+        consume_grounding_card: bool = False,
     ) -> TableState:
-        """Commit an intervention snapshot and its audit record together."""
+        """Commit an intervention snapshot, audit record, and optional card consumption."""
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
@@ -1269,9 +1274,17 @@ class InMemoryTableRepository:
             raise ValueError("SILENCE interventions are not persisted")
         if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"intervention already exists: {record.intervention_id}")
+        staged_card = self._trusted_grounding_cards.get(table_id)
+        if consume_grounding_card:
+            if record.grounding_card is None or staged_card is None:
+                raise ValueError("grounding card is no longer staged")
+            if staged_card != record.grounding_card:
+                raise ValueError("grounding card changed before intervention commit")
         snapshot = TableState.model_validate(state.model_dump())
         self._states[table_id].append(snapshot)
         self._interventions[table_id].append(record.model_copy(deep=True))
+        if consume_grounding_card:
+            self._trusted_grounding_cards.pop(table_id, None)
         return snapshot.model_copy(deep=True)
 
     @_synchronized
@@ -1380,6 +1393,13 @@ class InMemoryTableRepository:
         """Consume the staged source so it cannot be silently reused for later claims."""
         self.get(table_id)
         card = self._trusted_grounding_cards.pop(table_id, None)
+        return card.model_copy(deep=True) if card is not None else None
+
+    @_synchronized
+    def peek_trusted_grounding_card(self, table_id: str) -> GroundingCard | None:
+        """Read the staged source without consuming it before a bundle commit."""
+        self.get(table_id)
+        card = self._trusted_grounding_cards.get(table_id)
         return card.model_copy(deep=True) if card is not None else None
 
     @_synchronized
@@ -2275,6 +2295,13 @@ class JsonTableRepository(InMemoryTableRepository):
         return card.model_copy(deep=True)
 
     @_synchronized
+    def peek_trusted_grounding_card(self, table_id: str) -> GroundingCard | None:
+        """Read a staged source without persisting a removal."""
+        self.get(table_id)
+        card = self._trusted_grounding_cards.get(table_id)
+        return card.model_copy(deep=True) if card is not None else None
+
+    @_synchronized
     def _append(self, table_id: str, state: TableState) -> TableState:
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
@@ -2283,9 +2310,14 @@ class JsonTableRepository(InMemoryTableRepository):
 
     @_synchronized
     def append_intervention_bundle(
-        self, table_id: str, state: TableState, record: InterventionRecord
+        self,
+        table_id: str,
+        state: TableState,
+        record: InterventionRecord,
+        *,
+        consume_grounding_card: bool = False,
     ) -> TableState:
-        """Persist the state and matching audit record in one JSON snapshot."""
+        """Persist state, audit record, and optional card consumption in one JSON snapshot."""
         latest = self.get(table_id)
         if latest.conversation.closed:
             raise ValueError("table is closed")
@@ -2299,13 +2331,21 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError("SILENCE interventions are not persisted")
         if any(item.intervention_id == record.intervention_id for item in self._interventions[table_id]):
             raise ValueError(f"intervention already exists: {record.intervention_id}")
+        cards = dict(self._trusted_grounding_cards)
+        staged_card = cards.get(table_id)
+        if consume_grounding_card:
+            if record.grounding_card is None or staged_card is None:
+                raise ValueError("grounding card is no longer staged")
+            if staged_card != record.grounding_card:
+                raise ValueError("grounding card changed before intervention commit")
+            cards.pop(table_id, None)
         snapshot = TableState.model_validate(state.model_dump())
         states = {**self._states, table_id: [*self._states[table_id], snapshot]}
         interventions = {
             **self._interventions,
             table_id: [*self._interventions[table_id], record.model_copy(deep=True)],
         }
-        self._commit(states, self._turns, self._trusted_grounding_cards, interventions)
+        self._commit(states, self._turns, cards, interventions)
         return snapshot.model_copy(deep=True)
 
     @_synchronized

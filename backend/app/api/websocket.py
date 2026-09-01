@@ -499,7 +499,7 @@ def register_websocket_routes(
                         gate, route = decide_intervention(state)
                         if gate.should_speak and route.action is not Action.SILENCE:
                             grounding_card = (
-                                repository.take_trusted_grounding_card(table_id)
+                                repository.peek_trusted_grounding_card(table_id)
                                 if route.action is Action.GROUND else None
                             )
                             action = await generate_host_event_with_provider(
@@ -521,7 +521,11 @@ def register_websocket_routes(
                                 grounding_card=grounding_card,
                             )
                             state = repository.append_intervention_bundle(
-                                table_id, final_state, record
+                                table_id,
+                                final_state,
+                                record,
+                                consume_grounding_card=route.action is Action.GROUND
+                                and grounding_card is not None,
                             )
 
                         await broadcast(table_id, {

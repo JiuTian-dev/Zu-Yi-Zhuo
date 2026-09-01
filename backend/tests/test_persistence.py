@@ -415,13 +415,54 @@ def test_json_intervention_bundle_recovers_state_and_audit_together(tmp_path) ->
         ),
     )
 
-    repository.append_intervention_bundle("bundle", next_state, record)
+    repository.set_trusted_grounding_card("bundle", record.grounding_card)
+    repository.append_intervention_bundle(
+        "bundle", next_state, record, consume_grounding_card=True
+    )
     restored = JsonTableRepository(path)
     assert restored.get("bundle").version == 1
     assert restored.interventions("bundle") == [record]
+    assert restored.peek_trusted_grounding_card("bundle") is None
     assert restored.interventions("bundle")[0].grounding_card == GroundingCard(
         title="采购流程",
         excerpt="试点与正式采购由不同责任链承接。",
         source_ref="demo:42",
         signal_id="signal-42",
     )
+
+
+def test_json_grounding_card_stays_staged_when_bundle_commit_fails(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "bundle-failure.json"
+    repository = JsonTableRepository(path)
+    repository.create("bundle-failure", "Q", flagship_participants)
+    card = GroundingCard(title="采购流程", excerpt="公开证据。", source_ref="demo:failure")
+    repository.set_trusted_grounding_card("bundle-failure", card)
+
+    def fail_commit(*args, **kwargs):
+        raise OSError("simulated snapshot failure")
+
+    monkeypatch.setattr(repository, "_commit", fail_commit)
+    next_state = repository.get("bundle-failure").model_copy(update={"version": 1})
+    record = InterventionRecord(
+        action=Action.GROUND,
+        text="补一条公开证据。",
+        visual_hint={"kind": "ground"},
+        evidence_turns=[1],
+        state_version=1,
+        confidence=.8,
+        intervention_id="bundle-failure:intervention:1",
+        table_id="bundle-failure",
+        reasons_to_speak=[EvidenceStatement(text="有公开证据", evidence_turns=[1])],
+        latency_ms=0,
+        model="test",
+        token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+        grounding_card=card,
+    )
+    with pytest.raises(OSError, match="simulated snapshot failure"):
+        repository.append_intervention_bundle(
+            "bundle-failure", next_state, record, consume_grounding_card=True
+        )
+
+    assert repository.peek_trusted_grounding_card("bundle-failure") == card
+    assert repository.get("bundle-failure").version == 0
+    assert repository.interventions("bundle-failure") == []
