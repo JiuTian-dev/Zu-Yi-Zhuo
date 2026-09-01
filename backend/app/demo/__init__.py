@@ -1,6 +1,13 @@
 """Small deterministic scenarios for local replay."""
 
 from .bootstrap import DemoSeedResult, seed_demo_tables
+from .public_signals import flagship_public_signals
 from .scenarios import SCENARIOS, flagship_participants
 
-__all__ = ("DemoSeedResult", "SCENARIOS", "flagship_participants", "seed_demo_tables")
+__all__ = (
+    "DemoSeedResult",
+    "SCENARIOS",
+    "flagship_participants",
+    "flagship_public_signals",
+    "seed_demo_tables",
+)
