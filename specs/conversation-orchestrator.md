@@ -646,6 +646,13 @@
 - **替代方案**: 让前端直接读取 `/tables/{id}/state` 后自行过滤、为候选人提前创建临时参与者、或只返回静态 mock 文案；这些方案分别扩大隐私面、污染席位状态、或无法反映真实桌面进展。
 - **代价**: V1 的“为什么缺我”表达为桌级角色缺口而非个人画像匹配理由；候选人个性化申请仍通过 D111 的 JoinRequest 流程表达，未来可在不改变 Lobby 公开契约的前提下增加单独的 fit-preview。
 
+### ADR-90: Lobby 个性化理由只做只读 fit-preview
+
+- **决策**: 增加候选人自证的 `POST /tables/{id}/lobby-fit?participant_id={candidate_id}`。请求提交候选人的 `ParticipantSeed`，服务端只使用其公开角色与桌面角色缺口生成 `LobbyFitPreview(eligible, matched_role_gap?, reason)`；不返回立场、经历、source ID 或其他成员资料，不保存候选种子、不创建申请、不发邀请、不广播事件。关闭、软过期、满桌、免邀请偏好、已入席或 no-match 均返回 `eligible=false` 的通用理由；正常开放且未命中边界时返回 `eligible=true`，候选人仍须走 D111 申请/邀请流程。
+- **理由**: Lobby 验收要求“为什么想到你”，但不能在入席前把个人画像写入桌状态或让前端自行推断。只读 fit-preview 让候选人获得可解释的下一步提示，并把“适配判断”和真正的申请/邀请事务分开。
+- **替代方案**: 直接把候选人加入桌、把完整个人资料放进 Lobby、或让前端按静态角色文案决定；这些方案分别绕过席位边界、扩大隐私暴露、或产生不可审计的客户端决策。
+- **代价**: V1 只提供角色缺口级别的通用理由，不声称基于知乎个人历史做推荐；真实个人 source 仍需独立授权，申请与入席状态仍由 D111 负责。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -661,6 +668,7 @@ POST /opportunities/source-preview
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
 GET  /tables/{id}/lobby
+POST /tables/{id}/lobby-fit?participant_id={candidate_id}
 POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
@@ -800,6 +808,7 @@ LobbyPreview(table_id, core_question, current_subquestion?, phase, mode,
              state_version, participant_count, available_seats,
              members<=5, role_gaps<=5, missing_perspective,
              origin_signal_ids?<=20)
+LobbyFitPreview(table_id, participant_id, eligible, matched_role_gap?, reason)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -906,7 +915,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D109 capabilities introspection
                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D110 active-intent public signal attribution
                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D111 candidate-initiated join request
-                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D112 Lobby public read model
+                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D112 Lobby public read model
+                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D113 Lobby personalized fit preview
 ```
 
 ## Progress Ledger
@@ -1029,6 +1039,7 @@ master
 | D110 active-intent public signal attribution | complete | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | 380 tests + compileall + diff check | `cabd773` + `2c3c67e` |
 | D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 386 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` + `be700fd` |
 | D112 Lobby public read model | complete | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | 390 tests + compileall + diff check | `b12a235` + `df0b1ce` + `507eed7` |
+| D113 Lobby personalized fit preview | in_progress | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | pending | |
 
 ## 已知坑位（Running Gotchas）
 
