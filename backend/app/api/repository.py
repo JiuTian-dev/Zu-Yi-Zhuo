@@ -9,13 +9,14 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, observe_turn
 
 MAX_TABLE_PARTICIPANTS = 5
 MAX_PUBLIC_SOURCE_SIGNALS = 20
 MAX_TABLE_LINEAGE_DEPTH = 10
+MAX_QUESTION_FOOTPRINT_ITEMS = 50
 
 
 def _index_public_source_signals(
@@ -733,6 +734,34 @@ class InMemoryTableRepository:
                     evidence_turns=list(relationship.evidence_turns),
                 ))
         return [memory.model_copy(deep=True) for memory in memories]
+
+    @_synchronized
+    def question_footprint(
+        self, participant_id: str, *, limit: int = 20
+    ) -> list[QuestionFootprintEntry]:
+        """Derive a bounded self-only contribution history from closed states."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        if limit < 1 or limit > MAX_QUESTION_FOOTPRINT_ITEMS:
+            raise ValueError(
+                f"question footprint limit must be between 1 and {MAX_QUESTION_FOOTPRINT_ITEMS}"
+            )
+        entries: list[QuestionFootprintEntry] = []
+        for table_id in sorted(self._states):
+            state = self._states[table_id][-1]
+            if not state.conversation.closed or participant_id not in state.participants:
+                continue
+            card = build_personal_card(state, participant_id)
+            entries.append(QuestionFootprintEntry(
+                table_id=table_id,
+                state_version=state.version,
+                core_question=state.core_question,
+                your_contribution=list(card.your_contribution),
+                what_changed=list(card.what_changed),
+            ))
+            if len(entries) >= limit:
+                break
+        return [entry.model_copy(deep=True) for entry in entries]
 
     @_synchronized
     def respond_invitation(

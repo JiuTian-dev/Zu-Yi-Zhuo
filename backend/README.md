@@ -48,6 +48,7 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/safety/resolve` / `GET /tables/{table_id}/safety/resolutions`：仅对注入的 `moderator_resolver` 开放；可原子恢复 critical 暂停或移除一名成员，并读取不可变处置审计。未配置审核器时返回 503，不能用请求体自报 moderator。
 - `POST /tables/{table_id}/recompose?participant_id=...`：从已收桌的进化问题创建下一桌；参与者必须重新选择，不自动复制旧桌成员，并在新状态记录 `origin_table_id`。生产注入 `identity_resolver` 后要求由当前桌成员发起。
 - `GET /participants/{participant_id}/relationship-memory?viewer_id=...`：本人查询已收桌中有证据的旧桌友提醒。
+- `GET /participants/{participant_id}/question-footprint?viewer_id=...&limit=...`：本人查询有界的问题足迹，回顾已收桌中自己补上的视角与桌级认知变化；不返回他人私密资料。
 - `POST /tables/{table_id}/select?participant_id=...`：显式记录一次 open 桌选择；服务端生成稳定行为事件，不会自动入席或改变桌状态。
 - `POST /tables/{table_id}/relationships/{related_participant_id}/save?participant_id=...`：收桌后由成员本人保存一段关系；服务端校验双方同桌身份并生成稳定事件，不复制个人卡或好友图。
 - `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、收桌、关系保存、行动回响、价值反馈）；真人发言、收桌和首次价值反馈由后端自动沉淀，事件不广播给同桌。

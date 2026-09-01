@@ -718,6 +718,16 @@ class TableEvaluation(ContractModel):
         return self
 
 
+class QuestionFootprintEntry(ContractModel):
+    """One member's evidence-backed contribution to a closed table."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    core_question: str = Field(min_length=1, max_length=120)
+    your_contribution: list[EvidenceStatement] = Field(default_factory=list, max_length=5)
+    what_changed: list[EvidenceStatement] = Field(default_factory=list, max_length=8)
+
+
 class PeripheralComment(ContractModel):
     """A public comment that never enters the core conversation turn stream."""
 

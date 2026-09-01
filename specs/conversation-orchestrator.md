@@ -583,6 +583,13 @@
 - **替代方案**: 让前端拼接多个接口、返回每位成员的明细、或建立独立可写的分析表；这些方案分别容易出现版本竞态/口径漂移、扩大隐私面、或引入与事实状态不一致的第二账本。
 - **代价**: 评估是当前桌快照的派生读模型，不提供跨桌全局报表或历史趋势；未来若需要运营分析，应在受控数据管道中按相同字段聚合，而不是扩张本接口的个人数据面。
 
+### ADR-81: 问题足迹从已收桌证据派生
+
+- **决策**: 增加自证只读 `GET /participants/{participant_id}/question-footprint?viewer_id={participant_id}&limit={n}`，最多返回 50 条该成员当前仍在席且已收桌的足迹。每条只含桌 ID、收桌状态版本、公开核心问题、该成员自己的 `your_contribution` 和桌级 `what_changed` 证据；顺序按稳定桌 ID 排列，接口不写入行为事件或复制个人卡。`viewer_id` 必须与路径参与者一致，并继续经过可选服务端身份解析器。
+- **理由**: 产品要求把“你补上了什么视角 / 你的追问推动了什么问题”沉淀为轻量问题足迹，形成贡献感而不是积分排行榜。直接从已收桌快照和确定性个人卡派生，可以复用现有证据链，在 JSON 重启后保持一致，也不会建立可漂移的用户画像副本。
+- **替代方案**: 让前端逐桌拼接收桌卡、建立可编辑的全局个人画像、或返回所有桌成员的贡献明细；这些方案分别容易丢失/竞态、扩大长期隐私与删除边界、或泄露他人私密信息。
+- **代价**: 足迹只覆盖当前收桌状态仍保留该成员的桌，不提供跨用户公开排行榜；成员离桌后如需恢复其历史贡献，需要未来单独设计可撤回的个人 artifact 保留策略。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -620,6 +627,7 @@ POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/evaluation?participant_id={member_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
+GET  /participants/{participant_id}/question-footprint?viewer_id={participant_id}&limit={n}
 POST /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 GET  /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 DELETE /participants/{participant_id}/behavior-events?viewer_id={participant_id}
@@ -807,7 +815,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                        ←── D99 persisted public source snapshot ledger
                                                                                                                                                                                                                                                                                                                                                                                             ←── D100 bounded public table lineage view
                                                                                                                                                                                                                                                                                                                                                                                                  ←── D101 active intent routing preview
-                                                                                                                                                                                                                                                                                                                                                                                                       ←── D103 single-table evaluation projection
+                                                                                                                                                                                                                                                                                                                                                                                                      ←── D103 single-table evaluation projection
+                                                                                                                                                                                                                                                                                                                                                                                                              ←── D104 question footprint projection
 ```
 
 ## Progress Ledger
@@ -921,6 +930,7 @@ master
 | D101 active intent routing preview | complete | Add a non-persistent natural-language demand entry that routes to clarification, an existing public table, or a new table without bypassing invitation boundaries | 367 tests + compileall + diff check | `398ce10` |
 | D102 active intent available-seat filter | complete | Filter full tables from active-demand routing and expose bounded available-seat counts | 368 tests + compileall + diff check | `506ff53` |
 | D103 single-table evaluation projection | complete | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | 370 tests + compileall + diff check | `800d5f3` |
+| D104 question footprint projection | in_progress | Add self-scoped bounded contribution/changed-evidence view derived from closed table snapshots | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
