@@ -1105,7 +1105,7 @@ master
 | D116 idempotent demo seed CLI | complete | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | 398 tests + compileall + diff check | `f1824f7` + `92cde69` + `012b10a` |
 | D117 read-only public opportunity demo CLI | complete | Demonstrate public-signal opportunity discovery and explainable candidate output without network, persistence, or private-context access | 400 tests + compileall + diff check | `1b15f1b` + `12a6600` |
 | D118 isolated full journey demo CLI | complete | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | 402 tests + compileall + diff check | `0463be6` + `ca5755d` |
-| D119 opportunity-to-match journey demo | in progress | Start the isolated journey from public opportunity preview and match confirmation before entering Lobby and conversation | pending | — |
+| D119 opportunity-to-match journey demo | complete | Start the isolated journey from public opportunity preview and match confirmation before entering Lobby and conversation | 402 tests + compileall + diff check | `d980873` |
 
 ## 已知坑位（Running Gotchas）
 
