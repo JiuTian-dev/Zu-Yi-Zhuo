@@ -134,7 +134,6 @@ function HallwayBackdrop({ tables, flowTexture, reducedMotion }: {
 
 export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnFocusId }: HallwayProps) {
   const [index, setIndex] = useState(0)
-  const [forming, setForming] = useState(false)
   const cooldown = useRef(0)
   const wheelDelta = useRef(0)
   const galleryActive = phase === 'gallery'
@@ -166,7 +165,6 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
     if (!galleryActive || target < 0 || target >= galleryTables.length) return
     if (Date.now() < cooldown.current) return
     cooldown.current = Date.now() + SWITCH_COOLDOWN_MS
-    setForming(false)
     hallwayState.index = target
     setIndex(target)
   }
@@ -203,10 +201,7 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
   }, [galleryActive, returnFocusId])
 
   const enter = () => {
-    if (featured.entryMode !== 'immersive') {
-      setForming(true)
-      return
-    }
+    if (featured.entryMode !== 'immersive') return
     onEnter(featured, { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight })
   }
 
@@ -221,10 +216,10 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
       </header>
 
       <button className={`hallway-beacon hallway-beacon-prev ${prev ? '' : 'is-edge'}`} type="button" onClick={() => switchTo(index - 1)} disabled={!prev || !galleryActive}>
-        {prev && <><i data-world={prev.worldId} /><span><small>{worldLabel(prev.worldId)} · {prev.seatedCount} 人</small><b>{prev.hook}</b></span></>}
+        {prev && <><i data-world={prev.worldId} /><img src={prev.sceneTexture} alt="" /><span><b>{worldLabel(prev.worldId)}</b></span></>}
       </button>
       <button className={`hallway-beacon hallway-beacon-next ${next ? '' : 'is-edge'}`} type="button" onClick={() => switchTo(index + 1)} disabled={!next || !galleryActive}>
-        {next && <><i data-world={next.worldId} /><span><small>{worldLabel(next.worldId)} · {next.seatedCount} 人</small><b>{next.hook}</b></span></>}
+        {next && <><i data-world={next.worldId} /><img src={next.sceneTexture} alt="" /><span><b>{worldLabel(next.worldId)}</b></span></>}
       </button>
 
       <section className="hallway-featured" aria-labelledby="hallway-title">
@@ -233,17 +228,16 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
           <h1 id="hallway-title">{featured.hook}</h1>
           <p className="hallway-missing">{featured.missingPerspective}</p>
           {featured.recommendedBecause && (
-            <p className="hallway-recommend"><small>为什么想到你</small>{featured.recommendedBecause}</p>
+            <p className="hallway-recommend">{featured.recommendedBecause}</p>
           )}
           <button className="hallway-cta" type="button" data-table-id={featured.id} onClick={enter} disabled={!galleryActive}>
-            {featured.entryMode === 'immersive' ? '坐下来看看' : forming ? '还在等合适的人' : '正在形成'} <i>→</i>
+            {featured.entryMode === 'immersive' ? '坐下来看看' : '正在形成'} <i>→</i>
           </button>
-          <p className="hallway-forming" role="status" aria-live="polite">{forming && featured.entryMode !== 'immersive' ? '这张桌还在等待合适的人，形成后会从这里亮起来。' : ''}</p>
         </div>
       </section>
 
       <footer className="hallway-footer">
-        <span>滚轮或 ← → 切换下一桌</span>
+        <span>{worldLabel(featured.worldId)}</span>
         <div className="hallway-dots">
           {galleryTables.map((table, dot) => (
             <button key={table.id} type="button" className={dot === index ? 'is-active' : ''} aria-label={`第 ${dot + 1} 桌：${table.hook}`} onClick={() => switchTo(dot)} disabled={!galleryActive} />

@@ -279,7 +279,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
       <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
         <button className="back-to-discovery" type="button" onClick={resetDiscovery}>←&nbsp;&nbsp;退回远景</button>
-        <div className="discussion-state"><i />{liveActive ? `${PHASE_LABELS[livePhase] ?? '讨论'}进行中` : '讨论正在发生'} <span>{liveActive ? `${String(liveMessages.length).padStart(2, '0')} 条` : joined ? '05 / 05' : '04 / 05'}</span></div>
+        <div className="discussion-state"><i />{liveActive ? `${PHASE_LABELS[livePhase] ?? '讨论'}进行中` : '讨论正在发生'}</div>
         {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
         {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
 
@@ -317,7 +317,6 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           </button>
         </div>
         <div className="question-card">
-          <small>{liveActive && liveSubQuestion ? '问题 · 推进中' : '此刻的问题'}</small>
           <p>{liveActive && liveSubQuestion ? liveSubQuestion : <>我们需要的是休息，<br />还是允许自己停下？</>}</p>
         </div>
         <button className="seat-marker" type="button" data-anchor="viewer" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{joined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
@@ -337,7 +336,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           )}
           <div>
             <span><b>{lastLive ? speakerName(lastLive.participantId) : currentTurn.displayName}</b> · {lastLive ? speakerRole(lastLive.participantId) : currentTurn.role}</span>
-            <i>{liveActive ? `${String(liveMessages.length).padStart(2, '0')} 条发言` : `${String(activeSpeaker + 1).padStart(2, '0')} / 05`}</i>
+            <i>{liveActive ? '·' : `${String(activeSpeaker + 1).padStart(2, '0')} / 05`}</i>
           </div>
           {joined && liveActive && (
             <form className="viewer-input" onSubmit={submitMessage}>
@@ -347,7 +346,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           )}
         </div>
         {liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
-        {closeState === 'started' && <div className="closing-progress" role="status">正在收桌 · 沉淀共识与分歧…</div>}
+        {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
         {closeState === 'ready' && liveBaseline && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onReturn={onExit} />}
         <button className="join-table-button" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i />{joined ? '已坐到第五席' : '坐到空席'} <span>{joined ? '✓' : '→'}</span></button>
         {joined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
@@ -359,7 +358,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
         <button className="panel-close" type="button" aria-label="关闭入席邀请" onClick={closeJoin}>×</button>
         <p className="panel-kicker">第五席 · 正在等你</p>
         <h2>你不需要带来答案。<br />只需要带来真实经历。</h2>
-        <div className="seat-profile"><span>为什么是你</span><p>桌上已经有自由职业、职场压力和心理恢复的视角，但还没有一个真正尝试停下来的人。</p></div>
+        <div className="seat-profile"><p>桌上已经有自由职业、职场压力和心理恢复的视角，但还没有一个真正尝试停下来的人。</p></div>
         <label className="voice-preview"><span>入席后，你想先说什么？</span><textarea ref={seatDraftRef} value={seatDraft} aria-invalid={joinError} aria-describedby={joinError ? 'seat-draft-error' : undefined} onChange={(event) => { setSeatDraft(event.target.value); if (joinError) setJoinError(false) }} placeholder="也许是最近一次，你明明在休息却仍然感到内疚……" /></label>
         {joinError && <p id="seat-draft-error" className="join-error" role="alert">先留下一句真实经历，再坐到桌边。</p>}
         <button className="confirm-seat" type="button" onClick={confirmSeat}>以真实经历入席 <span>→</span></button>
@@ -372,7 +371,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
         <button type="button" disabled><span>午后 Workshop</span>如果 AI 替你做一半工作，你会把时间还给什么？<small>下一张</small></button>
       </nav>
 
-      <footer className="scene-footer"><span>移动鼠标 · 感受山谷的空间</span><span>01 <i /> 03</span></footer>
+      <footer className="scene-footer"><span>瑞士山谷</span><span>01 <i /> 03</span></footer>
     </main>
   )
 }

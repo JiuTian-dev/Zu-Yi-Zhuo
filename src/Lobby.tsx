@@ -26,7 +26,7 @@ export default function Lobby({ table, onClose, onListen, onJoin }: LobbyProps) 
       <div className="lobby-backdrop" aria-hidden="true" onClick={onClose} />
       <section className="lobby" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`${table.hook} 的桌边预览`}>
         <button className="lobby-close" type="button" aria-label="关闭桌边预览" onClick={onClose}>×</button>
-        <p className="lobby-kicker">桌边预览 · {worldLabel(table.worldId)} · {table.status === 'live' ? '正在发生' : '正在形成'}</p>
+        <p className="lobby-kicker">{worldLabel(table.worldId)} · {table.status === 'live' ? '正在发生' : '正在形成'}</p>
         <h2 className="lobby-title">{table.hook}</h2>
 
         <div className="lobby-members" aria-label="桌上的成员">
@@ -48,14 +48,12 @@ export default function Lobby({ table, onClose, onListen, onJoin }: LobbyProps) 
 
         {table.previewLines && table.previewLines.length > 0 && (
           <div className="lobby-preview">
-            <small>他们刚才说到</small>
             {table.previewLines.map((line) => <p key={line}>{line}</p>)}
           </div>
         )}
 
         {table.recommendedBecause && (
           <div className="lobby-recommend">
-            <small>为什么想到你</small>
             <p>{table.recommendedBecause}</p>
           </div>
         )}
@@ -64,7 +62,7 @@ export default function Lobby({ table, onClose, onListen, onJoin }: LobbyProps) 
           <button className="lobby-listen" type="button" onClick={onListen}>先在旁边听听</button>
           <button className="lobby-join" type="button" onClick={onJoin}>坐下来看看 <span>→</span></button>
         </div>
-        <p className="lobby-hint">旁听不需要发言，随时可以坐到第五席。</p>
+
       </section>
     </div>
   )

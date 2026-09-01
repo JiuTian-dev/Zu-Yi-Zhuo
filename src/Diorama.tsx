@@ -333,6 +333,15 @@ function Stool({ seatId, cushion, pulled = 0 }: { seatId: string; cushion: strin
 }
 
 function TableSet() {
+  const flame = useRef<THREE.Mesh>(null)
+  const candleLight = useRef<THREE.PointLight>(null)
+  useFrame(({ clock }) => {
+    if (!flame.current || !candleLight.current) return
+    const t = clock.elapsedTime
+    const flicker = 0.92 + Math.sin(t * 8.7) * 0.05 + Math.sin(t * 21.3) * 0.03
+    flame.current.scale.setScalar(flicker)
+    candleLight.current.intensity = 1.1 * flicker
+  })
   return (
     <group position={[TABLE_POS.x, 0, TABLE_POS.z]}>
       <mesh position={[0, 0.06, 0]} receiveShadow>
@@ -347,10 +356,29 @@ function TableSet() {
         <cylinderGeometry args={[0.13, 0.17, 0.68, 8]} />
         <meshStandardMaterial color="#6b4a30" roughness={1} />
       </mesh>
-      <mesh position={[0, 0.75, 0]}>
-        <cylinderGeometry args={[0.16, 0.2, 0.1, 10]} />
-        <meshStandardMaterial color="#b0563f" roughness={0.9} />
+      <mesh position={[0, 0.71, 0]}>
+        <cylinderGeometry args={[0.05, 0.06, 0.09, 10]} />
+        <meshStandardMaterial color="#f3e2bb" roughness={0.8} />
       </mesh>
+      <mesh ref={flame} position={[0, 0.815, 0]}>
+        <sphereGeometry args={[0.048, 8, 8]} />
+        <meshBasicMaterial color="#ffcf6e" transparent opacity={0.95} toneMapped={false} />
+      </mesh>
+      <pointLight ref={candleLight} position={[0, 0.9, 0]} color="#ffb85c" intensity={1.1} distance={3.4} decay={2} />
+      <mesh position={[0.62, 0.78, 0.5]} castShadow>
+        <cylinderGeometry args={[0.075, 0.065, 0.16, 12]} />
+        <meshStandardMaterial color="#e8dcc2" roughness={0.7} />
+      </mesh>
+      <mesh position={[0.62, 0.78, 0.66]} rotation={[0, 0, Math.PI / 2]}>
+        <torusGeometry args={[0.055, 0.014, 8, 18, Math.PI]} />
+        <meshStandardMaterial color="#e8dcc2" roughness={0.7} />
+      </mesh>
+      <group position={[-0.62, 0.735, -0.28]} rotation={[0, 0.5, 0]}>
+        <mesh castShadow><boxGeometry args={[0.52, 0.05, 0.34]} /><meshStandardMaterial color="#b9a587" roughness={1} /></mesh>
+        <mesh position={[0.008, 0.028, 0.008]}><boxGeometry args={[0.48, 0.02, 0.3]} /><meshStandardMaterial color="#f0e6cc" roughness={1} /></mesh>
+        <mesh position={[0.1, 0.045, 0.06]} rotation={[0, 0, -0.06]}><boxGeometry args={[0.26, 0.006, 0.2]} /><meshStandardMaterial color="#fdf6e2" roughness={1} /></mesh>
+        <mesh position={[0.13, 0.09, 0.02]} rotation={[0, 0, -0.35]}><cylinderGeometry args={[0.008, 0.008, 0.16, 6]} /><meshStandardMaterial color="#3a3a44" roughness={0.6} /></mesh>
+      </group>
       {humanActors.concat(tableHost).map((actor) => (
         <Stool key={actor.id} seatId={actor.seatId} cushion={accentOf(actor.id)} />
       ))}
@@ -361,29 +389,46 @@ function TableSet() {
 
 /* ---------------------------------------------------------------- figures */
 
-function SittingFigure({ seatId, accent, isHost = false }: { seatId: string; accent: string; isHost?: boolean }) {
+function SittingFigure({ seatId, accent, isHost = false, lookTarget }:
+  { seatId: string; accent: string; isHost?: boolean; lookTarget: THREE.Vector3 }) {
   const pos = seatPos(seatId)
   const faceAngle = Math.atan2(TABLE_POS.x - pos.x, TABLE_POS.z - pos.z)
+  const head = useRef<THREE.Mesh>(null)
+  useFrame((_, delta) => {
+    if (!head.current || !lookTarget) return
+    const desired = Math.atan2(lookTarget.x - pos.x, lookTarget.z - pos.z) - faceAngle
+    const deltaAngle = Math.atan2(Math.sin(desired), Math.cos(desired))
+    head.current.rotation.y = THREE.MathUtils.damp(
+      head.current.rotation.y,
+      THREE.MathUtils.clamp(deltaAngle, -0.85, 0.85),
+      5,
+      delta,
+    )
+  })
   return (
     <group position={[pos.x, 0, pos.z]} rotation={[0, faceAngle, 0]}>
       <mesh position={[0, 0.66, 0.03]} castShadow>
         <capsuleGeometry args={[0.21, 0.3, 4, 10]} />
         <meshStandardMaterial color={accent} roughness={0.85} />
       </mesh>
-      <mesh position={[0, 1.09, 0]} castShadow>
-        <sphereGeometry args={[0.165, 14, 12]} />
-        <meshStandardMaterial color="#e6bd93" roughness={0.8} />
+      <mesh ref={head} position={[0, 1.09, 0]} castShadow>
+        <group>
+          <mesh>
+            <sphereGeometry args={[0.165, 14, 12]} />
+            <meshStandardMaterial color="#e6bd93" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 0.07, -0.045]}>
+            <sphereGeometry args={[0.158, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.9]} />
+            <meshStandardMaterial color={isHost ? '#e8e2d2' : '#4a3626'} roughness={1} />
+          </mesh>
+          {isHost && (
+            <mesh position={[0, -0.31, 0.2]}>
+              <sphereGeometry args={[0.05, 10, 8]} />
+              <meshStandardMaterial color="#ffd17c" emissive="#ffb84d" emissiveIntensity={1.4} />
+            </mesh>
+          )}
+        </group>
       </mesh>
-      <mesh position={[0, 1.16, -0.045]}>
-        <sphereGeometry args={[0.158, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.9]} />
-        <meshStandardMaterial color={isHost ? '#e8e2d2' : '#4a3626'} roughness={1} />
-      </mesh>
-      {isHost && (
-        <mesh position={[0, 0.78, 0.2]}>
-          <sphereGeometry args={[0.05, 10, 8]} />
-          <meshStandardMaterial color="#ffd17c" emissive="#ffb84d" emissiveIntensity={1.4} />
-        </mesh>
-      )}
     </group>
   )
 }
@@ -397,6 +442,7 @@ function Figures({ activeActorId, hoveredActorId, reducedMotion, phase }:
   const orbLight = useRef<THREE.PointLight>(null)
   const halo = useRef<THREE.Mesh>(null)
   const target = useMemo(() => new THREE.Vector3(), [])
+  const lookTarget = useMemo(() => new THREE.Vector3(), [])
   const seeded = useMemo(() => humanActors.concat(tableHost).map((actor, index) => ({ actor, seed: index * 1.9 })), [])
 
   useFrame(({ clock }) => {
@@ -413,6 +459,7 @@ function Figures({ activeActorId, hoveredActorId, reducedMotion, phase }:
     const isHostActive = activeActorId === 'table-host'
     const activeId: ActorId | 'viewer' | null = isHostActive ? null : activeActorId
     const activePos = seatPos(seatOf(activeId ?? 'table-host'))
+    lookTarget.set(activePos.x, 1.1, activePos.z)
     if (speakerLight.current) {
       target.set(activePos.x, 1.35, activePos.z)
       speakerLight.current.position.lerp(target, 1 - Math.exp(-3.2 * dt))
@@ -447,7 +494,7 @@ function Figures({ activeActorId, hoveredActorId, reducedMotion, phase }:
     <group ref={group}>
       {seeded.map(({ actor }) => (
         <group key={actor.id} userData={{ figure: true }}>
-          <SittingFigure seatId={actor.seatId} accent={accentOf(actor.id)} isHost={actor.id === 'table-host'} />
+          <SittingFigure seatId={actor.seatId} accent={accentOf(actor.id)} isHost={actor.id === 'table-host'} lookTarget={lookTarget} />
           {actor.id === 'table-host' && (
             <mesh ref={halo} position={[hostPos.x, 1.56, hostPos.z]} rotation={[Math.PI / 2.3, 0, 0.4]}>
               <torusGeometry args={[0.3, 0.018, 8, 40, Math.PI * 1.6]} />
