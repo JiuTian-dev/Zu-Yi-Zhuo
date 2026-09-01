@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -1761,6 +1761,65 @@ def create_app(
             action_average=average("action_value"),
             emotional_average=average("emotional_value"),
             would_join_again_count=sum(item.would_join_again for item in rows),
+        )
+
+    @api.get("/tables/{table_id}/evaluation", response_model=TableEvaluation)
+    def get_table_evaluation(
+        table_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> TableEvaluation:
+        """Return privacy-safe, member-scoped metrics for the current table."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+
+        turns = repo.turns(table_id)
+        interventions = repo.interventions(table_id)
+        follow_up_items: list[FollowUpItem] = []
+        if state.conversation.closed:
+            try:
+                follow_up_items = build_shared_baseline(state, turns=turns).collective_next_steps
+            except ValueError:
+                # A legacy/direct repository close may lack evidence for a baseline;
+                # evaluation remains readable and reports no close-card actions.
+                follow_up_items = []
+        outcomes = repo.follow_up_outcomes(table_id)
+        valid_outcomes = [
+            item for item in outcomes if 0 <= item.follow_up_index < len(follow_up_items)
+        ]
+        completed_outcomes = sum(item.status == "completed" for item in valid_outcomes)
+        feedback = feedback_summary(table_id, participant_id) if state.conversation.closed else None
+        response_count = feedback.response_count if feedback is not None else 0
+        feedback_completion_rate = round(response_count / len(state.participants), 2) if state.participants else 0.0
+
+        return TableEvaluation(
+            table_id=table_id,
+            state_version=state.version,
+            phase=state.phase,
+            closed=state.conversation.closed,
+            participant_count=len(state.participants),
+            human_turn_count=len(turns),
+            intervention_count=len(interventions),
+            reflected_intervention_count=sum(item.reflection is not None for item in interventions),
+            effective_intervention_count=sum(
+                item.reflection is not None and item.reflection.effective
+                for item in interventions
+            ),
+            follow_up_count=len(follow_up_items),
+            follow_up_reported_count=len(valid_outcomes),
+            follow_up_completed_count=completed_outcomes,
+            follow_up_completion_rate=(
+                round(completed_outcomes / len(follow_up_items), 2)
+                if follow_up_items else None
+            ),
+            feedback_completion_rate=feedback_completion_rate,
+            would_join_again_rate=(
+                round(feedback.would_join_again_count / response_count, 2)
+                if response_count else None
+            ),
+            feedback_summary=feedback,
         )
 
     @api.post("/tables/{table_id}/feedback", response_model=ValueFeedback)

@@ -576,6 +576,13 @@
 - **替代方案**: 返回满桌并显示等待、让前端自行过滤、或自动挤出旧成员；这些方案分别增加不可执行路径、绕过服务端事实、或破坏成员退出/邀请边界。
 - **代价**: 满桌暂时不会出现在主动需求候选中；未来若支持候补队列，应新增显式 waitlist 契约，不复用 `available_seats`。
 
+### ADR-80: 单桌闭环评估只读投影
+
+- **决策**: 增加只读 `GET /tables/{id}/evaluation?participant_id={member_id}`，仅允许当前桌成员读取。响应从已持久化的状态、真人轮次、主持审计、收桌行动结果和匿名价值反馈派生，返回桌级计数与完成率：参与人数、真人轮次、主持介入/反思/有效反思数、行动项/已回报/已完成数、价值反馈汇总及反馈完成率。响应不返回个人评分、备注、行为事件明细、消息正文或其他成员的个人卡；开放桌也可读取，尚未收桌时收桌专属指标为空或为零。该接口不写入行为事件、不改变桌状态。
+- **理由**: 产品文档要求用“认知/关系/行动/情绪价值、愿意再来、行动回响和过程质量”验证闭环，但现有接口把这些信息分散在多个成员入口，前端和评委无法用一个稳定契约复核单桌是否真的产生价值。服务端派生的成员级聚合能保持隐私边界，并让内存与 JSON 仓储天然保持一致。
+- **替代方案**: 让前端拼接多个接口、返回每位成员的明细、或建立独立可写的分析表；这些方案分别容易出现版本竞态/口径漂移、扩大隐私面、或引入与事实状态不一致的第二账本。
+- **代价**: 评估是当前桌快照的派生读模型，不提供跨桌全局报表或历史趋势；未来若需要运营分析，应在受控数据管道中按相同字段聚合，而不是扩张本接口的个人数据面。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -611,6 +618,7 @@ POST /tables/{id}/close?participant_id={member_id}
 POST /tables/{id}/recompose?participant_id={member_id}
 POST /tables/{id}/feedback?participant_id={participant_id}
 GET  /tables/{id}/feedback?participant_id={participant_id}
+GET  /tables/{id}/evaluation?participant_id={member_id}
 GET  /participants/{participant_id}/relationship-memory?viewer_id={participant_id}
 POST /participants/{participant_id}/behavior-events?viewer_id={participant_id}
 GET  /participants/{participant_id}/behavior-events?viewer_id={participant_id}
@@ -798,7 +806,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                   ←── D98 dynamic candidate evidence attribution
                                                                                                                                                                                                                                                                                                                                                                                        ←── D99 persisted public source snapshot ledger
                                                                                                                                                                                                                                                                                                                                                                                             ←── D100 bounded public table lineage view
-                                                                                                                                                                                                                                                                                                                                                                                                  ←── D101 active intent routing preview
+                                                                                                                                                                                                                                                                                                                                                                                                 ←── D101 active intent routing preview
+                                                                                                                                                                                                                                                                                                                                                                                                       ←── D103 single-table evaluation projection
 ```
 
 ## Progress Ledger
@@ -911,6 +920,7 @@ master
 | D100 bounded public table lineage view | complete | Expose a bounded oldest-to-current question lineage using `origin_table_id` and public source snapshots without leaking member data | 364 tests + compileall + diff check | `4805bdc` |
 | D101 active intent routing preview | complete | Add a non-persistent natural-language demand entry that routes to clarification, an existing public table, or a new table without bypassing invitation boundaries | 367 tests + compileall + diff check | `398ce10` |
 | D102 active intent available-seat filter | complete | Filter full tables from active-demand routing and expose bounded available-seat counts | 368 tests + compileall + diff check | `506ff53` |
+| D103 single-table evaluation projection | in_progress | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | pending | — |
 
 ## 已知坑位（Running Gotchas）
 

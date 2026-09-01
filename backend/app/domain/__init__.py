@@ -1,7 +1,7 @@
 """Public domain contracts for the Conversation Orchestrator."""
 
 from .enums import Action, ConversationMode, DisagreementType, InvitationPreference, InvitationStatus, Level, Phase, SafetyLevel
-from .schemas import ActiveIntentPreview, ActiveIntentRequest, ActiveIntentTableCandidate, AgentActionEvent, AgentPresence, BehaviorEvent, BehaviorEventType, CandidateRecommendation, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationView, InterventionRecord, MatchPlan, MatchReason, MatchRequest, MatchSeat, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, ReflectionResult, RelationshipMemory, RouteDecision, SafetyAction, SafetyDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SourceEvidence, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from .schemas import ActiveIntentPreview, ActiveIntentRequest, ActiveIntentTableCandidate, AgentActionEvent, AgentPresence, BehaviorEvent, BehaviorEventType, CandidateRecommendation, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationView, InterventionRecord, MatchPlan, MatchReason, MatchRequest, MatchSeat, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, ReflectionResult, RelationshipMemory, RouteDecision, SafetyAction, SafetyDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SourceEvidence, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 
 __all__ = (
     "Action", "ActiveIntentPreview", "ActiveIntentRequest", "ActiveIntentTableCandidate", "AgentActionEvent", "AgentPresence", "BehaviorEvent", "BehaviorEventType", "CandidateRecommendation", "CommentPromotion", "ContentSignal", "ConversationMode", "DisagreementType",
@@ -10,7 +10,7 @@ __all__ = (
     "InvitationView", "InterventionRecord", "Level", "MatchPlan", "MatchReason",
     "MatchRequest", "MatchSeat", "OpportunityPreview", "OpportunityRequest",
     "NoMatchPreference", "ParticipantSeed", "PeripheralComment", "PersonalCard", "PersonalContextConsent", "PersonalContextPreview", "PersonalContextScope", "PersonalContextSignal", "Phase", "ReflectionResult", "RelationshipMemory",
-    "RouteDecision", "SafetyAction", "SafetyDecision", "SafetyReport", "SafetyReportStatusAudit", "SafetyResolution", "SourceEvidence", "TableCandidatePreview",
+    "RouteDecision", "SafetyAction", "SafetyDecision", "SafetyReport", "SafetyReportStatusAudit", "SafetyResolution", "SourceEvidence", "TableCandidatePreview", "TableEvaluation",
     "SafetyLevel", "SharedBaseline", "SyncUpgradeDecision", "SyncUpgradeSignals",
     "TableState", "ValueFeedback",
 )

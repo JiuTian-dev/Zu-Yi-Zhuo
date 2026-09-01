@@ -680,6 +680,44 @@ class FeedbackSummary(ContractModel):
     would_join_again_count: int = Field(ge=0)
 
 
+class TableEvaluation(ContractModel):
+    """Member-scoped, read-only metrics for one table's conversation loop."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    phase: Phase
+    closed: bool
+    participant_count: int = Field(ge=0, le=5)
+    human_turn_count: int = Field(ge=0)
+    intervention_count: int = Field(ge=0)
+    reflected_intervention_count: int = Field(ge=0)
+    effective_intervention_count: int = Field(ge=0)
+    follow_up_count: int = Field(ge=0)
+    follow_up_reported_count: int = Field(ge=0)
+    follow_up_completed_count: int = Field(ge=0)
+    follow_up_completion_rate: float | None = Field(default=None, ge=0, le=1)
+    feedback_completion_rate: float = Field(ge=0, le=1)
+    would_join_again_rate: float | None = Field(default=None, ge=0, le=1)
+    feedback_summary: FeedbackSummary | None = None
+
+    @model_validator(mode="after")
+    def counts_are_consistent(self) -> "TableEvaluation":
+        if self.reflected_intervention_count > self.intervention_count:
+            raise ValueError("reflected interventions cannot exceed interventions")
+        if self.effective_intervention_count > self.reflected_intervention_count:
+            raise ValueError("effective interventions cannot exceed reflections")
+        if self.follow_up_reported_count > self.follow_up_count:
+            raise ValueError("reported follow-ups cannot exceed follow-up items")
+        if self.follow_up_completed_count > self.follow_up_reported_count:
+            raise ValueError("completed follow-ups cannot exceed reported outcomes")
+        if self.feedback_summary is not None:
+            if self.feedback_summary.response_count > self.feedback_summary.eligible_participant_count:
+                raise ValueError("feedback responses cannot exceed eligible participants")
+            if self.feedback_summary.response_count and self.would_join_again_rate is None:
+                raise ValueError("feedback responses require a would_join_again_rate")
+        return self
+
+
 class PeripheralComment(ContractModel):
     """A public comment that never enters the core conversation turn stream."""
 
