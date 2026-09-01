@@ -737,6 +737,13 @@
 - **替代方案**: 允许客户端直接提交 `GroundingCard`、把所有 source 结果交给 Host/LLM 自行选择、或继续只在测试中注入卡片；这些方案分别让客户端伪造证据、扩大模型越权面、或无法支持真实产品链路。
 - **代价**: 该接口只使用公开内容，卡片在被 GROUND 消费前随仓储保存；当前 source/repository 仍是单进程边界，多实例需要共享 source 结果和事务语义。
 
+### ADR-103: GROUND 资料卡进入干预回放账本
+
+- **决策**: 当 WebSocket 决策循环路由到 `GROUND` 并从 trusted-card 仓储原子消费一张公开 `GroundingCard` 时，把同一张卡作为可选嵌套字段写入该次 `InterventionRecord`。字段只由服务端从已校验的公开 source 生成，客户端不能在主持动作或干预记录中提交；没有资料卡的旧记录继续省略该字段。现有 `GET /tables/{id}/replay` 与 JSON 仓储复用 `interventions` 列表恢复卡片，不新增第二份来源账本。
+- **理由**: D125 已能在实时事件中广播可信卡片，但实时广播不是持久化契约；刷新、断线重连或评委查看 replay 时，如果卡片只存在于一次性事件，GROUND 就无法证明“主持引用了哪条来源”。把已消费的公开卡和同一次干预原子写入审计记录，可以同时满足证据可追溯、重启恢复和旧客户端兼容。
+- **替代方案**: 继续只广播 `grounding_card`、把卡片追加到 `TableState`、或单独建立 source-event 表；这些方案分别丢失回放证据、污染实时黑板、或引入与干预日志重复的一致性边界。
+- **代价**: 干预 JSON 快照增加一个可选嵌套对象；未来数据库实现需保证干预记录与状态版本在同一事务中提交。卡片仍只保留公开标题、摘要和来源引用，不保存 source 私有 payload。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -1026,7 +1033,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D122 source match confirmation handoff
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D123 candidate invitation handoff
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D124 invitation journey demo
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D125 content source grounding handoff
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D125 content source grounding handoff
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ←── D126 grounded card replay ledger
 ```
 
 ## Progress Ledger
