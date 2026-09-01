@@ -800,6 +800,13 @@
 - **替代方案**: 继续信任每次客户端/source 传入的偏好、修改所有历史桌快照，或让 `none` 连主动申请也一并封禁；这些方案分别可被陈旧输入绕过、破坏回放，或把通知偏好错误地扩大为参与禁令。
 - **代价**: JSON 顶层增加可选 `invitation_preferences` 映射，旧快照按空映射加载；生产身份解析器仍负责把内部 participant ID 绑定到真实知乎账号。`many` 与 `few` 在 V1 只作为召回/频控信号保存，当前硬约束仅是 `none`。
 
+### ADR-113: 跨桌邀请收件箱只返回本人邀请与公开 Lobby 投影
+
+- **决策**: 新增本人作用域的 `GET /participants/{id}/invitations?viewer_id={id}&status={pending|accepted|declined}&offset={n}&limit={n}`。服务端从既有持久邀请账本聚合该候选人的跨桌邀请，默认按 `pending → accepted → declined`、再按 `table_id / invitation_id` 稳定排序；`status` 可选，`offset` 默认 0，`limit` 默认 30、最大 100，并返回过滤后的 `total`。每项只包含现有脱敏 `InvitationView`、同一 `LobbyPreview` 公共桌卡、`can_respond` 与可选不可响应原因；不返回 `ParticipantSeed` 私有立场/经历、邀请人私密资料、消息或个人卡。只有 pending 且桌仍开放、未软过期、未满席、候选人尚未入席时 `can_respond=true`。已有单桌响应接口保持唯一接受/拒绝写入口。
+- **理由**: 产品主线要求用户从“收到邀请”自然进入“看懂这桌并决定入席”，但现有查询必须先知道 `table_id`，首页无法发现自己的邀请。官方 GitHub 邀请 API 同样提供“当前认证用户的邀请列表”而不是要求客户端枚举所有资源；OWASP 的对象级授权与最小字段原则也要求跨资源聚合仍在服务端逐项限定为本人可见对象。复用 Lobby 公共投影既能解释“谁在里面、聊到哪”，又不复制一套更宽的桌状态。
+- **替代方案**: 前端先拉全量桌再逐桌查询邀请、返回所有邀请后由前端按 candidate 过滤、或新建第二份收件箱持久表；这些方案分别产生 N+1 与竞态、构成对象级越权/过度暴露，或制造会与真实邀请状态漂移的重复账本。
+- **代价**: 邀请当前没有创建时间，因此 V1 使用确定性状态/ID 排序而非声称“最新优先”；未来增加服务端时间戳时可扩展游标但不能改变本人作用域和脱敏形状。收件箱是只读聚合，不替代通知投递系统。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -843,6 +850,7 @@ POST /tables/{id}/nudge?participant_id={participant_id}
 PUT  /tables/{id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 GET  /participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 PUT  /participants/{participant_id}/invitation-preference?viewer_id={participant_id}
+GET  /participants/{participant_id}/invitations?viewer_id={participant_id}&status={status}&offset={n}&limit={n}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -1107,8 +1115,9 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D131 safety escalation ladder
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ←── D132 observer fact conflict detection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D133 grounding black-box demo
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D134 evaluation rhythm metrics
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D135 account invitation preference
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D134 evaluation rhythm metrics
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D135 account invitation preference
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D136 participant invitation inbox
 ```
 
 ## Progress Ledger
@@ -1254,6 +1263,7 @@ master
 | D133 grounding black-box demo | complete | Add an isolated deterministic CLI that drives the real grounding REST/WS/replay path without persistent or frontend writes | 439 tests + compileall + diff check | `deb9e0a` + `0e78505` |
 | D134 evaluation rhythm metrics | complete | Derive member-scoped intervention/effect rates and bounded phase distribution from existing turn, snapshot, and intervention ledgers; persist a backward-compatible effective-reflection flag | 440 tests + compileall + diff check | `1acaf88` + `fdc7062` |
 | D135 account invitation preference | complete | Persist self-scoped many/few/none across tables; override stale request/source seeds for matching, source handoff, dynamic recommendations and new invitations; recheck post-preview opt-outs while preserving Lobby fit and explicit join intent | 446 tests + compileall + diff check | `3401545` + `7a661ed` |
+| D136 participant invitation inbox | in progress | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with redacted invitation data, public Lobby context and server-derived actionability | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
