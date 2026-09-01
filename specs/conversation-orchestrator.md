@@ -695,6 +695,13 @@
 - **替代方案**: 继续要求评委先运行两个 CLI 再手工复制 JSON、在 Demo 中直接调用内部 detector/matching 函数、或把机会信号预写到仓储；这些方案分别容易造成字段/版本错配、绕过 API 边界、或污染可持久化状态。
 - **代价**: 旅程依赖固定的公开合成信号和确定性匹配排序；真实知乎 source 仍必须通过已授权适配器接入，CLI 不代表线上召回质量或推荐个性化。
 
+### ADR-97: 完整旅程 Demo 覆盖收桌后的行动回响
+
+- **决策**: 扩展 `journey_demo` 在收桌后读取该参与者的 follow-up，回报一条已完成结果，提交一次四维价值反馈，再读取 member-scoped evaluation、action echoes 和行为事件类型。结果只输出当前演示参与者自己的数据与匿名聚合，不修改桌状态，不新增线上路由。
+- **理由**: 产品闭环不止于生成收桌卡，还要让用户在现实行动后回报结果，并看到认知/关系/行动/情绪价值。现有 API 和 D64/D91 已分别实现这些账本；把它们串进同一黑盒旅程，能验证“收桌 → 行动 → 回响”的实际联通，而不把内部仓储函数当作证明。
+- **替代方案**: 继续只验证收桌瞬间、为演示增加批量回报 API、或直接读取仓储内部账本；这些方案分别漏掉产品价值飞轮、扩大生产写权限、或绕过身份/幂等边界。
+- **代价**: 演示只回报一个合成行动和一位成员的反馈，不能替代真实用户行为样本；真实分析仍应使用匿名聚合和部署方的保留策略。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -976,7 +983,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D116 idempotent demo seed CLI
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D117 read-only public opportunity demo CLI
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D118 isolated full journey demo CLI
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D119 opportunity-to-match journey demo
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D119 opportunity-to-match journey demo
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D120 post-close action echo journey
 ```
 
 ## Progress Ledger
@@ -1106,6 +1114,7 @@ master
 | D117 read-only public opportunity demo CLI | complete | Demonstrate public-signal opportunity discovery and explainable candidate output without network, persistence, or private-context access | 400 tests + compileall + diff check | `1b15f1b` + `12a6600` |
 | D118 isolated full journey demo CLI | complete | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | 402 tests + compileall + diff check | `0463be6` + `ca5755d` |
 | D119 opportunity-to-match journey demo | complete | Start the isolated journey from public opportunity preview and match confirmation before entering Lobby and conversation | 402 tests + compileall + diff check | `d980873` |
+| D120 post-close action echo journey | in progress | Continue the isolated journey through follow-up outcome, value feedback, action echoes, and behavior-event summary | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
