@@ -800,7 +800,7 @@ ActiveIntentPreview(normalized_question, route=clarify|join_existing|new_table,
                     clarifying_question?, candidates<=5)
 ActiveIntentTableCandidate(table_id, core_question, current_subquestion?,
                            mode, participant_count, available_seats, reason,
-                           origin_signal_ids?<=20)
+                           origin_signal_ids?<=20, lobby?: LobbyPreview)
 CapabilitiesResponse(repository, conversation_provider,
                      candidate_source_configured,
                      content_source_configured,
@@ -1048,7 +1048,7 @@ master
 | D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 386 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` + `be700fd` |
 | D112 Lobby public read model | complete | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | 390 tests + compileall + diff check | `b12a235` + `df0b1ce` + `507eed7` |
 | D113 Lobby personalized fit preview | complete | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | 393 tests + compileall + diff check | `f6ec282` + `6e79869` + `caa4e7d` |
-| D114 active-intent Lobby projection | in_progress | Carry the bounded public Lobby view inside matching active-demand candidates so one preview can render the recommendation card | pending | |
+| D114 active-intent Lobby projection | complete | Carry the bounded public Lobby view inside matching active-demand candidates so one preview can render the recommendation card | 394 tests + compileall + diff check | `24354a5` + `c26e25f` |
 
 ## 已知坑位（Running Gotchas）
 
