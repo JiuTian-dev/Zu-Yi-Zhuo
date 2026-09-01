@@ -730,6 +730,13 @@
 - **替代方案**: 继续直接以四人 `matches/confirm` 作为完整旅程、在 CLI 内部直接调用 repository，或新增仅供演示的批量入席接口；这些方案分别跳过邀请产品机制、绕过 API 边界、或扩大线上写权限。
 - **代价**: Demo 使用一个本地确定性第五候选，不代表真实 source 召回质量；线上 source、授权和候选画像仍由部署方适配器负责。
 
+### ADR-102: 公开内容 source 通过服务端接线触发 GROUND
+
+- **决策**: 新增 `POST /tables/{id}/grounding?participant_id={member_id}`。当前桌成员可提交有界 query，服务端调用已授权的 `ContentSignalSource`，严格校验公开 `ContentSignal`，选取第一条可用内容构造成 `GroundingCard` 并写入既有 trusted-card 仓储；响应只返回这张公开卡，不修改 `TableState` 或广播。后续真实决策循环路由到 `GROUND` 时，WebSocket 继续原子消费这张卡并广播；没有结果返回 404，source 未配置/超时/非法输出 fail-closed。
+- **理由**: GROUND 和来源卡的 Host/仓储契约已经存在，但此前只能由内部 Demo 或测试直接注入 trusted card，线上 API 没有安全入口，导致“补资料”动作无法真实发生。把 source 调用放在服务端并复用现有一次性消费边界，可以让前端请求补资料而不获得写入任意事实或伪造来源的能力。
+- **替代方案**: 允许客户端直接提交 `GroundingCard`、把所有 source 结果交给 Host/LLM 自行选择、或继续只在测试中注入卡片；这些方案分别让客户端伪造证据、扩大模型越权面、或无法支持真实产品链路。
+- **代价**: 该接口只使用公开内容，卡片在被 GROUND 消费前随仓储保存；当前 source/repository 仍是单进程边界，多实例需要共享 source 结果和事务语义。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -752,6 +759,7 @@ POST /matches/source-preview
 POST /matches/confirm
 POST /intents/preview
 POST /opportunities/source-preview
+POST /tables/{id}/grounding?participant_id={member_id}
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/discovery?limit={n}
 GET  /tables/{id}
@@ -1017,7 +1025,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D121 monotonic realtime state broadcast
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D122 source match confirmation handoff
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D123 candidate invitation handoff
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D124 invitation journey demo
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ←── D124 invitation journey demo
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D125 content source grounding handoff
 ```
 
 ## Progress Ledger
