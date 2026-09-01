@@ -14,6 +14,7 @@
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
 | 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm`；授权 source 使用 `POST /matches/source-preview` → `POST /matches/source-confirm` 短期票据闭环 | `backend/app/matching/`、`backend/app/api/match_tickets.py`；`tests/test_matching.py`、`tests/test_candidate_preview.py`、`tests/test_source.py`；票据单次消费、过期与冲突重试，不重复调用 source |
 | 4 人可开桌、5 席硬上限、邀请先于入席 | `/tables/{id}/invitations`、`/tables/{id}/join-requests` 及接受接口 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_join_requests.py`、`tests/test_api.py` |
+| 动态补位推荐可安全发邀请 | `POST /tables/{id}/candidate-preview` → `POST /tables/{id}/invitations/from-preview`；推荐票据绑定桌与邀请人，成功单次消费，冲突可重试 | `backend/app/api/match_tickets.py`、`backend/app/api/app.py`；`tests/test_candidate_preview.py`；候选接受后才新增席位，响应不含私有候选种子 |
 | 入席前回答“谁在里面 / 聊到哪 / 为什么缺我” | `GET /tables/{id}/lobby`、`POST /tables/{id}/lobby-fit` | `backend/app/lobby.py`；`tests/test_lobby.py`；公开成员摘要与角色缺口均有界 |
 
 ## 桌内对话与 Agent
@@ -60,7 +61,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **410 passed**。最近一个后端功能切片是 D122（授权 source 匹配预览短期票据确认）；对应实现提交为 `abc70f8`，设计提交为 `04dd573`。
+当前基线为 **413 passed**。最近一个后端功能切片是 D123（动态补位推荐短期票据邀请）；对应实现提交为 `5ce913a`，设计提交为 `551517c`。
 
 ## 不把以下事项误报为已完成
 

@@ -59,7 +59,7 @@ python -m app.cli.journey_demo
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
 - `POST /tables/{table_id}/participants/{participant_id}/leave?viewer_id=...`：参与者本人离桌；保留历史快照并立即停止该席位的后续写入。
-- `POST /tables/{table_id}/candidate-preview?participant_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和带公开 `evidence_signal_ids` 的候选推荐；不修改桌状态、不创建邀请、不自动入席。
+- `POST /tables/{table_id}/candidate-preview?participant_id=...` → `POST /tables/{table_id}/invitations/from-preview?inviter_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和带公开 `evidence_signal_ids` 的候选推荐；每条推荐附短期不透明 `preview_token`，服务端用票据复用已授权候选创建 pending invitation，不把私有立场/经历交给浏览器。预览本身不修改桌状态、不创建邀请、不自动入席。
 - `GET /tables/{table_id}/close-artifacts?participant_id=...`：收桌后重新取得共享基线和当前参与者的个人回响卡。
 - `GET /tables/{table_id}/replay`：返回原始真人消息和状态快照，并附带公开的 `interventions`、`comments`、`comment_promotions` 账本和已保存的 `source_signals`，重连时可直接恢复整桌叙事；生产注入 `identity_resolver` 后必须带当前成员 `participant_id`，本地无认证 Demo 才允许省略。
 - `GET /tables/{table_id}/lineage`：沿 `origin_table_id` 返回最多 10 代、从最早祖先到当前桌的公开问题谱系；每代只含问题、版本、来源 ID 和公开来源快照，不返回成员或个人卡。
