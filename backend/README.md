@@ -32,7 +32,7 @@ python -m app.cli.opportunity_demo
 python -m app.cli.journey_demo
 ```
 
-该命令每次从空内存仓储开始，依次走过公开机会预览、匹配确认、建桌、Lobby、真人消息、Agent 动作、收桌卡片、评估指标和回放摘要；不会读取或写入 `TABLE_REPOSITORY_PATH`，也不会访问网络。
+该命令每次从空内存仓储开始，依次走过公开机会预览、匹配确认、建桌、Lobby、真人消息、Agent 动作、收桌卡片、行动回报、四维反馈、评估指标和回放摘要；不会读取或写入 `TABLE_REPOSITORY_PATH`，也不会访问网络。
 
 启动后可用：
 

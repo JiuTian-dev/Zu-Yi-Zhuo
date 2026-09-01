@@ -8,7 +8,7 @@
 |---|---|---|
 | 从公开知乎信号发现值得发生的问题 | `POST /opportunities/preview`、`POST /opportunities/source-preview` | `backend/app/opportunities/`、`backend/app/sources/`；`tests/test_opportunities.py`、`tests/test_content_source.py` |
 | 一键验证公开机会发现首入口 | `python -m app.cli.opportunity_demo` | `backend/app/demo/public_signals.py`、`backend/app/cli/opportunity_demo.py`；`tests/test_opportunity_demo.py`；只读、确定性、无网络 |
-| 一条命令验证公开机会到完整后端旅程 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→匹配确认→真实 REST/WS→确定性 JSON |
+| 一条命令验证公开机会到收桌后回响 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→匹配→REST/WS→行动回报/反馈→确定性 JSON |
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview` | `backend/app/intake.py`；`tests/test_intake.py`；支持 `clarify`、`join_existing`、`new_table` |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
@@ -60,7 +60,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **402 passed**。最近一个后端功能切片是 D119（公开机会到匹配确认的完整旅程 Demo CLI）；对应实现提交为 `d980873`，账本闭合提交为 `3197981`。
+当前基线为 **402 passed**。最近一个后端功能切片是 D120（收桌后的行动回响旅程 Demo）；对应实现提交为 `7d68c18`，账本闭合提交待文档回写。
 
 ## 不把以下事项误报为已完成
 
