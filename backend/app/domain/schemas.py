@@ -386,6 +386,14 @@ class CandidateRecommendation(ContractModel):
         max_length=5,
         exclude_if=lambda value: not value,
     )
+    # Opaque, short-lived capability used to hand this recommendation to the
+    # server-side invitation path without exposing the private candidate seed.
+    preview_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class TableCandidatePreview(ContractModel):

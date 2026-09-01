@@ -1,9 +1,12 @@
 import asyncio
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
+from app.api.match_tickets import CandidateInvitationTicketStore
 from app.api.repository import InMemoryTableRepository
+from app.domain import ParticipantSeed
 
 
 class _Source:
@@ -66,11 +69,110 @@ def test_candidate_preview_returns_gap_aware_recommendations_without_mutation() 
     assert payload["candidates"][0]["reason"]
     assert payload["candidates"][0]["evidence_signal_ids"] == ["s3"]
     assert payload["candidates"][1]["evidence_signal_ids"] == ["s4", "s5"]
+    assert payload["candidates"][0]["preview_token"]
+    assert payload["candidates"][1]["preview_token"]
     assert "relevant_experience" not in payload["candidates"][0]
     assert "source_ref" not in payload["candidates"][0]
     assert source.calls == [("AI 采购如何真正落地？", 2)]
     assert client.get("/tables/candidate-table").json()["version"] == 0
     assert client.get("/tables/candidate-table/invitations?participant_id=p1").json() == []
+
+
+def test_candidate_preview_ticket_creates_invitation_without_exposing_candidate_seed() -> None:
+    source = _Source([
+        {**_candidate("p3", "实践者"), "public_signal_ids": ["s3"]},
+    ])
+    client = TestClient(create_app(candidate_source=source))
+    _table(client, "ticket-table")
+
+    preview = client.post(
+        "/tables/ticket-table/candidate-preview?participant_id=p1",
+        json={"limit": 1},
+    )
+    recommendation = preview.json()["candidates"][0]
+    invitation = client.post(
+        "/tables/ticket-table/invitations/from-preview?inviter_id=p1",
+        json={"preview_token": recommendation["preview_token"]},
+    )
+
+    assert invitation.status_code == 201
+    payload = invitation.json()
+    assert payload["participant_id"] == "p3"
+    assert payload["reason"] == recommendation["reason"]
+    assert "preview_token" not in payload
+    assert "公开立场" not in invitation.text
+    assert "公开经历" not in invitation.text
+    assert source.calls == [("AI 采购如何真正落地？", 1)]
+
+    accepted = client.post(
+        f"/tables/ticket-table/invitations/{payload['invitation_id']}/respond?participant_id=p3",
+        json={"accept": True},
+    )
+    assert accepted.status_code == 200
+    assert "p3" in accepted.json()["state"]["participants"]
+    assert client.post(
+        "/tables/ticket-table/invitations/from-preview?inviter_id=p1",
+        json={"preview_token": recommendation["preview_token"]},
+    ).status_code == 409
+
+
+def test_candidate_preview_ticket_is_bound_to_table_and_inviter_and_can_retry_after_conflict() -> None:
+    source = _Source([_candidate("p3", "实践者")])
+    client = TestClient(create_app(candidate_source=source))
+    _table(client, "bound-table")
+    _table(client, "other-table")
+    token = client.post(
+        "/tables/bound-table/candidate-preview?participant_id=p1",
+        json={"limit": 1},
+    ).json()["candidates"][0]["preview_token"]
+
+    wrong_table = client.post(
+        "/tables/other-table/invitations/from-preview?inviter_id=p1",
+        json={"preview_token": token},
+    )
+    wrong_inviter = client.post(
+        "/tables/bound-table/invitations/from-preview?inviter_id=p2",
+        json={"preview_token": token},
+    )
+    invitation = client.post(
+        "/tables/bound-table/invitations/from-preview?inviter_id=p1",
+        json={"preview_token": token, "reason": "补充实践视角"},
+    )
+
+    assert wrong_table.status_code == 409
+    assert wrong_inviter.status_code == 403
+    assert invitation.status_code == 201
+    assert invitation.json()["reason"] == "补充实践视角"
+    assert source.calls == [("AI 采购如何真正落地？", 1)]
+
+
+def test_candidate_invitation_ticket_store_is_single_use_and_expires_with_injected_clock() -> None:
+    now = [100.0]
+    store = CandidateInvitationTicketStore(ttl_seconds=5, clock=lambda: now[0])
+    candidate = ParticipantSeed.model_validate(_candidate("p3", "实践者"))
+    token = store.issue(
+        table_id="table",
+        inviter_id="p1",
+        candidate=candidate,
+        reason="补位",
+    )
+
+    claimed = store.claim(token)
+    assert claimed.candidate.participant_id == "p3"
+    with pytest.raises(ValueError, match="unavailable"):
+        store.claim(token)
+    store.release(token)
+    assert store.claim(token).table_id == "table"
+    store.consume(token)
+    with pytest.raises(ValueError, match="unavailable"):
+        store.claim(token)
+
+    token = store.issue(
+        table_id="table", inviter_id="p1", candidate=candidate, reason="补位"
+    )
+    now[0] = 105.0
+    with pytest.raises(ValueError, match="unavailable"):
+        store.claim(token)
 
 
 def test_candidate_preview_filters_members_and_previously_invited_candidates() -> None:

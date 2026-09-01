@@ -25,7 +25,7 @@ from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBS
 from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
-from .match_tickets import SourceMatchTicketStore
+from .match_tickets import CandidateInvitationTicketStore, SourceMatchTicketStore
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview
@@ -157,6 +157,13 @@ class CreateInvitationRequest(BaseModel):
 
     candidate: ParticipantSeed
     reason: str = Field(min_length=1, max_length=240)
+
+
+class PreviewInvitationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preview_token: str = Field(min_length=1, max_length=200)
+    reason: str | None = Field(default=None, min_length=1, max_length=240)
 
 
 class JoinRequestCreateRequest(BaseModel):
@@ -506,6 +513,9 @@ def create_app(
         raise ValueError("rest_max_mutations_per_minute must be a positive integer")
     repo = repository or InMemoryTableRepository()
     source_match_tickets = SourceMatchTicketStore(ttl_seconds=source_match_preview_ttl_seconds)
+    candidate_invitation_tickets = CandidateInvitationTicketStore(
+        ttl_seconds=source_match_preview_ttl_seconds,
+    )
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
@@ -513,6 +523,7 @@ def create_app(
     api.state.content_source = content_source
     api.state.personal_context_source = personal_context_source
     api.state.source_match_tickets = source_match_tickets
+    api.state.candidate_invitation_tickets = candidate_invitation_tickets
     api.state.identity_resolver = identity_resolver
     api.state.moderator_resolver = moderator_resolver
     rest_rate_limiter = MutationRateLimiter(max_rest_mutations_per_minute)
@@ -1242,6 +1253,7 @@ def create_app(
                 if item.participant_id not in existing_invited
                 and not repo.is_no_match(participant_id, item.participant_id)
             ]
+            candidate_by_id = {item.participant_id: item for item in candidates}
             recommendations = recommend_candidates(state, candidates, payload.limit)
         except CandidateSourceError as error:
             raise HTTPException(status_code=502, detail="candidate source unavailable") from error
@@ -1251,6 +1263,23 @@ def create_app(
             raise HTTPException(status_code=502, detail="candidate source returned invalid candidates") from error
         except Exception as error:
             raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        try:
+            recommendations = [
+                recommendation.model_copy(update={
+                    "preview_token": candidate_invitation_tickets.issue(
+                        table_id=table_id,
+                        inviter_id=participant_id,
+                        candidate=candidate_by_id[recommendation.participant_id],
+                        reason=recommendation.reason,
+                    )
+                })
+                for recommendation in recommendations
+            ]
+        except ValueError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="candidate invitation preview temporarily unavailable",
+            ) from error
         return TableCandidatePreview(
             table_id=table_id,
             core_question=state.core_question,
@@ -1731,6 +1760,59 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         view = invitation_view(invitation)
+        await broadcast_table_event(table_id, {
+            "type": "invitation_updated",
+            "invitation": view.model_dump(mode="json"),
+            "state_version": state.version,
+        })
+        return view
+
+    @api.post(
+        "/tables/{table_id}/invitations/from-preview",
+        response_model=InvitationView,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_invitation_from_preview(
+        table_id: str,
+        payload: PreviewInvitationRequest,
+        request: Request,
+        inviter_id: str = Query(..., min_length=1),
+    ) -> InvitationView:
+        """Turn a server-held candidate recommendation into an invitation."""
+        require_request_identity(identity_resolver, request, inviter_id)
+        table_or_404(table_id)
+        try:
+            ticket = candidate_invitation_tickets.claim(payload.preview_token)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=409,
+                detail="candidate invitation preview is unavailable",
+            ) from error
+        if ticket.table_id != table_id:
+            candidate_invitation_tickets.release(payload.preview_token)
+            raise HTTPException(status_code=409, detail="candidate invitation preview is unavailable")
+        if ticket.inviter_id != inviter_id:
+            candidate_invitation_tickets.release(payload.preview_token)
+            raise HTTPException(status_code=403, detail="preview ticket belongs to another inviter")
+        try:
+            invitation = repo.create_invitation(
+                table_id,
+                inviter_id,
+                ticket.candidate,
+                payload.reason or ticket.reason,
+            )
+        except PermissionError as error:
+            candidate_invitation_tickets.release(payload.preview_token)
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            candidate_invitation_tickets.release(payload.preview_token)
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except Exception:
+            candidate_invitation_tickets.release(payload.preview_token)
+            raise
+        candidate_invitation_tickets.consume(payload.preview_token)
+        view = invitation_view(invitation)
+        state = table_or_404(table_id)
         await broadcast_table_event(table_id, {
             "type": "invitation_updated",
             "invitation": view.model_dump(mode="json"),
