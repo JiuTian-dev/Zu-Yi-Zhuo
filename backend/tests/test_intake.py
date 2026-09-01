@@ -79,3 +79,24 @@ def test_active_intent_does_not_recommend_full_tables() -> None:
     assert response.status_code == 200
     assert response.json()["route"] == "new_table"
     assert response.json()["candidates"] == []
+
+
+def test_active_intent_candidate_carries_public_origin_signal_ids() -> None:
+    repository = InMemoryTableRepository()
+    participant = _seed("p1", "产品").model_copy(update={"public_signal_ids": ["signal-1"]})
+    repository.create(
+        "signal-table",
+        "企业 Agent 的采购责任如何落地？",
+        [participant],
+        origin_signal_ids=["signal-1"],
+    )
+    client = TestClient(create_app(repository))
+
+    response = client.post("/intents/preview", json={
+        "message": "我想找人聊企业 Agent 的采购责任",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["route"] == "join_existing"
+    assert response.json()["candidates"][0]["origin_signal_ids"] == ["signal-1"]
+    assert "source_ref" not in response.text

@@ -142,6 +142,11 @@ class ActiveIntentTableCandidate(ContractModel):
     participant_count: int = Field(ge=0, le=5)
     available_seats: int = Field(ge=0, le=5)
     reason: str = Field(min_length=1, max_length=240)
+    origin_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
 
 
 class ActiveIntentPreview(ContractModel):

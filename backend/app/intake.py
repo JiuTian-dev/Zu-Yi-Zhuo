@@ -121,6 +121,7 @@ def build_active_intent_preview(
                 "与你提到的公开问题词项相近："
                 + "、".join(sorted(overlap)[:3])
             ),
+            origin_signal_ids=list(table.origin_signal_ids),
         )
         for _, _, table, overlap in ranked[:limit]
     ]
