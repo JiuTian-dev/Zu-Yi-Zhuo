@@ -1068,7 +1068,7 @@ master
 | D113 Lobby personalized fit preview | complete | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | 393 tests + compileall + diff check | `f6ec282` + `6e79869` + `caa4e7d` |
 | D114 active-intent Lobby projection | complete | Carry the bounded public Lobby view inside matching active-demand candidates so one preview can render the recommendation card | 394 tests + compileall + diff check | `24354a5` + `c26e25f` |
 | D115 bounded Lobby discovery collection | complete | Provide a bounded batch of public Lobby cards for homepage table discovery without exposing full TableState | 395 tests + compileall + diff check | `c235285` + `ef6fca7` |
-| D116 idempotent demo seed CLI | in_progress | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | pending | |
+| D116 idempotent demo seed CLI | complete | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | 398 tests + compileall + diff check | `f1824f7` + `92cde69` + `012b10a` |
 
 ## 已知坑位（Running Gotchas）
 
