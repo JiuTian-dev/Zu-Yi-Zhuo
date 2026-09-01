@@ -688,6 +688,13 @@
 - **替代方案**: 只在 README 罗列 curl、让命令改写 JSON 种子仓储、或直接调用 orchestrator 内部函数；这些方案分别增加演示操作误差、重复运行会污染状态、或绕过 REST/WS 权限与事件契约。
 - **代价**: 该命令是本地验收工具，不代表生产压测或真实知乎数据；旅程中的演示题目、参与者和文本是合成固定资产，契约演进时需同步更新脚本与黑盒测试。
 
+### ADR-96: 完整旅程 Demo 必须从公开机会进入匹配
+
+- **决策**: 扩展 `python -m app.cli.journey_demo` 的本地旅程：先通过真实 `POST /opportunities/preview` 读取仓库内的公开演示信号，再把其候选和公开来源快照提交给 `POST /matches/confirm`，之后继续复用 D118 的 Lobby、WebSocket 发言、收桌产物、评估和回放步骤。输出增加有界的机会摘要、匹配摘要和来源快照计数；命令仍只使用独立 `InMemoryTableRepository`，不读取/写入持久化文件或调用网络。
+- **理由**: 产品首入口不是“直接创建一张桌”，而是“公开知乎信号 → 未完成性 → 候选角色 → 解释后建桌”。D118 虽然覆盖了桌内闭环，却绕过了 D117 和匹配确认，无法用一条命令证明最关键的发现到入席链路。让 CLI 穿过现有 REST 契约可以同时验证来源归因、匹配席位和后续对话，不引入新的线上写权限。
+- **替代方案**: 继续要求评委先运行两个 CLI 再手工复制 JSON、在 Demo 中直接调用内部 detector/matching 函数、或把机会信号预写到仓储；这些方案分别容易造成字段/版本错配、绕过 API 边界、或污染可持久化状态。
+- **代价**: 旅程依赖固定的公开合成信号和确定性匹配排序；真实知乎 source 仍必须通过已授权适配器接入，CLI 不代表线上召回质量或推荐个性化。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -968,7 +975,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D115 bounded Lobby discovery collection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D116 idempotent demo seed CLI
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D117 read-only public opportunity demo CLI
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D118 isolated full journey demo CLI
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D118 isolated full journey demo CLI
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D119 opportunity-to-match journey demo
 ```
 
 ## Progress Ledger
@@ -1097,6 +1105,7 @@ master
 | D116 idempotent demo seed CLI | complete | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | 398 tests + compileall + diff check | `f1824f7` + `92cde69` + `012b10a` |
 | D117 read-only public opportunity demo CLI | complete | Demonstrate public-signal opportunity discovery and explainable candidate output without network, persistence, or private-context access | 400 tests + compileall + diff check | `1b15f1b` + `12a6600` |
 | D118 isolated full journey demo CLI | complete | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | 402 tests + compileall + diff check | `0463be6` + `ca5755d` |
+| D119 opportunity-to-match journey demo | in progress | Start the isolated journey from public opportunity preview and match confirmation before entering Lobby and conversation | pending | — |
 
 ## 已知坑位（Running Gotchas）
 
