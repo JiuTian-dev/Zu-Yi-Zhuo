@@ -765,6 +765,13 @@
 - **替代方案**: 仅依赖 URL、把完整 `ContentSignal` 塞进每条干预、或让前端回传 signal ID；这些方案分别不稳定、扩大快照与隐私面、或允许客户端伪造来源关联。
 - **代价**: 公开 GROUND 响应与回放卡片增加一个可选字符串；source 仍需自行保证 ID 在其授权范围内唯一，服务端不把它当作跨桌全局账号标识。
 
+### ADR-107: GROUND 卡消费与干预审计原子提交
+
+- **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
+- **理由**: D126/D129 已把 GROUND 卡写进干预回放，但原路径先调用 `take_trusted_grounding_card` 再提交状态与干预，JSON 原子替换之间仍存在进程崩溃窗口，会造成来源卡消费成功而审计记录缺失。把消费并入既有 bundle 能让“一次 GROUND 的来源”和“该次状态迁移”共同成功或共同失败。
+- **替代方案**: 继续依赖两次顺序提交、把卡片复制进 `TableState`、或引入独立 source-event 表；这些方案分别保留崩溃窗口、污染实时黑板、或制造第二套一致性账本。
+- **代价**: WebSocket 需要在提交前 peek 一次并在 bundle 中声明消费；若并发请求替换了 staged card，本轮干预会安全失败并保留最新卡片，调用方需重试。跨实例部署仍需把同一语义迁移到共享数据库事务。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -1058,7 +1065,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ←── D126 grounded card replay ledger
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ←── D127 timed sync window
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D128 Lobby sync deadline projection
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D129 grounded source signal link
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ←── D129 grounded source signal link
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D130 atomic grounded intervention commit
 ```
 
 ## Progress Ledger
