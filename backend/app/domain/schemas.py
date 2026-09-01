@@ -140,6 +140,7 @@ class ActiveIntentTableCandidate(ContractModel):
     current_subquestion: str | None = Field(default=None, max_length=120)
     mode: ConversationMode
     participant_count: int = Field(ge=0, le=5)
+    available_seats: int = Field(ge=0, le=5)
     reason: str = Field(min_length=1, max_length=240)
 
 

@@ -33,6 +33,7 @@ def test_active_intent_routes_to_matching_open_table_without_writing() -> None:
     assert payload["normalized_question"] == "企业 Agent 的采购预算和技术落地"
     assert payload["candidates"][0]["table_id"] == "agent-table"
     assert payload["candidates"][0]["participant_count"] == 2
+    assert payload["candidates"][0]["available_seats"] == 3
     assert "participants" not in payload["candidates"][0]
     assert [state.table_id for state in repository.list_tables()] == ["agent-table"]
 
@@ -61,3 +62,20 @@ def test_active_intent_limit_is_bounded() -> None:
         "limit": 6,
     })
     assert response.status_code == 422
+
+
+def test_active_intent_does_not_recommend_full_tables() -> None:
+    repository = InMemoryTableRepository()
+    repository.create(
+        "full-table",
+        "AI Agent 进入企业后，技术还是采购更容易卡住？",
+        [_seed(f"p{index}", "角色") for index in range(5)],
+    )
+    client = TestClient(create_app(repository))
+    response = client.post("/intents/preview", json={
+        "message": "我想找人聊企业 Agent 的采购预算",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["route"] == "new_table"
+    assert response.json()["candidates"] == []

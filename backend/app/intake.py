@@ -97,6 +97,9 @@ def build_active_intent_preview(
     intent_terms = _terms(normalized)
     ranked: list[tuple[int, str, TableState, set[str]]] = []
     for table in tables:
+        participant_count = len(table.participants)
+        if participant_count >= 5:
+            continue
         table_text = " ".join(
             value
             for value in (table.core_question, table.current_subquestion)
@@ -113,6 +116,7 @@ def build_active_intent_preview(
             current_subquestion=table.current_subquestion,
             mode=table.conversation.mode,
             participant_count=len(table.participants),
+            available_seats=5 - len(table.participants),
             reason=(
                 "与你提到的公开问题词项相近："
                 + "、".join(sorted(overlap)[:3])
