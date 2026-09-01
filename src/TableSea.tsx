@@ -148,7 +148,7 @@ function GroundSea() {
   }, [])
   return (
     <mesh geometry={geo} position={[0, -0.9, 0]}>
-      <meshBasicMaterial color="#050911" />
+      <meshBasicMaterial color="#8fa4b8" />
     </mesh>
   )
 }
@@ -178,7 +178,35 @@ function StarDust() {
         <bufferAttribute attach="attributes-position" args={[positions, 3]} count={positions.length / 3} />
         <bufferAttribute attach="attributes-color" args={[colors, 3]} count={colors.length / 3} />
       </bufferGeometry>
-      <pointsMaterial size={0.042} vertexColors transparent opacity={0.75} sizeAttenuation depthWrite={false} toneMapped={false} />
+      <pointsMaterial size={0.042} vertexColors transparent opacity={0.35} sizeAttenuation depthWrite={false} toneMapped={false} />
+    </points>
+  )
+}
+
+function Pollen() {
+  const ref = useRef<THREE.Points>(null)
+  const [positions] = useMemo(() => {
+    const n = 240
+    const arr = new Float32Array(n * 3)
+    for (let i = 0; i < n; i += 1) {
+      const a = Math.random() * Math.PI * 2
+      const r = 2 + Math.random() * 18
+      arr[i * 3] = Math.cos(a) * r
+      arr[i * 3 + 1] = 0.2 + Math.random() * 3.6
+      arr[i * 3 + 2] = Math.sin(a) * r
+    }
+    return [arr]
+  }, [])
+  useFrame(({ clock }) => {
+    if (!ref.current) return
+    ref.current.rotation.y = clock.elapsedTime * 0.012
+  })
+  return (
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} count={positions.length / 3} />
+      </bufferGeometry>
+      <pointsMaterial size={0.05} color="#fff2cf" transparent opacity={0.55} sizeAttenuation depthWrite={false} toneMapped={false} />
     </points>
   )
 }
@@ -197,10 +225,10 @@ function SkyDome() {
         fragmentShader={`varying vec3 vWorld;
         void main(){
           float h = clamp(vWorld.y / 30.0 + 0.18, 0.0, 1.0);
-          vec3 top = vec3(0.09, 0.14, 0.27);
-          vec3 mid = vec3(0.22, 0.31, 0.52);
-          vec3 horizon = vec3(0.45, 0.47, 0.61);
-          vec3 warm = vec3(0.62, 0.47, 0.36);
+          vec3 top = vec3(0.42, 0.60, 0.78);
+          vec3 mid = vec3(0.66, 0.77, 0.86);
+          vec3 horizon = vec3(0.93, 0.81, 0.62);
+          vec3 warm = vec3(0.98, 0.86, 0.66);
           vec3 col = h > 0.5 ? mix(mid, top, (h - 0.5) / 0.5) : mix(mix(warm, horizon, smoothstep(0.0, 0.14, h)), mid, h / 0.5);
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
@@ -362,7 +390,7 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
       </mesh>
       <mesh position={[0, 0.045, 0]}>
         <cylinderGeometry args={[2.55, 2.55, 0.03, 24]} />
-        <meshStandardMaterial color={def.ground} roughness={1} emissive={lampColor} emissiveIntensity={focused ? 0.4 : 0.22} toneMapped={false} />
+        <meshStandardMaterial color={def.ground} roughness={1} emissive={lampColor} emissiveIntensity={focused ? 0.55 : 0.34} toneMapped={false} />
       </mesh>
       <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[2.4, 2.52, 32]} />
@@ -429,6 +457,18 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
         <GltfFit src="/assets/sea/kenney/grass.glb" height={0.06} position={[0.72, 0.02, -0.42]} />
         <GltfFit src="/assets/sea/kenney/rock_smallB.glb" height={0.07} position={[-0.72, 0.02, -0.2]} />
       </>)}
+      {(['valley', 'workshop', 'cafe', 'snow', 'autumn'] as ThemeId[]).includes(theme) && (
+        <GltfFit src="/assets/sea/kenney/fence_simple.glb" height={0.3} position={[-0.85, 0.02, 0.78]} rotation={[0, 0.9, 0]} />
+      )}
+      {(['campfire', 'forest', 'desert', 'lake'] as ThemeId[]).includes(theme) && (
+        <GltfFit src="/assets/sea/kenney/flower_redA.glb" height={0.1} position={[0.9, 0.02, -0.75]} rotation={[0, 1.4, 0]} />
+      )}
+      {theme === 'valley' && <GltfFit src="/assets/sea/kenney/flower_yellowA.glb" height={0.09} position={[-0.95, 0.02, 0.55]} rotation={[0, 2.2, 0]} />}
+      {theme === 'bookstore' && <GltfFit src="/assets/sea/kenney/flower_purpleA.glb" height={0.09} position={[0.9, 0.02, 0.5]} rotation={[0, 0.6, 0]} />}
+      {theme === 'forest' && <GltfFit src="/assets/sea/kenney/mushroom_redGroup.glb" height={0.12} position={[-0.9, 0.02, 0.7]} />}
+      {theme === 'pier' && <GltfFit src="/assets/sea/kenney/lily_small.glb" height={0.06} position={[0.2, 0.02, 1.1]} />}
+      <GltfFit src="/assets/sea/kenney/grass.glb" height={0.09} position={[0.6, 0.02, 0.95]} />
+      <GltfFit src="/assets/sea/kenney/grass_large.glb" height={0.12} position={[-0.6, 0.02, -0.95]} rotation={[0, 2.9, 0]} />
       </group>
       <sprite ref={glow} position={[0, 0.62, 0]} scale={[5.2, 5.2, 1]}>
         <spriteMaterial map={getRadialGlow()} color={def.lamp} transparent opacity={0.34} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
@@ -439,6 +479,28 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
 }
 
 /* ------------------------------------------------------------- camera + scene */
+
+function TravelOrb() {
+  const orb = useRef<THREE.Mesh>(null)
+  const light = useRef<THREE.PointLight>(null)
+  useFrame((_, delta) => {
+    if (!orb.current || !light.current) return
+    const entry = entries[seaState.index]
+    if (!entry) return
+    const k = 1 - Math.exp(-2.2 * delta)
+    orb.current.position.lerp(new THREE.Vector3(entry.pos.x, 1.5, entry.pos.z), k)
+    light.current.position.copy(orb.current.position)
+  })
+  return (
+    <>
+      <mesh ref={orb}>
+        <sphereGeometry args={[0.12, 12, 10]} />
+        <meshBasicMaterial color="#fff4d8" toneMapped={false} />
+      </mesh>
+      <pointLight ref={light} color="#ffe3a4" intensity={3.2} distance={10} decay={2} />
+    </>
+  )
+}
 
 function SeaCamera() {
   const { camera } = useThree()
@@ -489,16 +551,17 @@ function SeaWorld() {
   return (
     <>
       <color attach="background" args={['#070b14']} />
-      <fog attach="fog" args={['#10192e', 12, 48]} />
+      <fog attach="fog" args={['#9fb3c6', 13, 54]} />
       <SkyDome />
       <GroundSea />
       <StarDust />
-      <FogPlane position={[0, -0.62, 0]} opacity={0.42} color="#4a5c85" />
-      <FogPlane position={[0, -0.74, 0]} opacity={0.34} color="#3a4a70" />
-      <hemisphereLight color="#8aa4d8" groundColor="#1c2438" intensity={0.85} />
+      <Pollen />
+      <FogPlane position={[0, -0.62, 0]} opacity={0.3} color="#c4d2e2" />
+      <FogPlane position={[0, -0.74, 0]} opacity={0.24} color="#b0c2d6" />
+      <hemisphereLight color="#d8e8f8" groundColor="#8a9278" intensity={1.05} />
       <directionalLight
-        color="#e2d8ff"
-        intensity={1.05}
+        color="#ffe8bd"
+        intensity={1.55}
         position={[9, 14, 7]}
         castShadow
         shadow-mapSize-width={1024}
@@ -510,8 +573,8 @@ function SeaWorld() {
         shadow-camera-near={2}
         shadow-camera-far={38}
       />
-      <directionalLight color="#ffb37a" intensity={0.3} position={[-7, 8, -5]} />
-      <ambientLight intensity={0.16} />
+      <directionalLight color="#ffcf9e" intensity={0.28} position={[-7, 8, -5]} />
+      <ambientLight intensity={0.22} />
       <Suspense fallback={null}>
         {entries.map((entry) => (
           <group key={entry.index} position={[entry.pos.x, entry.pos.y, entry.pos.z]}>
@@ -519,9 +582,10 @@ function SeaWorld() {
           </group>
         ))}
       </Suspense>
+      <TravelOrb />
       <SeaCamera />
       <EffectComposer multisampling={0}>
-        <Bloom mipmapBlur intensity={1.15} luminanceThreshold={0.82} luminanceSmoothing={0.24} radius={0.55} />
+        <Bloom mipmapBlur intensity={0.9} luminanceThreshold={0.75} luminanceSmoothing={0.22} radius={0.5} />
       </EffectComposer>
     </>
   )

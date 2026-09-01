@@ -232,3 +232,20 @@ html.sea-mode,body.sea-mode{height:100%;overflow:hidden;background:#070b14}
   .sea-copy h2{font-size:28px}
   .sea-dots{display:none}
 }
+
+/* ---- blue-hour sea: light theme ---- */
+.sea-page{background:#94a9be;color:#2b3546}
+.sea-page.is-enhanced{background:transparent}
+.sea-vignette{background:radial-gradient(ellipse at 50% 42%,transparent 46%,rgba(56,79,102,.16) 78%,rgba(36,56,78,.3) 100%)}
+.sea-focus-glow{mix-blend-mode:soft-light;opacity:.85;background:radial-gradient(circle,color-mix(in srgb,var(--sea-accent,#F2A65A) 48%,transparent),transparent 60%)}
+.sea-brand b{color:#33415c}
+.sea-brand span{color:rgba(43,53,70,.55)}
+.sea-header em{color:rgba(43,53,70,.45)}
+.sea-kicker{color:rgba(43,53,70,.62)}
+.sea-copy h2{color:#242e40;text-shadow:none}
+.sea-missing{color:rgba(43,53,70,.72)}
+.sea-recommend{border-left-color:var(--sea-accent,#F2A65A);color:rgba(43,53,70,.78)}
+.sea-cta{color:#24304a;border-bottom-color:rgba(36,48,74,.5)}
+.sea-cta i{color:var(--sea-accent,#F2A65A)}
+.sea-footer{color:rgba(43,53,70,.55)}
+.sea-dots button{background:rgba(36,48,74,.25)}
