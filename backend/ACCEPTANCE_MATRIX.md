@@ -10,7 +10,7 @@
 | 一键验证公开机会发现首入口 | `python -m app.cli.opportunity_demo` | `backend/app/demo/public_signals.py`、`backend/app/cli/opportunity_demo.py`；`tests/test_opportunity_demo.py`；只读、确定性、无网络 |
 | 一条命令验证公开机会到收桌后回响 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→4 人匹配→动态第 5 席邀请/入席→REST/WS→行动回报/反馈→确定性 JSON |
 | 一键验证授权 source 驱动的 GROUND 闭环 | `python -m app.cli.grounding_demo` | `backend/app/demo/grounding.py`、`backend/app/cli/grounding_demo.py`；`tests/test_grounding_demo.py`；真实 REST/WS→事实冲突→GROUND→来源卡消费→replay，隔离内存且可重复 |
-| 用户主动说出“我想围绕什么聊” | `POST /intents/preview`；`POST /participants/{id}/intent-sessions`、`GET/DELETE .../{session_id}`、`POST .../{session_id}/turns` | `backend/app/intake.py`、`backend/app/api/intent_sessions.py`；`tests/test_intake.py`、`tests/test_intent_sessions.py`；支持多轮 `clarifying / ready / exhausted`、显式上下文纠正、本人身份校验、TTL/轮次/容量边界，最终仍只返回 `clarify`、`join_existing` 或 `new_table` 预览 |
+| 用户主动说出“我想围绕什么聊” | `POST /intents/preview`；`POST /participants/{id}/intent-sessions`、`GET/DELETE .../{session_id}`、`POST .../{session_id}/turns`、`POST .../{session_id}/source-preview` | `backend/app/intake.py`、`backend/app/api/intent_sessions.py`；`tests/test_intake.py`、`tests/test_intent_sessions.py`、`tests/test_source.py`；支持多轮 `clarifying / ready / exhausted`、显式上下文纠正、本人身份校验、TTL/轮次/容量边界，以及 `new_table` 到授权候选 source/短票据确认链，最终仍不自动建桌 |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...`；同步桌透传 `sync_expires_at` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 后续选桌随本人真实行为变聪明且可解释、可重置 | `GET /participants/{id}/table-recommendations`；`DELETE /participants/{id}/behavior-events` 立即恢复冷启动 | `backend/app/recommendations.py`、`backend/app/api/app.py`；`tests/test_table_recommendations.py`；弱信号按桌限权、过滤 no-match/不可入席桌、不返回原始消息或黑箱分数 |
 | 静默旁听者可私下收藏并稍后回访 | `PUT/DELETE /participants/{id}/saved-tables/{table_id}`、`GET /participants/{id}/saved-tables` | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_saved_tables.py`；本人作用域、幂等、最多 100 张、最近优先、JSON 原子恢复，不广播或自动训练推荐 |
@@ -70,7 +70,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **480 passed**。最近一个后端功能切片是 D141（本人可见的有界主动需求多轮会话）；实现提交为 `515c85c`，设计提交为 `053ec7f`。上一切片 D140（Agent 发现可递进的外围评论候选）为 `474 passed`，实现提交 `14a4124`，设计提交 `22c4faa`。
+当前基线为 **483 passed**。最近一个后端功能切片是 D142（主动需求到授权候选 source 的短票据接线）；实现提交为 `7c662f1`，设计提交为 `9d11601`。上一切片 D141（本人可见的有界主动需求多轮会话）为 `480 passed`，实现提交 `515c85c`，设计提交 `053ec7f`。
 
 ## 不把以下事项误报为已完成
 

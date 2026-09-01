@@ -880,6 +880,7 @@ POST /intents/preview
 POST /participants/{id}/intent-sessions?viewer_id={id}
 GET  /participants/{id}/intent-sessions/{session_id}?viewer_id={id}
 POST /participants/{id}/intent-sessions/{session_id}/turns?viewer_id={id}
+POST /participants/{id}/intent-sessions/{session_id}/source-preview?viewer_id={id}
 DELETE /participants/{id}/intent-sessions/{session_id}?viewer_id={id}
 POST /opportunities/source-preview
 POST /tables/{id}/grounding?participant_id={member_id}
@@ -1331,7 +1332,7 @@ master
 | D139 private saved-table library | complete | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | 470 tests + compileall + diff check | `a49ad58` + `3f64c9c` |
 | D140 evidence-backed peripheral comment candidates | complete | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | 474 tests + compileall + diff check | `22c4faa` + `14a4124` |
 | D141 bounded multi-turn active intent | complete | Preserve a user's short-term clarification context across bounded self-scoped turns, support explicit correction, and keep every final route non-mutating | 480 tests + compileall + diff check | `053ec7f` + `515c85c` |
-| D142 active intent candidate source handoff | in progress | Reuse an owner-scoped clarified intent to trigger the existing authorized candidate preview and ticket-backed confirmation path without exposing private seeds or auto-creating a table | pending | design recorded; implementation next |
+| D142 active intent candidate source handoff | complete | Reuse an owner-scoped clarified intent to trigger the existing authorized candidate preview and ticket-backed confirmation path without exposing private seeds or auto-creating a table | 483 tests + compileall + diff check | `9d11601` + `7c662f1` |
 
 ## 已知坑位（Running Gotchas）
 
