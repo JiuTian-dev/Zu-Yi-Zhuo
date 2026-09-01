@@ -653,6 +653,13 @@
 - **替代方案**: 直接把候选人加入桌、把完整个人资料放进 Lobby、或让前端按静态角色文案决定；这些方案分别绕过席位边界、扩大隐私暴露、或产生不可审计的客户端决策。
 - **代价**: V1 只提供角色缺口级别的通用理由，不声称基于知乎个人历史做推荐；真实个人 source 仍需独立授权，申请与入席状态仍由 D111 负责。
 
+### ADR-91: 主动需求候选携带同一份公开 Lobby 投影
+
+- **决策**: 扩展 `ActiveIntentTableCandidate`，增加可选的 `lobby` 字段，内容复用 D112 的 `LobbyPreview`，只对 `/intents/preview` 已经选出的开放桌填充。候选排序、空席过滤、问题词项理由和“不自动入席”规则保持不变；Lobby 投影不包含申请人资料、邀请队列、真人消息、个人卡或安全审计，也不写入仓储。
+- **理由**: 首页主动需求路径需要同时展示推荐桌的成员、问题进度和缺口。如果前端必须逐桌请求并自行拼装，容易出现候选排序与 Lobby 状态版本不一致，也会重复实现脱敏逻辑。复用同一确定性投影可以让“一次预览即可渲染推荐卡”成为稳定契约。
+- **替代方案**: 让前端继续串行读取 `/tables/{id}/lobby`、把完整 `TableState` 嵌入候选、或为主动需求复制一套 Lobby 计算；这些方案分别增加竞态/请求、扩大隐私面、或造成两套字段口径漂移。
+- **代价**: 主动需求响应体会增加每个候选的有限公开成员摘要；未来若 Lobby 字段演进，需要同步保持 `ActiveIntentTableCandidate.lobby` 的兼容投影。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -916,7 +923,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D110 active-intent public signal attribution
                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D111 candidate-initiated join request
                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D112 Lobby public read model
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D113 Lobby personalized fit preview
+                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D113 Lobby personalized fit preview
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D114 active-intent Lobby projection
 ```
 
 ## Progress Ledger
@@ -1040,6 +1048,7 @@ master
 | D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 386 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` + `be700fd` |
 | D112 Lobby public read model | complete | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | 390 tests + compileall + diff check | `b12a235` + `df0b1ce` + `507eed7` |
 | D113 Lobby personalized fit preview | complete | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | 393 tests + compileall + diff check | `f6ec282` + `6e79869` + `caa4e7d` |
+| D114 active-intent Lobby projection | in_progress | Carry the bounded public Lobby view inside matching active-demand candidates so one preview can render the recommendation card | pending | |
 
 ## 已知坑位（Running Gotchas）
 
