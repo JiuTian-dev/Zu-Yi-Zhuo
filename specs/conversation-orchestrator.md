@@ -1206,6 +1206,7 @@ master
 | D127 timed sync window | complete | Add a server-owned 30-minute `sync_expires_at`, lazily migrate expired sync tables back to async across REST/list/WebSocket access, broadcast the transition, and persist/recover the deadline in JSON snapshots | 423 tests + compileall + diff check | `6bb5aae` |
 | D128 Lobby sync deadline projection | complete | Propagate the server-owned `sync_expires_at` into public `LobbyPreview` cards for `/tables/{id}/lobby` and discovery, omitting it for async/legacy tables | 424 tests + compileall + diff check | `e30fc16` |
 | D129 grounded source signal link | complete | Preserve the validated public `ContentSignal.signal_id` in trusted GROUND cards, realtime events, intervention replay, and JSON persistence while keeping manual/legacy cards compatible | 424 tests + compileall + diff check | `8dd07d3` |
+| D130 atomic grounded intervention commit | complete | Consume the staged GROUND card in the same in-memory/JSON commit as the next `TableState` and `InterventionRecord`, preserving the card when persistence fails | 425 tests + compileall + diff check | `b025edf` |
 
 ## 已知坑位（Running Gotchas）
 
