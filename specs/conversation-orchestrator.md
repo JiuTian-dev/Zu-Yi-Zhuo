@@ -814,6 +814,13 @@
 - **替代方案**: 席位一空就自动补人、让 LLM 自由判断并直接邀请、或只显示静态 role gaps；这些方案分别把“5 人最佳”误写成硬指标、扩大不可审计的 steering/隐私风险，或没有满足“根据真实讨论”的产品要求。
 - **代价**: V1 的信息角色词表仍是有界启发式，未覆盖所有专业角色；判断是解释性建议而非召回质量保证。成员即使在 `should_recruit=false` 时仍可主动请求候选预览，但服务端会同时返回不建议补人的依据，不会伪装成 Agent 自动决策。
 
+### ADR-115: 后续选桌个性化只读派生、可解释且可一键重置
+
+- **决策**: 新增本人作用域的 `GET /participants/{id}/table-recommendations?viewer_id={id}&limit={n}`，返回 `ParticipantTableRecommendations(participant_id, personalized, signal_count, signal_types, items)`。服务端只读取本人最近最多 100 条既有 `BehaviorEvent`，把 `table_selected`、真人发言和处于 `completed/in_progress` 的行动回响作为有界弱信号；单桌/单类型设上限，避免刷屏或一次偶然行为主导。候选只来自未关闭、未软过期、未满席、本人尚未入席且与任何现有成员不命中 no-match 的公开桌。每项复用 `LobbyPreview`，只给不带分数的自然语言理由、可选的本人历史桌问题依据和角色缺口；没有有效信号时稳定退回非个性化空席/角色多样性排序。调用只读、不持久化新画像、不调用外部 source、不邀请或入席；现有 `DELETE /participants/{id}/behavior-events` 会立即把结果重置为冷启动。
+- **理由**: 产品文档要求“画像从选桌、发言、追问、行动回响中持续形成”并让后续组桌越来越懂人，但现状的行为账本只是可读日志，没有反哺首页发现。[Google PAIR 的反馈与控制指南](https://pair.withgoogle.com/guidebook-v2/chapter/feedback-controls/)指出隐式行为可能含义模糊，应该说明收集与用途、降低弱信号影响并允许查看和重置；其[推荐解释模式](https://pair.withgoogle.com/guidebook-v2/patterns)也建议只展示帮助用户继续决策的信息。[NIST AI RMF](https://www.nist.gov/itl/ai-risk-management-framework/ai-risk-management-framework-faqs)把透明、可解释和隐私增强列为可信 AI 特征。因此 V1 不建立可漂移的全局人格标签，而把本人主动拉取、来源说明和现有删除权作为边界。
+- **替代方案**: 建立长期可编辑画像表、让 LLM 读取完整历史消息自由推荐、把一次点击当成强偏好、或按黑箱分数自动入席；这些方案分别制造重复真相与删除难题、扩大隐私面、过度解释偶然行为，或绕过人的最终选择。
+- **代价**: V1 使用确定性中文双字词项和公开角色缺口，不能声称理解了稳定人格；行为事件没有时间戳，因此“最近”按持久账本顺序定义。重置只清除行为个性化信号，不删除依法/产品必须保留的桌消息、状态与安全审计；推荐质量需要在真实内测中继续验证。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -859,6 +866,7 @@ PUT  /tables/{id}/participants/{participant_id}/invitation-preference?viewer_id=
 GET  /participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 PUT  /participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 GET  /participants/{participant_id}/invitations?viewer_id={participant_id}&status={status}&offset={n}&limit={n}
+GET  /participants/{participant_id}/table-recommendations?viewer_id={participant_id}&limit={n}
 POST /tables/{id}/invitations
 GET  /tables/{id}/invitations?participant_id={candidate_id}
 POST /tables/{id}/invitations/{invitation_id}/respond?participant_id={candidate_id}
@@ -963,6 +971,10 @@ CommentPromotion(promotion_id, table_id, comment_id, promoter_id,
 AgentPresence(agent_id, display_name, role, status=active|paused|closed)
 BehaviorEvent(event_id, participant_id, event_type, table_id,
               state_version?, related_participant_id?, detail?)
+ParticipantTableRecommendations(participant_id, personalized, signal_count,
+                                signal_types, items<=10)
+PersonalizedTableRecommendation(table_id, reason, based_on_table_id?,
+                                based_on_question?, matched_role_gap?, lobby)
 ParticipantSeed(..., public_signal_ids?<=20)
 MatchReason(participant_id, reason, evidence_terms, evidence_signal_ids?<=5)
 OpportunityPreview(..., source_signals?<=20)
@@ -1127,7 +1139,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D134 evaluation rhythm metrics
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D135 account invitation preference
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D136 participant invitation inbox
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D137 evidence-backed recruitment decision
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D137 evidence-backed recruitment decision
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D138 explainable personalized table discovery
 ```
 
 ## Progress Ledger
@@ -1275,6 +1288,7 @@ master
 | D135 account invitation preference | complete | Persist self-scoped many/few/none across tables; override stale request/source seeds for matching, source handoff, dynamic recommendations and new invitations; recheck post-preview opt-outs while preserving Lobby fit and explicit join intent | 446 tests + compileall + diff check | `3401545` + `7a661ed` |
 | D136 participant invitation inbox | complete | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with stable status ordering/filter/pagination, redacted invitation data, public Lobby context and server-derived actionability; reuse the existing durable invitation ledger | 451 tests + compileall + diff check | `cef8efb` + `656672f` |
 | D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
+| D138 explainable personalized table discovery | in progress | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
