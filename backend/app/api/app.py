@@ -1649,7 +1649,11 @@ def create_app(
         from_version: int | None = Query(default=None, ge=0),
         participant_id: str | None = Query(default=None),
     ) -> ReplayResponse:
-        if participant_id is not None:
+        if identity_resolver is not None:
+            if participant_id is None:
+                raise HTTPException(status_code=401, detail="participant_id is required")
+            require_request_identity(identity_resolver, request, participant_id)
+        elif participant_id is not None:
             require_request_identity(identity_resolver, request, participant_id)
         current_state = table_or_404(table_id)
         if participant_id is not None and participant_id not in current_state.participants:

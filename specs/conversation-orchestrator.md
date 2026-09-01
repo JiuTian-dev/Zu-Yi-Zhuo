@@ -604,6 +604,13 @@
 - **替代方案**: 新建运营后台接口、让前端分别读取邀请与评论账本、或返回每个候选人的明细；这些方案分别扩大权限面、产生竞态和重复计算、或泄露未入席用户的信息。
 - **代价**: 计数是单桌快照级别且不做跨桌报表；评论被促成只表示核心成员显式采纳，不等同于外部关注质量，后续仍需结合真实内测解释。
 
+### ADR-84: 生产回放必须由桌内身份读取
+
+- **决策**: 当 `create_app` 注入 `identity_resolver` 时，`GET /tables/{id}/replay` 必须携带 `participant_id`，并通过服务端身份解析和当前桌成员校验后才返回真人消息、干预审计和评论账本；缺少声明身份返回 401，非成员返回 404。未注入 resolver 的本地 Demo/CLI 继续允许省略 `participant_id`，以保持现有开发契约。
+- **理由**: 产品边界要求完整发言、个人卡和关系/行动产物留在桌内。回放包含原始消息和主持审计，是最容易绕过投影的读取入口；生产身份门禁应在路由层 fail-closed，而不是依赖前端隐藏参数。
+- **替代方案**: 永久保留匿名回放、只让前端自行过滤，或新建一套与 replay 分叉的私有接口；这些方案分别直接泄露桌内内容、无法抵御恶意客户端、或造成两套回放口径。
+- **代价**: 生产接入方必须提供可用的身份解析器；本地无认证演示仍是显式开发模式，不应直接暴露到公网。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -949,6 +956,7 @@ master
 | D104 question footprint projection | complete | Add self-scoped bounded contribution/changed-evidence view derived from closed table snapshots | 372 tests + compileall + diff check | `698f2b9` |
 | D105 action echoes projection | complete | Add self-scoped bounded action outcome history derived from closed follow-up ledgers | 374 tests + compileall + diff check | `8554116` |
 | D106 evaluation funnel and attention metrics | complete | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | 375 tests + compileall + diff check | `c6a93d4` |
+| D107 production replay identity gate | in_progress | Require authenticated current-table membership for raw replay reads when an identity resolver is configured | pending | — |
 
 ## 已知坑位（Running Gotchas）
 

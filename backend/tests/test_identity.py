@@ -44,6 +44,26 @@ def test_injected_identity_resolver_cross_checks_self_scoped_rest_routes() -> No
     assert valid.status_code == 200
 
 
+def test_injected_identity_resolver_protects_raw_replay_reads() -> None:
+    client = TestClient(create_app(_repository(), identity_resolver=_header_identity))
+
+    missing = client.get("/tables/identity-table/replay")
+    unauthenticated = client.get("/tables/identity-table/replay?participant_id=p1")
+    mismatch = client.get(
+        "/tables/identity-table/replay?participant_id=p1",
+        headers={"X-User-ID": "p2"},
+    )
+    valid = client.get(
+        "/tables/identity-table/replay?participant_id=p1",
+        headers={"X-User-ID": "p1"},
+    )
+
+    assert missing.status_code == 401
+    assert unauthenticated.status_code == 401
+    assert mismatch.status_code == 403
+    assert valid.status_code == 200
+
+
 def test_injected_identity_resolver_protects_invitation_preference_update() -> None:
     client = TestClient(create_app(_repository(), identity_resolver=_header_identity))
 
