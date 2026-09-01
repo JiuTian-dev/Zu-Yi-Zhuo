@@ -13,6 +13,7 @@ python -m uvicorn app.main:app --reload
 启动后可用：
 
 - `GET /healthz`：进程存活探针。
+- `GET /capabilities`：公开当前运行能力开关（仓储、确定性/自定义 provider、三类 source 是否注入、WebSocket 和 5 席上限）；不返回命令、模型名、token 或身份配置。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
