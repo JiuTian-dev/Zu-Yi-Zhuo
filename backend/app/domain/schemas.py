@@ -119,6 +119,49 @@ class OpportunityRequest(ContractModel):
         return self
 
 
+class ActiveIntentRequest(ContractModel):
+    """A viewer's bounded natural-language request for a roundtable."""
+
+    message: str = Field(min_length=1, max_length=1000)
+    limit: int = Field(default=5, ge=1, le=5)
+
+    @model_validator(mode="after")
+    def message_is_not_blank(self) -> "ActiveIntentRequest":
+        if not self.message.strip():
+            raise ValueError("active intent message must not be blank")
+        return self
+
+
+class ActiveIntentTableCandidate(ContractModel):
+    """A public table that may satisfy an active intent."""
+
+    table_id: str = Field(min_length=1)
+    core_question: str = Field(min_length=1, max_length=120)
+    current_subquestion: str | None = Field(default=None, max_length=120)
+    mode: ConversationMode
+    participant_count: int = Field(ge=0, le=5)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class ActiveIntentPreview(ContractModel):
+    """Non-persistent route preview for the product's active-demand entry."""
+
+    normalized_question: str = Field(min_length=1, max_length=120)
+    route: Literal["clarify", "join_existing", "new_table"]
+    clarifying_question: str | None = Field(default=None, max_length=120)
+    candidates: list[ActiveIntentTableCandidate] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def route_has_consistent_payload(self) -> "ActiveIntentPreview":
+        if self.route == "clarify" and (self.candidates or not self.clarifying_question):
+            raise ValueError("clarify route requires a clarifying question and no candidates")
+        if self.route == "join_existing" and not self.candidates:
+            raise ValueError("join_existing route requires candidates")
+        if self.route != "clarify" and self.clarifying_question is not None:
+            raise ValueError("clarifying_question is only valid for clarify route")
+        return self
+
+
 class SourceEvidence(ContractModel):
     """Evidence that points back to source signals rather than chat turns."""
 

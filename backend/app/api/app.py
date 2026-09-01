@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
+from app.domain import ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -27,6 +27,7 @@ from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
+from app.intake import build_active_intent_preview
 
 
 def _bounded_source_rows(rows: object, limit: int) -> list[object]:
@@ -817,6 +818,15 @@ def create_app(
     @api.post("/opportunities/preview", response_model=OpportunityPreview)
     def preview_opportunity(payload: OpportunityRequest) -> OpportunityPreview:
         return build_opportunity_preview(payload)
+
+    @api.post("/intents/preview", response_model=ActiveIntentPreview)
+    def preview_active_intent(payload: ActiveIntentRequest) -> ActiveIntentPreview:
+        """Route an active demand toward clarification, an open table, or a new table."""
+        return build_active_intent_preview(
+            payload.message,
+            repo.list_tables(),
+            limit=payload.limit,
+        )
 
     @api.post("/opportunities/source-preview", response_model=OpportunityPreview)
     async def preview_source_opportunity(payload: OpportunitySourceRequest) -> OpportunityPreview:
