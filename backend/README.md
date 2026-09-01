@@ -144,9 +144,11 @@ python -m uvicorn app.main:app
 机会预览只接受公开 source signal（问题/回答/文章标题、摘要、公开作者角色和公开立场），信号数量最多 20、
 至少覆盖 2 位作者。输出的 `signal_ids` 和 `unfinishedness` 可回溯到原始来源；候选人仍需经过
 `/matches/preview` 的席位与邀请偏好校验后才能建桌。确认匹配或直接建桌时可选持久化最多 20 个公开
-`origin_signal_ids`，回放和 JSON 重启会保留这些 ID；桌状态不会保存来源标题、摘要、私有立场或 token。
+`origin_signal_ids`，并可在同一请求中提交对应的 `origin_signals` 公共快照；回放和 JSON 重启会保留
+这些 ID 与快照。快照位于独立的公开来源账本，不进入 `TableState`，且桌状态不会保存来源标题、摘要、私有立场或 token。
 机会预览响应中的 `source_signals` 是本次请求的公开安全投影（含 `title`、`excerpt`、`source_ref`、公开作者信息和互动量），
-同样受 `ContentSignal` 字段长度与 20 条上限约束；它不会被复制进桌状态。
+同样受 `ContentSignal` 字段长度与 20 条上限约束；`GET /tables/{table_id}/replay` 会在存在快照时返回
+`source_signals`，没有快照的旧 ID-only 桌仍只返回 `origin_signal_ids`。
 
 Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`，可用逗号分隔的 `CORS_ORIGINS` 覆盖。
 

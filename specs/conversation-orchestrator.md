@@ -548,6 +548,13 @@
 - **替代方案**: 只返回角色文案、把候选完整资料塞进推荐、或让前端从 source 结果自行拼接 ID；这些方案分别不可核对、扩大隐私面、或绕过服务端候选过滤。
 - **代价**: 归因只保留公开 ID，不保证 source 内容永久可用；未来如需补位后的公开摘要，应复用公开 source snapshot，而不是放宽推荐的私有字段边界。
 
+### ADR-76: 公开来源快照独立于 Table State 持久化
+
+- **决策**: 仓储增加按桌隔离的公开 `ContentSignal` 快照账本。直接建桌和匹配确认可提交最多 20 条 `origin_signals`，其 `signal_id` 必须属于 `origin_signal_ids`；仅提交 ID 的旧调用仍合法。快照只包含已校验的 `visibility=public` 信号，和 `TableState` 分开持久化。`GET /tables/{id}/replay` 在有快照时返回 `source_signals`，JSON 重启恢复；缺失快照时仍只返回已有 ID。
+- **理由**: 仅持久化 ID 无法在重启或回放时恢复“为什么这桌值得创建”的可读证据；把公开快照放在独立账本能保留标题/摘要/来源引用，又不扩大不可变状态、个人资料或消息正文的生命周期。
+- **替代方案**: 把完整信号塞入 `TableState`、每次回放重新调用外部 source、或要求前端永久保存来源；这些方案分别造成状态膨胀/过期、外部依赖漂移、或无法可靠恢复。
+- **代价**: 快照仍是创建时的公开副本，需未来补充保留/删除策略；ID-only 建桌没有可读快照，系统不会伪造来源内容。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -664,6 +671,7 @@ ParticipantSeed(..., public_signal_ids?<=20)
 MatchReason(participant_id, reason, evidence_terms, evidence_signal_ids?<=5)
 OpportunityPreview(..., source_signals?<=20)
 CandidateRecommendation(..., evidence_signal_ids?<=5)
+ReplayResponse(..., source_signals?<=20)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -756,6 +764,9 @@ master
                                                                                                                                                                                                                                                                                                                                                             ←── D94 REST mutation rate limit
                                                                                                                                                                                                                                                                                                                                                                  ←── D95 public match signal attribution
                                                                                                                                                                                                                                                                                                                                                                        ←── D96 persisted public source lineage
+                                                                                                                                                                                                                                                                                                                                                                             ←── D97 public opportunity evidence projection
+                                                                                                                                                                                                                                                                                                                                                                                  ←── D98 dynamic candidate evidence attribution
+                                                                                                                                                                                                                                                                                                                                                                                       ←── D99 persisted public source snapshot ledger
 ```
 
 ## Progress Ledger
@@ -864,6 +875,7 @@ master
 | D96 persisted public source lineage | complete | Persist bounded origin signal IDs on table creation/match confirmation with candidate-source validation and JSON/replay recovery | 360 tests + compileall + diff check | `a5d75a0` |
 | D97 public opportunity evidence projection | complete | Return bounded public source signals in opportunity previews for immediate explanation without copying them into table state | 360 tests + compileall + diff check | `2ca1ad6` |
 | D98 dynamic candidate evidence attribution | complete | Carry bounded public source IDs into dynamic fifth-seat recommendations without leaking candidate profile fields | 360 tests + compileall + diff check | `0536645` |
+| D99 public source snapshot ledger | complete | Persist bounded public `ContentSignal` snapshots outside `TableState`, expose them in replay, and recover them after JSON restart without accepting private fields | 362 tests + compileall + diff check | `de04494` |
 
 ## 已知坑位（Running Gotchas）
 
