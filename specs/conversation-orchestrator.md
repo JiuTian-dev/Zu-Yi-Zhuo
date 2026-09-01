@@ -459,10 +459,10 @@
 
 ### ADR-63: 圆桌邀请偏好支持本人更新并与实时状态一致
 
-- **决策**: 增加 `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}`，请求体只允许 `many / few / none`。V1 的偏好作用域是当前桌席位：只有本人可以更新，状态版本在真实变更时递增，重复提交保持幂等；关闭或软过期桌拒绝写入。WebSocket 增加同名语义的 `participant_invitation_preference` 客户端事件，并广播 `participant_invitation_preference_changed` 与投影状态。候选人创建邀请时继续以其 `ParticipantSeed.roundtable_invite_preference` 作为 source-of-truth；账号级偏好待真实身份/资料源接入后再同步，不在当前单桌仓储中臆造全局用户表。
-- **理由**: 产品允许用户选择“多推 / 少推 / 不推”圆桌邀请，但此前该字段只能在候选 seed 创建时写入，已入席用户无法撤回或调整，前端设置页会出现无效控件。把更新绑定到当前席位可立即闭合联调链路，同时沿用现有身份 resolver、版本化快照、REST/WS 广播和隐私投影边界。
-- **替代方案**: 只让前端保存偏好、增加未接入身份系统的全局偏好表、或让邀请方覆盖用户选择；这些方案分别无法形成服务端约束、会产生跨桌一致性假设或违反候选人自决。
-- **代价**: 同一用户跨桌的偏好暂不自动同步；真实账号/资料源接入时需要增加全局偏好适配器，并将其映射到新候选 seed 和现有席位。
+- **决策**: 增加 `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}`，请求体只允许 `many / few / none`。V1 的偏好作用域是当前桌席位：只有本人可以更新，状态版本在真实变更时递增，重复提交保持幂等；关闭或软过期桌拒绝写入。WebSocket 增加同名语义的 `participant_invitation_preference` 客户端事件，并广播 `participant_invitation_preference_changed` 与投影状态。候选人创建邀请时继续以其 `ParticipantSeed.roundtable_invite_preference` 作为 source-of-truth。D135/ADR-112 后续增加独立账号级账本并将其作为未来主动触达的优先值，但仍不回写本 ADR 的历史桌席位。
+- **理由**: 产品允许用户选择“多推 / 少推 / 不推”圆桌邀请，但该切片落地前字段只能在候选 seed 创建时写入，已入席用户无法撤回或调整，前端设置页会出现无效控件。把更新绑定到当前席位可立即闭合联调链路，同时沿用现有身份 resolver、版本化快照、REST/WS 广播和隐私投影边界。
+- **替代方案**: 当时排除了只让前端保存偏好、在账号边界尚未设计时直接臆造全局资料表、或让邀请方覆盖用户选择；这些方案分别无法形成服务端约束、会产生未经定义的跨桌一致性，或违反候选人自决。
+- **代价**: 该切片最初不做跨桌同步；D135 后续用独立账号级账本补齐未来主动触达约束，并刻意保持账号偏好与当前桌席位偏好两种作用域，不自动改写历史状态。
 
 ### ADR-64: WebSocket 入站事件按连接限速
 
@@ -648,7 +648,7 @@
 
 ### ADR-90: Lobby 个性化理由只做只读 fit-preview
 
-- **决策**: 增加候选人自证的 `POST /tables/{id}/lobby-fit?participant_id={candidate_id}`。请求提交候选人的 `ParticipantSeed`，服务端只使用其公开角色与桌面角色缺口生成 `LobbyFitPreview(eligible, matched_role_gap?, reason)`；不返回立场、经历、source ID 或其他成员资料，不保存候选种子、不创建申请、不发邀请、不广播事件。关闭、软过期、满桌、免邀请偏好、已入席或 no-match 均返回 `eligible=false` 的通用理由；正常开放且未命中边界时返回 `eligible=true`，候选人仍须走 D111 申请/邀请流程。
+- **决策**: 增加候选人自证的 `POST /tables/{id}/lobby-fit?participant_id={candidate_id}`。请求提交候选人的 `ParticipantSeed`，服务端只使用其公开角色与桌面角色缺口生成 `LobbyFitPreview(eligible, matched_role_gap?, reason)`；不返回立场、经历、source ID 或其他成员资料，不保存候选种子、不创建申请、不发邀请、不广播事件。关闭、软过期、满桌、已入席或 no-match 均返回 `eligible=false` 的通用理由；正常开放且未命中边界时返回 `eligible=true`，候选人仍须走 D111 申请/邀请流程。D135/ADR-112 明确该本人主动预览不受账号级免邀请偏好阻断。
 - **理由**: Lobby 验收要求“为什么想到你”，但不能在入席前把个人画像写入桌状态或让前端自行推断。只读 fit-preview 让候选人获得可解释的下一步提示，并把“适配判断”和真正的申请/邀请事务分开。
 - **替代方案**: 直接把候选人加入桌、把完整个人资料放进 Lobby、或让前端按静态角色文案决定；这些方案分别绕过席位边界、扩大隐私暴露、或产生不可审计的客户端决策。
 - **代价**: V1 只提供角色缺口级别的通用理由，不声称基于知乎个人历史做推荐；真实个人 source 仍需独立授权，申请与入席状态仍由 D111 负责。
@@ -902,7 +902,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步；升级写入 `sync_expires_at`，到期后服务端惰性生成新的异步快照并广播 `sync_window_expired`，不依赖客户端倒计时。
-邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
+邀请偏好：候选人账号级保存值优先于请求/source 快照；有效值为 `none` 时不会被平台或他人主动匹配、推荐或新邀请，未保存时沿用候选值且默认 `few`。本人主动 Lobby 适配预览与 join request 不受该开关阻断。
 席位偏好更新：REST 与参与者 WebSocket 只允许本人修改当前桌席位的 `many/few/none`；真实变更递增状态版本并广播投影状态，重复值幂等，关闭/软过期桌拒绝写入，不会移除现有席位或撤回已发邀请。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 软过期边界：软过期桌默认从发现列表隐藏；桌内对话、成员、邀请、同步、主持/安全快照和来源卡片写入均返回冲突，历史回放、状态查询、收桌和收桌后行动回响仍可用；重复软过期不增加版本。
@@ -1253,7 +1253,7 @@ master
 | D132 observer fact conflict detection | complete | Detect explicit opposite assertions on the same bounded fact topic from real human turns so the existing GROUND/source-card path can trigger without client-supplied disagreements; no trusted card safely falls back to PROBE | 437 tests + compileall + diff check | `c5a3415` + `b7a3854` |
 | D133 grounding black-box demo | complete | Add an isolated deterministic CLI that drives the real grounding REST/WS/replay path without persistent or frontend writes | 439 tests + compileall + diff check | `deb9e0a` + `0e78505` |
 | D134 evaluation rhythm metrics | complete | Derive member-scoped intervention/effect rates and bounded phase distribution from existing turn, snapshot, and intervention ledgers; persist a backward-compatible effective-reflection flag | 440 tests + compileall + diff check | `1acaf88` + `fdc7062` |
-| D135 account invitation preference | in progress | Persist self-scoped many/few/none across tables and enforce it for future platform/peer-initiated matching and invitations while preserving explicit join intent | pending | design recorded; implementation next |
+| D135 account invitation preference | complete | Persist self-scoped many/few/none across tables; override stale request/source seeds for matching, source handoff, dynamic recommendations and new invitations; recheck post-preview opt-outs while preserving Lobby fit and explicit join intent | 446 tests + compileall + diff check | `3401545` + `7a661ed` |
 
 ## 已知坑位（Running Gotchas）
 

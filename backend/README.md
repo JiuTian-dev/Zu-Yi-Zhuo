@@ -59,12 +59,13 @@ python -m app.cli.grounding_demo
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由；来自机会预览的理由会附带 `evidence_signal_ids`，确认时可把公开 `signal_ids` 作为 `origin_signal_ids` 写入桌状态。
 - `POST /matches/source-preview` → `POST /matches/source-confirm`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约；预览只返回短期不透明 `preview_token`，确认由服务端复用已授权候选建桌，不把私有候选字段交给浏览器，也不会二次调用 source。票据默认 5 分钟、单次消费；过期、重复使用或无效票据返回 409。
 - `GET /tables/{table_id}/lobby`：入席前的公开 Lobby 读模型，集中返回谁在里面、当前聊到哪、空席/角色缺口和公共来源 ID；同步围炉时还会带 `sync_expires_at` 供首页倒计时，不返回消息、私有资料、邀请队列或个人卡。
-- `POST /tables/{table_id}/lobby-fit?participant_id=...`：候选人用自己的 `ParticipantSeed` 获取角色缺口级别的“为什么想到你”解释；这是只读预览，不保存资料、不创建申请或邀请，免邀请、no-match、满桌和已结束桌返回 `eligible=false`。
+- `POST /tables/{table_id}/lobby-fit?participant_id=...`：候选人用自己的 `ParticipantSeed` 获取角色缺口级别的“为什么想到你”解释；这是用户主动发起的只读预览，不保存资料、不创建申请或邀请。账号选择不接收主动邀桌时仍可查看；no-match、满桌和已结束桌返回 `eligible=false`。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
 - `POST /tables/{table_id}/join-requests?participant_id=...`：候选人向已有桌表达加入意愿；请求会保留私有候选种子，但响应只返回展示名、角色和申请状态，不会直接新增席位。
 - `GET /tables/{table_id}/join-requests?participant_id=...`：桌内成员查看脱敏申请队列，候选人只能查看自己的申请；`POST .../{request_id}/approve?participant_id=...` 由成员审核并生成现有邀请，候选人仍需通过邀请响应接口接受；`POST .../{request_id}/decline?participant_id=...` 拒绝申请。
+- `GET/PUT /participants/{participant_id}/invitation-preference?viewer_id=...`：本人读取或保存跨桌账号级邀桌偏好；未设置返回 `few`。保存值优先于请求或授权 source 中可能过期的候选值，并约束未来匹配、动态推荐和新邀请；`none` 不撤回已有邀请/席位，也不阻断本人主动查看 Lobby 或提交 join request。
 - `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id=...`：本人更新当前桌席位的圆桌邀请偏好（`many`、`few`、`none`）；重复提交幂等，关闭/软过期桌拒绝写入。
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级；成功状态带服务端 `sync_expires_at` 截止时间（默认 30 分钟），到期后首次 REST/列表/WS 访问会原子退回异步并广播 `table_mode_changed(reason=sync_window_expired)`。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
@@ -135,10 +136,11 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 `table_soft_expired`；`GET /tables/{id}`、回放、行动回响和收桌仍可用，收桌后仍保留软过期标记。
 收桌迁移在内存和 JSON 仓储中都原子持久化；带参与者身份的 REST/WS 收桌会把关闭状态与私有 `table_closed` 行为事件写进同一次仓储提交，重启后仍可读取关闭状态、收桌卡和行动回响，重复收桌不增加版本或重复事件。
 
-候选资料可设置 `roundtable_invite_preference`：`many`、`few`（默认）或 `none`。选择 `none` 的候选人会
-在匹配和邀请边界被跳过。
+候选资料可设置 `roundtable_invite_preference`：`many`、`few`（默认）或 `none`。账号级保存值会覆盖
+请求或 source 中的旧值；选择 `none` 的候选人会在平台/他人主动发起的匹配、推荐和新邀请边界被跳过。
+来源匹配确认还会重新检查预览后的偏好变化，避免用未过期票据绕过刚刚关闭的邀桌权限。
 
-已入席成员可以通过 REST 或 WebSocket 调整当前桌席位的邀请偏好；这会版本化写入 `TableState`，但不会移除现有席位或撤回已发邀请。V1 尚未接入全局账号偏好表，跨桌同步需由后续身份/资料源适配器完成。
+账号级偏好由本人 REST 接口写入独立持久账本，旧 JSON 快照按空账本兼容加载。已入席成员仍可通过 REST 或 WebSocket 调整当前桌席位偏好；该值只版本化写入当前 `TableState`，不反向覆盖账号值，也不会改写历史席位或撤回已发邀请。账号选择 `none` 后仍可主动查看 Lobby 适配度和申请加入，成员批准后由本人接受邀请才新增席位。
 
 不再匹配偏好是参与者本人可写的全局关系账本，关系对两端对称生效；命中后服务端拒绝新邀请、过滤
 动态候选预览，但不删除已有桌成员、历史消息或旧邀请。删除操作幂等，JSON 仓储会在重启后恢复。

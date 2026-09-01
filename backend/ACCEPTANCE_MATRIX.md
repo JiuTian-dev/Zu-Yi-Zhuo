@@ -47,7 +47,7 @@
 | 产品/工程约束 | 后端保证 | 证据 |
 |---|---|---|
 | 半公开资料，未同意不展示立场与经历 | viewer-scoped REST/WS 投影，个人卡定向返回 | `backend/app/api/privacy.py`、`backend/app/api/websocket.py`；`tests/test_identity.py`、`tests/test_privileged_identity.py` |
-| 不匹配、邀请偏好和离桌权利由服务端执行 | 对称 no-match、`many/few/none`、原子离桌 | `backend/app/api/repository.py`；`tests/test_no_match.py`、`tests/test_api.py` |
+| 不匹配、邀请偏好和离桌权利由服务端执行 | 对称 no-match；账号级 `many/few/none` 覆盖旧 source/request 值并约束未来主动触达；当前桌偏好与历史席位互不改写；原子离桌 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_account_invitation_preference.py`、`tests/test_no_match.py`、`tests/test_api.py` |
 | 举报只给本人或受控审核器，不能广播 | moderator resolver、状态迁移审计、分页队列 | `backend/app/api/app.py`；`tests/test_safety_reports.py`、`tests/test_safety_resolution.py` |
 | 安全按风险逐级处理，不误伤正常分歧 | 气氛升温 `safety_soft_intervention`、首次边界 `safety_private_reminder`、重复边界 critical 暂停；strike 计数私有且可重启恢复 | `backend/app/orchestrator/safety.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_safety.py`、`tests/test_websocket.py`、`tests/test_comment_promotion.py`、`tests/test_persistence.py` |
 | 重启后仍可恢复桌面与公开来源 | 原子 JSON snapshot repository，旧快照兼容 | `backend/app/api/repository.py`、`backend/app/main.py`；`tests/test_persistence.py` |
@@ -65,7 +65,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **439 passed**。最近一个后端功能切片是 D133（GROUND 黑盒演示）；对应实现提交为 `0e78505`，设计提交为 `deb9e0a`。上一切片 D132（Observer 事实冲突检测）为 `437 passed`，实现提交 `b7a3854`，设计提交 `c5a3415`。
+当前基线为 **446 passed**。最近一个后端功能切片是 D135（账号级邀桌偏好）；实现提交为 `7a661ed`，设计提交为 `3401545`。上一切片 D134（主持节奏评估指标）为 `440 passed`，实现提交 `fdc7062`，设计提交 `1acaf88`。
 
 ## 不把以下事项误报为已完成
 
