@@ -11,6 +11,7 @@ import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from
 import ClosingCard from './live/ClosingCard'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import { actorAnchors } from './Diorama'
+import BrunoTable from './BrunoTable'
 
 const turns = [...humanActors, tableHost]
 
@@ -235,6 +236,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
   const seated = phase === 'seated'
   const listening = entryIntent === 'listen' && !joined
+  const useBrunoWorld = true
   const liveActive = liveStatus === 'live' || liveStatus === 'mock'
   const speakingTurn = liveActive && liveSpeaking ? turns.find((turn) => turn.id === liveSpeaking) ?? null : null
   const currentTurn = speakingTurn ?? turns[activeSpeaker]
@@ -243,8 +245,9 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
   return (
     <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
-      <div className="art-fallback" aria-hidden="true" />
-      {enhanced && <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>}
+      <div className="art-fallback" aria-hidden="true" style={useBrunoWorld ? { display: "none" } : undefined} />
+      {enhanced && !useBrunoWorld && <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>}
+      {useBrunoWorld && <BrunoTable active={appPhase === 'world'} />}
       {!enhanced && seated && <img className="dom-host-fallback" src="/assets/actors/table-host-silence.png" alt="" aria-hidden="true" />}
       <div className="world-grade" aria-hidden="true" />
 
