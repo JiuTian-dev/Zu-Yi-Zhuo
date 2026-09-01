@@ -155,7 +155,10 @@ class InMemoryTableRepository:
             raise ValueError(f"table already exists: {table_id}")
         if len(participants) > MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
-        origin_ids = list(origin_signal_ids or [])
+        origin_ids = list(
+            origin_signal_ids
+            or [signal.signal_id for signal in (origin_signals or [])]
+        )
         public_signals = _index_public_source_signals(origin_signals, origin_ids)
         state = build_initial_state(
             table_id,
@@ -1138,7 +1141,10 @@ class JsonTableRepository(InMemoryTableRepository):
             raise ValueError(f"table already exists: {table_id}")
         if len(participants) > MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
-        origin_ids = list(origin_signal_ids or [])
+        origin_ids = list(
+            origin_signal_ids
+            or [signal.signal_id for signal in (origin_signals or [])]
+        )
         public_signals = _index_public_source_signals(origin_signals, origin_ids)
         state = build_initial_state(
             table_id,
