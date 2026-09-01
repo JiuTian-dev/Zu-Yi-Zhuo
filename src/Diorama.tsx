@@ -1,7 +1,9 @@
+import { useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { humanActors, tableHost, type ActorId } from './actors'
+import { GltfFit } from './sea/models'
 
 export type DioramaPhase = 'discovering' | 'approaching' | 'seated'
 
@@ -45,6 +47,58 @@ export const actorAnchors: Partial<Record<ActorId | 'viewer', { x: number; y: nu
 /* ---------------------------------------------------------------- terrain */
 
 const SHORE = (z: number) => 1.4 + Math.sin(z * 0.32) * 1.15
+
+/** Subtle sand grain + faint tile grid, multiplied over vertex colors. */
+function makeGroundTexture(): THREE.CanvasTexture {
+  const size = 512
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, size, size)
+    const image = ctx.getImageData(0, 0, size, size)
+    for (let i = 0; i < image.data.length; i += 4) {
+      const grain = 226 + Math.random() * 29
+      image.data[i] = grain
+      image.data[i + 1] = grain
+      image.data[i + 2] = grain
+    }
+    ctx.putImageData(image, 0, 0)
+    ctx.strokeStyle = 'rgba(120,110,90,0.16)'
+    ctx.lineWidth = 1.4
+    for (let g = 0; g <= size; g += size / 8) {
+      ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, size); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, g); ctx.lineTo(size, g); ctx.stroke()
+    }
+    ctx.fillStyle = 'rgba(140,120,90,0.12)'
+    for (let d = 0; d < 260; d += 1) {
+      ctx.beginPath()
+      ctx.arc(Math.random() * size, Math.random() * size, Math.random() * 2.2, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.wrapS = THREE.RepeatWrapping
+  tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(10, 8)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+
+/** Shared terrain height so props/grass can sit on the ground exactly. */
+export function dioramaHeight(x: number, z: number): number {
+  const shore = SHORE(z)
+  const inland = THREE.MathUtils.clamp((x - shore) / 3.2, 0, 1)
+  if (inland <= 0) return -1.15
+  const roll = Math.sin(x * 0.55 + z * 0.4) * 0.16 + Math.cos(z * 0.62 - x * 0.3) * 0.12
+  const hillLift = Math.max(0, (x - 12.5) * 0.42) + Math.max(0, (-z - 7.5) * 0.5)
+  let y = THREE.MathUtils.lerp(0.06, 0.42 + roll, inland) + hillLift
+  const flat = 1 - THREE.MathUtils.smoothstep(Math.hypot(x - TABLE_POS.x, z - TABLE_POS.z), 2.1, 4.4)
+  return THREE.MathUtils.lerp(y, 0.12, flat)
+}
 
 function Terrain() {
   const geometry = useMemo(() => {
@@ -131,6 +185,11 @@ const WATER_FRAG = `
     float shore = smoothstep(-1.0, 2.4, vWorld.x);
     col = mix(col, vec3(0.83, 0.76, 0.58), shore * 0.55);
     col += 0.035;
+    // foam: shoreline band + drifting whitecaps
+    float foamBand = smoothstep(0.9, 1.7, vWorld.x) * (1.0 - smoothstep(1.9, 2.6, vWorld.x));
+    float streak = smoothstep(0.55, 0.95, sin(vWorld.x * 2.1 + vWorld.z * 3.3 + uTime * 1.6) * 0.5 + 0.5);
+    float foam = clamp(foamBand * (0.55 + streak * 0.6) + streak * shore * 0.35, 0.0, 1.0);
+    col = mix(col, vec3(0.96, 0.98, 1.0), foam * 0.85);
     gl_FragColor = vec4(col, 0.94);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -389,6 +448,69 @@ function TableSet() {
 
 /* ---------------------------------------------------------------- figures */
 
+function InstancedGrass({ count = 300 }: { count?: number }) {
+  const { scene } = useGLTF('/assets/sea/kenney/grass.glb')
+  const ref = useRef<THREE.InstancedMesh>(null)
+  const prepared = useMemo(() => {
+    let geometry: THREE.BufferGeometry | null = null
+    let material: THREE.Material | null = null
+    scene.traverse((object: THREE.Object3D) => {
+      const mesh = object as THREE.Mesh
+      if ((mesh as THREE.Mesh).isMesh && geometry === null) {
+        geometry = mesh.geometry
+        material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+      }
+    })
+    return { geometry: geometry as unknown as THREE.BufferGeometry, material: material as unknown as THREE.Material }
+  }, [scene])
+
+  const matrices = useMemo(() => {
+    const list: THREE.Matrix4[] = []
+    let placed = 0
+    let i = 0
+    while (placed < count && i < count * 12) {
+      const a = i * 2.399963
+      const r = 1.6 + ((i * 37) % 100) / 100 * 12
+      const x = TABLE_POS.x + Math.cos(a) * r + Math.sin(i * 5.1) * 0.8
+      const z = TABLE_POS.z + Math.sin(a) * r + Math.cos(i * 3.7) * 0.8
+      i += 1
+      if (x < SHORE(z) + 0.35) continue
+      const y = dioramaHeight(x, z)
+      if (y < 0.08 || y > 0.9) continue
+      const m = new THREE.Matrix4()
+      const rot = new THREE.Matrix4().makeRotationY((i * 1.3) % (Math.PI * 2))
+      const sc = 0.55 + ((i * 17) % 10) / 22
+      const pos = new THREE.Matrix4().makeTranslation(x, y - 0.02, z)
+      m.multiply(pos).multiply(rot).multiply(new THREE.Matrix4().makeScale(sc, sc * (0.85 + ((i * 7) % 10) / 30), sc))
+      list.push(m)
+      placed += 1
+    }
+    return list
+  }, [count])
+
+  useEffect(() => {
+    if (!ref.current) return
+    matrices.forEach((m, i) => ref.current!.setMatrixAt(i, m))
+    ref.current.instanceMatrix.needsUpdate = true
+  }, [matrices])
+
+  if (!prepared.geometry || !prepared.material) return null
+  return <instancedMesh ref={ref} args={[prepared.geometry, prepared.material, matrices.length]} castShadow receiveShadow />
+}
+
+function LanternPair() {
+  return (
+    <group>
+      <GltfFit src="/assets/sea/lantern.glb" height={0.34} position={[3.05, 0.13, 4.35]} rotation={[0, 0.4, 0]} tint="#ffb85c" />
+      <GltfFit src="/assets/sea/lantern.glb" height={0.24} position={[5.6, 0.13, 3.3]} rotation={[0, -0.7, 0]} tint="#ffb85c" />
+    </group>
+  )
+}
+
+function BlossomTree() {
+  return <group position={[6.3, 0.18, 0.9]}><GltfFit src="/assets/sea/kenney/tree_small.glb" height={1.5} tint="#ff9ec4" /></group>
+}
+
 function SittingFigure({ seatId, accent, isHost = false, lookTarget }:
   { seatId: string; accent: string; isHost?: boolean; lookTarget: THREE.Vector3 }) {
   const pos = seatPos(seatId)
@@ -576,6 +698,9 @@ export default function DioramaScene(props: DioramaProps) {
       <BroadleafTree position={[15.2, 0.6, 1.8]} scale={1.1} />
       <BroadleafTree position={[6.4, 0.1, -6.2]} scale={0.9} />
       <Rocks />
+      <InstancedGrass />
+      <LanternPair />
+      <BlossomTree />
       <Figures {...props} />
       <AnchorProjector />
     </>

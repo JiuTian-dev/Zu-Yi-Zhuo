@@ -249,3 +249,17 @@ html.sea-mode,body.sea-mode{height:100%;overflow:hidden;background:#070b14}
 .sea-cta i{color:var(--sea-accent,#F2A65A)}
 .sea-footer{color:rgba(43,53,70,.55)}
 .sea-dots button{background:rgba(36,48,74,.25)}
+
+/* ---- contrast fix: light copy over dark mounds ---- */
+.sea-copy{color:#f2ead8}
+.sea-copy h2{color:#f6eeda;text-shadow:0 2px 26px rgba(10,16,26,.75),0 1px 6px rgba(10,16,26,.5)}
+.sea-missing{color:rgba(246,238,218,.88);text-shadow:0 1px 10px rgba(10,16,26,.6)}
+.sea-recommend{color:rgba(246,238,218,.82);text-shadow:0 1px 8px rgba(10,16,26,.55)}
+.sea-kicker{color:rgba(246,238,218,.75);text-shadow:0 1px 8px rgba(10,16,26,.5)}
+.sea-kicker span{color:var(--sea-accent,#F2A65A)}
+.sea-cta{color:#f6eeda;text-shadow:0 1px 8px rgba(10,16,26,.5);border-bottom-color:rgba(246,238,218,.5)}
+.sea-footer{color:rgba(246,238,218,.6);text-shadow:0 1px 6px rgba(10,16,26,.4)}
+.sea-brand b{color:#33415c}
+.sea-brand span{color:rgba(43,53,70,.55)}
+html.sea-mode,body.sea-mode{background:#aebcc8}
+.sea-page{background:#aebcc8}

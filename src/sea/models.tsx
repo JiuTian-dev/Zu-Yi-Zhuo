@@ -1,4 +1,5 @@
 import { useGLTF } from '@react-three/drei'
+import { applyBrunoStyle } from './brunoMaterial'
 import { useMemo, type ReactNode } from 'react'
 import * as THREE from 'three'
 
@@ -29,6 +30,7 @@ export function GltfFit({ src, height, position = [0, 0, 0], rotation = [0, 0, 0
           material.emissive = new THREE.Color(tint)
           material.emissiveIntensity = 0.32
         }
+        if (material) applyBrunoStyle(material)
       }
     })
     const holder = new THREE.Group()

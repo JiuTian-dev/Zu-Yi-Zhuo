@@ -7,6 +7,8 @@ import { Suspense, useEffect, useMemo, useRef, useLayoutEffect, useState, type C
 import * as THREE from 'three'
 import { galleryTables, worldLabel, type AppPhase, type TableSummary } from './domain'
 import { GltfFit, SEA_MODEL_PATHS } from './sea/models'
+import { SeaGrass } from './sea/seaGrass'
+import { applyBrunoStyle, updateBrunoShared } from './sea/brunoMaterial'
 import './gallery.css'
 
 export interface GalleryMediaRect { left: number; top: number; width: number; height: number }
@@ -106,7 +108,7 @@ const entries: Ent[] = (() => {
 const isCore = (entry: Ent) => entry.table.entryMode === 'immersive'
 
 /** shared mutable state between canvas and DOM (portals freeze props) */
-const seaState = { index: 0, orbit: 0, drag: false, lastPointer: 0 }
+const seaState = { index: 0, orbit: 0.85, drag: false, lastPointer: 0 }
 const seaGlow = { x: 0.5, y: 0.4, on: false }
 const clusterY = (x: number, z: number) => 0.1
 
@@ -181,9 +183,13 @@ function SeaTerrain() {
     geo.computeVertexNormals()
     return geo
   }, [])
+  const terrainMaterial = useMemo(() => {
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })
+    applyBrunoStyle(material)
+    return material
+  }, [])
   return (
-    <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial vertexColors roughness={0.95} flatShading />
+    <mesh geometry={geometry} material={terrainMaterial} receiveShadow>
     </mesh>
   )
 }
@@ -280,10 +286,10 @@ function SkyDome() {
         fragmentShader={`varying vec3 vWorld;
         void main(){
           float h = clamp(vWorld.y / 30.0 + 0.18, 0.0, 1.0);
-          vec3 top = vec3(0.42, 0.60, 0.78);
-          vec3 mid = vec3(0.66, 0.77, 0.86);
-          vec3 horizon = vec3(0.93, 0.81, 0.62);
-          vec3 warm = vec3(0.98, 0.86, 0.66);
+          vec3 top = vec3(0.30, 0.52, 0.78);
+          vec3 mid = vec3(0.52, 0.70, 0.84);
+          vec3 horizon = vec3(0.96, 0.78, 0.55);
+          vec3 warm = vec3(0.99, 0.85, 0.60);
           vec3 col = h > 0.5 ? mix(mid, top, (h - 0.5) / 0.5) : mix(mix(warm, horizon, smoothstep(0.0, 0.14, h)), mid, h / 0.5);
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
@@ -587,10 +593,9 @@ function TravelOrb() {
   )
 }
 
-function SeaCamera() {
+function SeaCamera({ focusPoint }: { focusPoint: THREE.Vector3 }) {
   const { camera } = useThree()
   const lookAt = useRef(new THREE.Vector3())
-  const focusPoint = useMemo(() => entries[seaState.index].pos.clone(), [])
   const current = useMemo(() => new THREE.Vector3(), [])
   const tween = useRef<gsap.core.Tween | null>(null)
 
@@ -607,9 +612,8 @@ function SeaCamera() {
     const entry = entries[seaState.index]
     if (!entry) return
     // slow auto-orbit + drag input
-    if (!seaState.drag) seaState.orbit += delta * 0.05
-    const r = 5.6
-    const height = 1.7 + Math.sin(clock.elapsedTime * 0.24) * 0.16
+    const r = 6.8
+    const height = 2.6 + Math.sin(clock.elapsedTime * 0.24) * 0.16
     const angle = seaState.orbit
     current.set(
       focusPoint.x + Math.cos(angle) * r + pointer.x * 0.42,
@@ -631,20 +635,22 @@ function SeaCamera() {
 }
 
 function SeaWorld() {
-  const renderCounter = useMemo(() => ({ v: 0 }), [])
-  useFrame(() => { renderCounter.v += 1 })
+  const focusPoint = useMemo(() => entries[seaState.index].pos.clone(), [])
+  useFrame(({ clock }) => {
+    updateBrunoShared(clock.elapsedTime)
+  })
   return (
     <>
       <color attach="background" args={['#070b14']} />
-      <fog attach="fog" args={['#9fb3c6', 13, 54]} />
+      <fog attach="fog" args={['#aebcc8', 12, 46]} />
       <SkyDome />
       <SeaTerrain />
       <SeaWater />
       <StarDust />
       <Pollen />
       <SeascapeScatter />
-      <FogPlane position={[0, -0.62, 0]} opacity={0.3} color="#c4d2e2" />
-      <FogPlane position={[0, -0.74, 0]} opacity={0.24} color="#b0c2d6" />
+      <FogPlane position={[0, -0.62, 0]} opacity={0.3} color="#cdd8e4" />
+      <FogPlane position={[0, -0.74, 0]} opacity={0.24} color="#bccadb" />
       <hemisphereLight color="#d8e8f8" groundColor="#8a9278" intensity={1.05} />
       <directionalLight
         color="#ffe8bd"
@@ -670,7 +676,8 @@ function SeaWorld() {
         ))}
       </Suspense>
       <TravelOrb />
-      <SeaCamera />
+      {false && <SeaGrass focus={focusPoint as any} wind={0.35} />}
+      <SeaCamera focusPoint={focusPoint} />
       <EffectComposer multisampling={0}>
         <Bloom mipmapBlur intensity={0.9} luminanceThreshold={0.75} luminanceSmoothing={0.22} radius={0.5} />
       </EffectComposer>
@@ -756,6 +763,8 @@ export default function TableSea({ onEnter, enhanced, phase, returnFocusId }: Ta
     raf = requestAnimationFrame(apply)
     return () => cancelAnimationFrame(raf)
   }, [])
+
+  if (!seaActive) return null
 
   const enter = () => {
     if (!isCore(focused) || !seaActive) return
