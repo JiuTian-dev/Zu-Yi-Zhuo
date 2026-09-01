@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -28,6 +28,7 @@ from .identity import ModeratorResolver, IdentityResolver, require_moderator_ide
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview
+from app.lobby import build_lobby_preview
 
 
 def _bounded_source_rows(rows: object, limit: int) -> list[object]:
@@ -610,6 +611,11 @@ def create_app(
             project_state_for_viewer(state, participant_id)
             for state in repo.list_tables(include_closed=include_closed)
         ]
+
+    @api.get("/tables/{table_id}/lobby", response_model=LobbyPreview)
+    def get_lobby_preview(table_id: str) -> LobbyPreview:
+        """Return the public pre-entry questions without exposing table internals."""
+        return build_lobby_preview(table_or_404(table_id))
 
     @api.get("/participants/{participant_id}/relationship-memory", response_model=list[RelationshipMemory])
     def get_relationship_memory(
