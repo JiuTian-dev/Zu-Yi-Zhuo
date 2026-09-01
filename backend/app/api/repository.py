@@ -141,6 +141,7 @@ class InMemoryTableRepository:
         self._comments: dict[str, list[PeripheralComment]] = {}
         self._comment_promotions: dict[str, list[CommentPromotion]] = {}
         self._no_match: dict[str, set[str]] = {}
+        self._account_invitation_preferences: dict[str, InvitationPreference] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
         self._safety_report_audits: dict[str, list[SafetyReportStatusAudit]] = {}
         self._safety_resolutions: dict[str, list[SafetyResolution]] = {}
@@ -170,6 +171,10 @@ class InMemoryTableRepository:
             or [signal.signal_id for signal in (origin_signals or [])]
         )
         public_signals = _index_public_source_signals(origin_signals, origin_ids)
+        participants = [
+            self.apply_account_invitation_preference(seed)
+            for seed in participants
+        ]
         state = build_initial_state(
             table_id,
             core_question,
@@ -213,6 +218,7 @@ class InMemoryTableRepository:
 
     @_synchronized
     def add_participant(self, table_id: str, seed: ParticipantSeed) -> TableState:
+        seed = self.apply_account_invitation_preference(seed)
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
@@ -240,6 +246,7 @@ class InMemoryTableRepository:
         self, table_id: str, inviter_id: str, candidate: ParticipantSeed, reason: str
     ) -> Invitation:
         """Create one candidate-scoped invitation without adding a seat yet."""
+        candidate = self.apply_account_invitation_preference(candidate)
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
@@ -273,6 +280,9 @@ class InMemoryTableRepository:
     @_synchronized
     def create_join_request(self, request: JoinRequest) -> tuple[JoinRequest, bool]:
         """Persist one candidate request without granting a seat."""
+        request = request.model_copy(update={
+            "candidate": self.apply_account_invitation_preference(request.candidate),
+        })
         state = self.get(request.table_id)
         if request.status != "pending" or request.invitation_id is not None:
             raise ValueError("new join requests must be pending")
@@ -282,8 +292,6 @@ class InMemoryTableRepository:
             raise ValueError("table is soft-expired")
         if request.candidate.participant_id in state.participants:
             raise ValueError("candidate is already a table participant")
-        if request.candidate.roundtable_invite_preference is InvitationPreference.NONE:
-            raise ValueError("candidate has disabled roundtable invitations")
         if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         if any(
@@ -356,8 +364,6 @@ class InMemoryTableRepository:
         candidate = request.candidate
         if candidate.participant_id in state.participants:
             raise ValueError("candidate is already a table participant")
-        if candidate.roundtable_invite_preference is InvitationPreference.NONE:
-            raise ValueError("candidate has disabled roundtable invitations")
         if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
             raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
         if self.is_no_match(inviter_id, candidate.participant_id):
@@ -453,6 +459,38 @@ class InMemoryTableRepository:
             other_participant_id in self._no_match.get(participant_id, set())
             or participant_id in self._no_match.get(other_participant_id, set())
         )
+
+    @_synchronized
+    def account_invitation_preference(
+        self, participant_id: str
+    ) -> InvitationPreference | None:
+        """Return an explicitly saved account preference, if one exists."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        return self._account_invitation_preferences.get(participant_id)
+
+    @_synchronized
+    def set_account_invitation_preference(
+        self, participant_id: str, preference: InvitationPreference
+    ) -> InvitationPreference:
+        """Persist a self-scoped preference for future matching and invitations."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        self._account_invitation_preferences = {
+            **self._account_invitation_preferences,
+            participant_id: preference,
+        }
+        return preference
+
+    @_synchronized
+    def apply_account_invitation_preference(
+        self, seed: ParticipantSeed
+    ) -> ParticipantSeed:
+        """Overlay an explicit account preference on a possibly stale source seed."""
+        preference = self._account_invitation_preferences.get(seed.participant_id)
+        if preference is None or preference is seed.roundtable_invite_preference:
+            return seed.model_copy(deep=True)
+        return seed.model_copy(update={"roundtable_invite_preference": preference}, deep=True)
 
     @_synchronized
     def record_safety_report(self, report: SafetyReport) -> tuple[SafetyReport, bool]:
@@ -1453,6 +1491,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._comments,
                 self._comment_promotions,
                 self._no_match,
+                self._account_invitation_preferences,
                 self._safety_reports,
                 self._safety_report_audits,
                 self._safety_resolutions,
@@ -1482,6 +1521,10 @@ class JsonTableRepository(InMemoryTableRepository):
             or [signal.signal_id for signal in (origin_signals or [])]
         )
         public_signals = _index_public_source_signals(origin_signals, origin_ids)
+        participants = [
+            self.apply_account_invitation_preference(seed)
+            for seed in participants
+        ]
         state = build_initial_state(
             table_id,
             core_question,
@@ -1744,6 +1787,23 @@ class JsonTableRepository(InMemoryTableRepository):
         return True
 
     @_synchronized
+    def set_account_invitation_preference(
+        self, participant_id: str, preference: InvitationPreference
+    ) -> InvitationPreference:
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        rows = {
+            **self._account_invitation_preferences,
+            participant_id: preference,
+        }
+        self._commit(
+            self._states,
+            self._turns,
+            account_invitation_preferences=rows,
+        )
+        return preference
+
+    @_synchronized
     def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
         preference = NoMatchPreference(
             participant_id=participant_id,
@@ -1933,6 +1993,7 @@ class JsonTableRepository(InMemoryTableRepository):
     def create_invitation(
         self, table_id: str, inviter_id: str, candidate: ParticipantSeed, reason: str
     ) -> Invitation:
+        candidate = self.apply_account_invitation_preference(candidate)
         state = self.get(table_id)
         if state.conversation.closed:
             raise ValueError("table is closed")
@@ -2418,6 +2479,7 @@ class JsonTableRepository(InMemoryTableRepository):
         public_source_signals: dict[str, dict[str, ContentSignal]] | None = None,
         join_requests: dict[str, list[JoinRequest]] | None = None,
         safety_strikes: dict[str, dict[str, int]] | None = None,
+        account_invitation_preferences: dict[str, InvitationPreference] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -2466,6 +2528,11 @@ class JsonTableRepository(InMemoryTableRepository):
             join_requests
             if join_requests is not None
             else self._join_requests
+        )
+        account_preference_rows = (
+            account_invitation_preferences
+            if account_invitation_preferences is not None
+            else self._account_invitation_preferences
         )
         payload = {
             "tables": {
@@ -2518,6 +2585,10 @@ class JsonTableRepository(InMemoryTableRepository):
             "no_match": {
                 participant_id: sorted(targets)
                 for participant_id, targets in no_match_rows.items()
+            },
+            "invitation_preferences": {
+                participant_id: preference.value
+                for participant_id, preference in account_preference_rows.items()
             },
             "personal_context_consents": {
                 viewer_id: consent.model_dump(mode="json")
@@ -2580,6 +2651,7 @@ class JsonTableRepository(InMemoryTableRepository):
             participant_id: set(targets)
             for participant_id, targets in no_match_rows.items()
         }
+        self._account_invitation_preferences = dict(account_preference_rows)
         self._safety_reports = {
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in report_rows.items()
@@ -2623,6 +2695,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[PeripheralComment]],
         dict[str, list[CommentPromotion]],
         dict[str, set[str]],
+        dict[str, InvitationPreference],
         dict[str, list[SafetyReport]],
         dict[str, list[SafetyReportStatusAudit]],
         dict[str, list[SafetyResolution]],
@@ -2638,6 +2711,7 @@ class JsonTableRepository(InMemoryTableRepository):
         if (not isinstance(payload, dict) or "tables" not in payload
                 or not set(payload).issubset({
                     "tables", "trusted_grounding_cards", "no_match",
+                    "invitation_preferences",
                     "personal_context_consents", "behavior_events",
                     "public_source_signals", "safety_strikes",
                 })
@@ -2901,6 +2975,21 @@ class JsonTableRepository(InMemoryTableRepository):
             ):
                 raise ValueError("invalid persistence file: invalid no_match participant")
             no_match[participant_id] = set(targets)
+        raw_preferences = payload.get("invitation_preferences", {})
+        if not isinstance(raw_preferences, dict):
+            raise ValueError("invalid persistence file: malformed invitation_preferences")
+        account_invitation_preferences: dict[str, InvitationPreference] = {}
+        for participant_id, raw_preference in raw_preferences.items():
+            if not isinstance(participant_id, str) or not participant_id:
+                raise ValueError("invalid persistence file: invalid invitation preference participant")
+            try:
+                account_invitation_preferences[participant_id] = InvitationPreference(
+                    raw_preference
+                )
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    "invalid persistence file: invalid invitation preference"
+                ) from error
         raw_consents = payload.get("personal_context_consents", {})
         if not isinstance(raw_consents, dict):
             raise ValueError("invalid persistence file: malformed personal_context_consents")
@@ -3006,6 +3095,7 @@ class JsonTableRepository(InMemoryTableRepository):
             comments,
             comment_promotions,
             no_match,
+            account_invitation_preferences,
             safety_reports,
             safety_report_audits,
             safety_resolutions,

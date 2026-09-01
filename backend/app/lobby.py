@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from app.domain import InvitationPreference, LobbyFitPreview, LobbyMemberView, LobbyPreview, ParticipantSeed, TableState
+from app.domain import LobbyFitPreview, LobbyMemberView, LobbyPreview, ParticipantSeed, TableState
 from app.matching import infer_role_gaps
 
 MAX_LOBBY_DISCOVERY = 20
@@ -112,13 +112,6 @@ def build_lobby_fit_preview(
             participant_id=candidate.participant_id,
             eligible=False,
             reason="你已经在这桌里。",
-        )
-    if candidate.roundtable_invite_preference is InvitationPreference.NONE:
-        return LobbyFitPreview(
-            table_id=state.table_id,
-            participant_id=candidate.participant_id,
-            eligible=False,
-            reason="你当前选择了不接收圆桌邀请。",
         )
     if len(state.participants) >= 5:
         return LobbyFitPreview(

@@ -175,9 +175,9 @@ def test_lobby_fit_preview_returns_ineligible_reasons_for_boundaries() -> None:
         "/tables/lobby/lobby-fit?participant_id=candidate",
         json={**candidate.model_dump(mode="json"), "roundtable_invite_preference": "none"},
     )
-    assert none_response.json()["eligible"] is False
-    assert none_response.json()["matched_role_gap"] is None
-    assert "不接收圆桌邀请" in none_response.json()["reason"]
+    assert none_response.status_code == 200
+    assert none_response.json()["eligible"] is True
+    assert none_response.json()["matched_role_gap"] == "实践者"
 
     repository.set_no_match("p1", "candidate")
     blocked_response = client.post(

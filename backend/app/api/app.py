@@ -153,6 +153,13 @@ class ParticipantInvitationPreferenceRequest(BaseModel):
     preference: InvitationPreference
 
 
+class AccountInvitationPreferenceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    participant_id: str = Field(min_length=1)
+    preference: InvitationPreference
+
+
 class CreateInvitationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -217,7 +224,26 @@ class NudgeResponse(BaseModel):
     state: TableState
 
 
-class ConfirmMatchRequest(MatchRequest):
+class MatchPreviewRequest(BaseModel):
+    """Raw match input; durable account preferences are applied before matching."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    core_question: str = Field(min_length=1)
+    candidates: list[ParticipantSeed] = Field(min_length=2, max_length=20)
+    table_size: int = Field(default=4, ge=2, le=5)
+
+    @model_validator(mode="after")
+    def candidate_ids_are_unique_and_fit(self) -> "MatchPreviewRequest":
+        ids = [candidate.participant_id for candidate in self.candidates]
+        if len(ids) != len(set(ids)):
+            raise ValueError("candidate participant_id values must be unique")
+        if self.table_size > len(self.candidates):
+            raise ValueError("table_size cannot exceed candidates")
+        return self
+
+
+class ConfirmMatchRequest(MatchPreviewRequest):
     table_id: str | None = Field(default=None, min_length=1)
     origin_signal_ids: list[str] = Field(
         default_factory=list,
@@ -614,6 +640,26 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
         return project_state_for_viewer(state, participant_id)
 
+    def effective_candidates(
+        candidates: Sequence[ParticipantSeed],
+    ) -> list[ParticipantSeed]:
+        """Overlay durable account preferences on request/source snapshots."""
+        return [repo.apply_account_invitation_preference(item) for item in candidates]
+
+    def effective_match_request(payload: MatchPreviewRequest) -> MatchRequest:
+        """Revalidate match capacity after applying durable hard opt-outs."""
+        try:
+            return MatchRequest(
+                core_question=payload.core_question,
+                candidates=effective_candidates(payload.candidates),
+                table_size=payload.table_size,
+            )
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=409,
+                detail="not enough invitation-eligible candidates for this table",
+            ) from error
+
     async def broadcast_table_event(table_id: str, event: dict) -> None:
         """Fan out a public event when the WebSocket adapter is installed."""
         broadcaster = getattr(api.state, "table_broadcast", None)
@@ -698,6 +744,54 @@ def create_app(
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.relationship_memories(participant_id)
+
+    @api.get(
+        "/participants/{participant_id}/invitation-preference",
+        response_model=AccountInvitationPreferenceResponse,
+    )
+    def get_account_invitation_preference(
+        participant_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> AccountInvitationPreferenceResponse:
+        """Return the caller's durable preference for future proactive invitations."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        preference = (
+            repo.account_invitation_preference(participant_id)
+            or InvitationPreference.FEW
+        )
+        return AccountInvitationPreferenceResponse(
+            participant_id=participant_id,
+            preference=preference,
+        )
+
+    @api.put(
+        "/participants/{participant_id}/invitation-preference",
+        response_model=AccountInvitationPreferenceResponse,
+    )
+    def set_account_invitation_preference(
+        participant_id: str,
+        payload: ParticipantInvitationPreferenceRequest,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> AccountInvitationPreferenceResponse:
+        """Save a self-scoped preference without rewriting existing table history."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        try:
+            preference = repo.set_account_invitation_preference(
+                participant_id,
+                payload.preference,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return AccountInvitationPreferenceResponse(
+            participant_id=participant_id,
+            preference=preference,
+        )
 
     @api.get(
         "/participants/{participant_id}/question-footprint",
@@ -1104,8 +1198,8 @@ def create_app(
         return card
 
     @api.post("/matches/preview", response_model=MatchPlan)
-    def preview_match(payload: MatchRequest) -> MatchPlan:
-        return build_match_plan(payload)
+    def preview_match(payload: MatchPreviewRequest) -> MatchPlan:
+        return build_match_plan(effective_match_request(payload))
 
     @api.post("/matches/source-preview", response_model=MatchPlan)
     async def preview_source_match(payload: SourceMatchRequest) -> MatchPlan:
@@ -1124,7 +1218,7 @@ def create_app(
                 item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
                 for item in _bounded_source_rows(raw_candidates, payload.limit)
             ]
-            request = MatchRequest(
+            request = MatchPreviewRequest(
                 core_question=payload.core_question,
                 candidates=candidates,
                 table_size=payload.table_size,
@@ -1137,6 +1231,8 @@ def create_app(
             raise HTTPException(status_code=502, detail="candidate source returned invalid candidates") from error
         except Exception as error:
             raise HTTPException(status_code=502, detail="candidate source unavailable") from error
+        request = effective_match_request(request)
+        candidates = request.candidates
         plan = build_match_plan(request)
         try:
             token = source_match_tickets.issue(
@@ -1156,9 +1252,23 @@ def create_app(
             ticket = source_match_tickets.claim(payload.preview_token)
         except ValueError as error:
             raise HTTPException(status_code=409, detail="source match preview is unavailable") from error
+        selected_preferences = {
+            candidate.participant_id: repo.apply_account_invitation_preference(candidate)
+            for candidate in ticket.candidates
+        }
         selected_ids = {seat.participant_id for seat in ticket.plan.selected}
+        if any(
+            selected_preferences[participant_id].roundtable_invite_preference
+            is InvitationPreference.NONE
+            for participant_id in selected_ids
+        ):
+            source_match_tickets.release(payload.preview_token)
+            raise HTTPException(
+                status_code=409,
+                detail="a selected candidate disabled invitations after preview",
+            )
         selected = [
-            candidate
+            selected_preferences[candidate.participant_id]
             for candidate in ticket.candidates
             if candidate.participant_id in selected_ids
         ]
@@ -1176,9 +1286,15 @@ def create_app(
 
     @api.post("/matches/confirm", response_model=MatchedTableResponse, status_code=status.HTTP_201_CREATED)
     def confirm_match(payload: ConfirmMatchRequest) -> MatchedTableResponse:
-        plan = build_match_plan(payload)
+        request = effective_match_request(MatchPreviewRequest(
+            core_question=payload.core_question,
+            candidates=payload.candidates,
+            table_size=payload.table_size,
+        ))
+        candidates = request.candidates
+        plan = build_match_plan(request)
         selected_ids = {seat.participant_id for seat in plan.selected}
-        selected = [candidate for candidate in payload.candidates if candidate.participant_id in selected_ids]
+        selected = [candidate for candidate in candidates if candidate.participant_id in selected_ids]
         table_id = payload.table_id or uuid4().hex
         try:
             state = repo.create(
@@ -1320,6 +1436,7 @@ def create_app(
                 item if isinstance(item, ParticipantSeed) else ParticipantSeed.model_validate(item)
                 for item in _bounded_source_rows(raw_candidates, payload.limit)
             ]
+            candidates = effective_candidates(candidates)
             existing_invited = {
                 item.candidate.participant_id for item in repo.invitations(table_id)
             }

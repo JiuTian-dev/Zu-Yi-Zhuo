@@ -120,10 +120,12 @@ def test_join_request_enforces_identity_and_matching_constraints() -> None:
         json={"request_id": "jr-1", "candidate": candidate},
     )
     assert mismatch.status_code == 403
-    assert client.post(
+    self_initiated = client.post(
         "/tables/join/join-requests?participant_id=candidate",
         json={"request_id": "jr-1", "candidate": {**candidate, "roundtable_invite_preference": "none"}},
-    ).status_code == 409
+    )
+    assert self_initiated.status_code == 201
+    assert self_initiated.json()["status"] == "pending"
 
     # A member's no-match preference is a hard boundary for candidate-initiated matching.
     repository.set_no_match("member", "blocked")
