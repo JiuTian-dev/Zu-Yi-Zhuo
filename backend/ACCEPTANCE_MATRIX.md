@@ -34,6 +34,7 @@
 | Provider 可替换但不能越权改决策 | `CONVERSATION_PROVIDER` 与 `LLMProvider` | `backend/app/providers/`；`tests/test_providers.py`、`tests/test_openai_provider.py` |
 | 异步默认，满足条件后显式升级限时同步 | `/tables/{id}/sync/preview` → `/tables/{id}/sync/upgrade`；`ConversationState.sync_expires_at` 到期自动回异步 | `backend/app/orchestrator/mode.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_mode.py`、`tests/test_api.py`、`tests/test_rest_fanout.py`、`tests/test_persistence.py` |
 | 冷启动递话、安全暂停和实时广播 | `POST /tables/{id}/nudge`、WS `request_nudge`、安全事件 | `backend/app/api/nudge.py`、`backend/app/api/websocket.py`；`tests/test_websocket.py`、`tests/test_safety.py` |
+| Agent 从外围评论中发现值得递进的问题或经历 | `GET /tables/{id}/comment-promotion-candidates` → 核心成员确认 `POST .../promote` | `backend/app/comment_curation.py`、`backend/app/api/app.py`；`tests/test_comment_curation.py`、`tests/test_comment_promotion.py`；有界、安全过滤、自然语言解释、无黑箱分数，确认时再次检查并原子促成 |
 
 ## 收桌与问题飞轮
 
@@ -69,7 +70,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **470 passed**。最近一个后端功能切片是 D139（静默旁听者的私有收藏与回访）；实现提交为 `3f64c9c`，设计提交为 `a49ad58`。上一切片 D138（可解释、可重置的个性化后续选桌）为 `463 passed`，实现提交 `9ebeeee`，设计提交 `a3aba9c`。
+当前基线为 **474 passed**。最近一个后端功能切片是 D140（Agent 发现可递进的外围评论候选）；实现提交为 `14a4124`，设计提交为 `22c4faa`。上一切片 D139（静默旁听者的私有收藏与回访）为 `470 passed`，实现提交 `3f64c9c`，设计提交 `a49ad58`。
 
 ## 不把以下事项误报为已完成
 

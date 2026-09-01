@@ -916,6 +916,7 @@ POST /tables/{id}/select?participant_id={viewer_id}
 POST /tables/{id}/relationships/{related_participant_id}/save?participant_id={viewer_id}
 POST /tables/{id}/comments?author_id={author_id}
 GET  /tables/{id}/comments
+GET  /tables/{id}/comment-promotion-candidates?participant_id={member_id}&limit={n}
 POST /tables/{id}/comments/{comment_id}/promote?participant_id={member_id}
 POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
 DELETE /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id={participant_id}
@@ -961,7 +962,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 实时同步边界：REST 补位、邀请接受、同步升级、离桌、软过期、收桌和外围评论写入会通过桌级 broadcaster 发出公开事件及投影状态；没有 WebSocket 客户端时不影响 REST 成功。
 个人授权边界：PersonalContextSource 只接受服务端已授权适配器的规范化信号；`viewer_id` 必须与每条 signal 的 owner 一致；预览只返回本人、默认不落盘，不把 token、关注/收藏原文或个人轨迹广播给其他参与者。
 个人 scope 边界：个人 source 预览必须带 scope 且命中本人当前授权；授权/撤回只能由本人操作，撤回立即拒绝后续读取；scope 账本不含 token、不进入 Table State，平台 OAuth 撤权由外部 adapter 负责。
-评论升级边界：外围评论默认永远不进入核心 turn；只有当前核心成员显式促成且安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
+评论升级边界：外围评论默认永远不进入核心 turn；Agent 候选预览只读取当前桌最近最多 100 条评论，排除已促成和阻断级安全内容，以当前问题/桌面认知、问句和案例线索给出不带分数的成员可见建议；预览不写状态、不累计 strike、不广播。只有当前核心成员显式促成且重新安全检查通过时才写入 `HumanTurn`，turn 保留 `source_comment_id` 与促成人；重复请求不产生新状态，关闭/软过期/安全暂停或未入席促成均拒绝。
 行为层边界：行为事件只能由本人 `viewer_id` 写入、读取或清除；事件类型、桌引用、状态版本、关联参与者和备注均有 schema 上限，真人发言和 follow-up 状态迁移由服务端自动记录；open 桌选择通过专用入口由服务端生成稳定 `table_selected` 事件；带身份的 REST/WS 收桌在同一仓储提交中生成稳定 `table_closed` 事件，旧的无身份 `close_table` 兼容入口只迁移桌状态；首次四维价值反馈在同一仓储提交中生成稳定 `value_feedback_submitted` 事件，更新反馈不重复生成；follow-up 与反馈事件只记录状态/动作摘要，不保存行动备注、反馈分数或完整消息正文；个人清除只删除该参与者的行为事件，不回删消息、Table State、收桌产物或安全审计，且不影响后续新事件沉淀；事件不广播给同桌、不进入 Table State。
 收藏边界：收藏只允许本人保存、读取或取消；账本只持久化最多 100 个桌 ID，读取时再投影当前公开 Lobby。它不广播、不改桌状态、不公开收藏人数、不创建申请/邀请，也不自动进入行为推荐信号；清除行为账本不会删除收藏。
 
@@ -1160,6 +1161,7 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D137 evidence-backed recruitment decision
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D138 explainable personalized table discovery
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D139 private saved-table library
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D140 evidence-backed peripheral comment candidates
 ```
 
 ## Progress Ledger
@@ -1309,7 +1311,7 @@ master
 | D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
 | D138 explainable personalized table discovery | complete | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | 463 tests + compileall + diff check | `a3aba9c` + `9ebeeee` |
 | D139 private saved-table library | complete | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | 470 tests + compileall + diff check | `a49ad58` + `3f64c9c` |
-| D140 evidence-backed peripheral comment candidates | in progress | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | pending | design recorded; implementation next |
+| D140 evidence-backed peripheral comment candidates | complete | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | 474 tests + compileall + diff check | `22c4faa` + `14a4124` |
 
 ## 已知坑位（Running Gotchas）
 

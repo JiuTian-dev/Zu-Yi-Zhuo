@@ -82,6 +82,7 @@ python -m app.cli.grounding_demo
 - `GET /tables/{table_id}/feedback?participant_id=...`：桌内成员查看匿名价值聚合；不返回他人的评分明细或备注。
 - `GET /tables/{table_id}/evaluation?participant_id=...`：桌内成员查看当前单桌的隐私安全评估指标（真人轮次、主持介入/反思、每真人轮次介入率、有效介入率、按 opening/explore/tension/deepen/close 的介入分布、邀请接受率、外围评论/促成、行动回响和匿名价值反馈完成度）；只读派生，不返回个人评分、备注或行为事件明细。有效介入结果由服务端在反思账本中保留布尔标记，旧记录没有标记时仍可回放但不会冒充有效。
 - `POST /tables/{table_id}/comments?author_id=...` / `GET /tables/{table_id}/comments`：外围评论独立账本；评论不占席位、不进入核心 turn。
+- `GET /tables/{table_id}/comment-promotion-candidates?participant_id=...&limit=...`：桌内成员查看 Agent 从最近最多 100 条外围评论中筛出的安全候选；依据当前问题、明确问句和案例/经历线索给出自然语言理由，不返回分数、不累计安全 strike、不自动写入主桌。
 - `POST /tables/{table_id}/comments/{comment_id}/promote?participant_id=...`：核心成员显式促成一条评论；服务端重新做安全检查，成功后以促成人身份写入主桌 turn，并保留 `source_comment_id` 和可回放的 `CommentPromotion`。
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
 - `POST /tables/{table_id}/safety-reports?reporter_id=...` / `GET /tables/{table_id}/safety-reports?reporter_id=...`：桌内成员提交或查询自己的举报；举报正文不广播给同桌，账本供受控审核适配器读取。
