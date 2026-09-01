@@ -15,6 +15,7 @@
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
 | 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm`；授权 source 使用 `POST /matches/source-preview` → `POST /matches/source-confirm` 短期票据闭环 | `backend/app/matching/`、`backend/app/api/match_tickets.py`；`tests/test_matching.py`、`tests/test_candidate_preview.py`、`tests/test_source.py`；票据单次消费、过期与冲突重试，不重复调用 source |
 | 4 人可开桌、5 席硬上限、邀请先于入席 | `/tables/{id}/invitations`、`/tables/{id}/join-requests` 及接受接口 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_join_requests.py`、`tests/test_api.py` |
+| 用户无需预知桌 ID 即可发现并处理自己的邀请 | `GET /participants/{id}/invitations` 返回本人跨桌、可过滤分页的邀请收件箱；每项附公共 Lobby 上下文和服务端可响应状态 | `backend/app/api/app.py`、`backend/app/api/repository.py`；`tests/test_invitation_inbox.py`；身份错配、私有字段泄露、失效原因、接受闭环和 JSON 重启均有回归 |
 | 动态补位推荐可安全发邀请 | `POST /tables/{id}/candidate-preview` → `POST /tables/{id}/invitations/from-preview`；推荐票据绑定桌与邀请人，成功单次消费，冲突可重试 | `backend/app/api/match_tickets.py`、`backend/app/api/app.py`；`tests/test_candidate_preview.py`；候选接受后才新增席位，响应不含私有候选种子 |
 | 入席前回答“谁在里面 / 聊到哪 / 为什么缺我” | `GET /tables/{id}/lobby`、`POST /tables/{id}/lobby-fit` | `backend/app/lobby.py`；`tests/test_lobby.py`；公开成员摘要与角色缺口均有界 |
 
@@ -65,7 +66,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **446 passed**。最近一个后端功能切片是 D135（账号级邀桌偏好）；实现提交为 `7a661ed`，设计提交为 `3401545`。上一切片 D134（主持节奏评估指标）为 `440 passed`，实现提交 `fdc7062`，设计提交 `1acaf88`。
+当前基线为 **451 passed**。最近一个后端功能切片是 D136（本人跨桌邀请收件箱）；实现提交为 `656672f`，设计提交为 `cef8efb`。上一切片 D135（账号级邀桌偏好）为 `446 passed`，实现提交 `7a661ed`，设计提交 `3401545`。
 
 ## 不把以下事项误报为已完成
 

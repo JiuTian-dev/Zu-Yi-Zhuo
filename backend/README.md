@@ -61,6 +61,7 @@ python -m app.cli.grounding_demo
 - `GET /tables/{table_id}/lobby`：入席前的公开 Lobby 读模型，集中返回谁在里面、当前聊到哪、空席/角色缺口和公共来源 ID；同步围炉时还会带 `sync_expires_at` 供首页倒计时，不返回消息、私有资料、邀请队列或个人卡。
 - `POST /tables/{table_id}/lobby-fit?participant_id=...`：候选人用自己的 `ParticipantSeed` 获取角色缺口级别的“为什么想到你”解释；这是用户主动发起的只读预览，不保存资料、不创建申请或邀请。账号选择不接收主动邀桌时仍可查看；no-match、满桌和已结束桌返回 `eligible=false`。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
+- `GET /participants/{participant_id}/invitations?viewer_id=...&status=...&offset=...&limit=...`：本人一次读取跨桌邀请收件箱；pending 优先并稳定排序，支持状态过滤和有界分页。每项复用公开 Lobby 桌卡，并由服务端给出 `can_respond` 及桌已关闭、软过期、满席、已处理或后来命中 no-match 等失效原因；不返回候选私有种子、消息或个人卡。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
 - `POST /tables/{table_id}/join-requests?participant_id=...`：候选人向已有桌表达加入意愿；请求会保留私有候选种子，但响应只返回展示名、角色和申请状态，不会直接新增席位。
