@@ -1,6 +1,6 @@
 """Public, deterministic pre-entry table summaries."""
 
-from app.domain import LobbyMemberView, LobbyPreview, TableState
+from app.domain import InvitationPreference, LobbyFitPreview, LobbyMemberView, LobbyPreview, ParticipantSeed, TableState
 from app.matching import infer_role_gaps
 
 
@@ -49,4 +49,89 @@ def build_lobby_preview(state: TableState) -> LobbyPreview:
     )
 
 
-__all__ = ("build_lobby_preview",)
+_ROLE_GAP_TERMS = {
+    "实践者": ("实践", "落地", "运营", "业务", "创业", "practitioner"),
+    "专业者": ("研究", "技术", "架构", "专家", "安全", "research", "engineer"),
+    "处境者": ("产品", "用户", "处境", "一线", "提问", "product", "user"),
+}
+
+
+def _role_covers_gap(role: str, gap: str) -> bool:
+    role_text = role.lower()
+    return any(term in role_text for term in _ROLE_GAP_TERMS.get(gap, ()))
+
+
+def build_lobby_fit_preview(
+    state: TableState,
+    candidate: ParticipantSeed,
+    *,
+    blocked: bool = False,
+) -> LobbyFitPreview:
+    """Explain a possible seat using only the candidate's role and table gaps."""
+    if state.conversation.closed:
+        return LobbyFitPreview(
+            table_id=state.table_id,
+            participant_id=candidate.participant_id,
+            eligible=False,
+            reason="这桌已经结束，暂不接受新的入席。",
+        )
+    if state.conversation.soft_expired:
+        return LobbyFitPreview(
+            table_id=state.table_id,
+            participant_id=candidate.participant_id,
+            eligible=False,
+            reason="这桌已暂时停下，暂不接受新的入席。",
+        )
+    if candidate.participant_id in state.participants:
+        return LobbyFitPreview(
+            table_id=state.table_id,
+            participant_id=candidate.participant_id,
+            eligible=False,
+            reason="你已经在这桌里。",
+        )
+    if candidate.roundtable_invite_preference is InvitationPreference.NONE:
+        return LobbyFitPreview(
+            table_id=state.table_id,
+            participant_id=candidate.participant_id,
+            eligible=False,
+            reason="你当前选择了不接收圆桌邀请。",
+        )
+    if len(state.participants) >= 5:
+        return LobbyFitPreview(
+            table_id=state.table_id,
+            participant_id=candidate.participant_id,
+            eligible=False,
+            reason="这桌已坐满，暂时没有可用席位。",
+        )
+    if blocked:
+        return LobbyFitPreview(
+            table_id=state.table_id,
+            participant_id=candidate.participant_id,
+            eligible=False,
+            reason="当前匹配偏好不适合这张桌。",
+        )
+
+    role_gaps = infer_role_gaps(
+        participant.role for participant in state.participants.values()
+    )
+    role_label = candidate.role.strip()[:80]
+    matched_gap = next(
+        (gap for gap in role_gaps if _role_covers_gap(role_label, gap)),
+        None,
+    )
+    if matched_gap is not None:
+        reason = f"这一桌缺少{matched_gap}视角，你的{role_label}可以补上这块经验。"
+    elif role_gaps:
+        reason = f"这一桌还缺{role_gaps[0]}视角，你的{role_label}能带来不同切面。"
+    else:
+        reason = f"这一桌已有多种角色，你的{role_label}能增加一个新的经验切面。"
+    return LobbyFitPreview(
+        table_id=state.table_id,
+        participant_id=candidate.participant_id,
+        eligible=True,
+        matched_role_gap=matched_gap,
+        reason=reason,
+    )
+
+
+__all__ = ("build_lobby_fit_preview", "build_lobby_preview")

@@ -209,6 +209,22 @@ class LobbyPreview(ContractModel):
         return self
 
 
+class LobbyFitPreview(ContractModel):
+    """Candidate-scoped, non-persistent explanation for a possible seat."""
+
+    table_id: str = Field(min_length=1)
+    participant_id: str = Field(min_length=1)
+    eligible: bool
+    matched_role_gap: str | None = Field(default=None, min_length=1)
+    reason: str = Field(min_length=1, max_length=240)
+
+    @model_validator(mode="after")
+    def matched_gap_requires_eligibility(self) -> "LobbyFitPreview":
+        if self.matched_role_gap is not None and not self.eligible:
+            raise ValueError("ineligible fit previews must not expose a matched role gap")
+        return self
+
+
 class SourceEvidence(ContractModel):
     """Evidence that points back to source signals rather than chat turns."""
 
