@@ -1170,6 +1170,7 @@ master
 | D123 candidate invitation handoff | complete | Attach a bounded short-lived `preview_token` to each dynamic candidate recommendation, bind it to table/inviter, create a normal pending invitation without exposing the private seed, and preserve retry-on-conflict semantics | 413 tests + compileall + diff check | `5ce913a` |
 | D124 invitation journey demo | complete | Extend the isolated black-box journey through dynamic fifth-seat preview, ticket-backed invitation, candidate acceptance, then continue the real Lobby/WS/close/post-close path without leaking the private seed | 413 tests + compileall + diff check | `2231bf9` |
 | D125 content source grounding handoff | complete | Add member-scoped `POST /tables/{id}/grounding` to validate one public content signal into a trusted card; the next real `GROUND` action consumes and broadcasts it without accepting client-supplied evidence | 416 tests + compileall + diff check | `8c66c51` |
+| D126 grounded card replay ledger | complete | Persist the consumed public `GroundingCard` inside the matching `InterventionRecord`, so REST/WS replay and JSON restart recover the exact source used by GROUND while legacy records remain compatible | 416 tests + compileall + diff check | `735b398` |
 
 ## 已知坑位（Running Gotchas）
 
