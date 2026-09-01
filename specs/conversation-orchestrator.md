@@ -660,6 +660,13 @@
 - **替代方案**: 让前端继续串行读取 `/tables/{id}/lobby`、把完整 `TableState` 嵌入候选、或为主动需求复制一套 Lobby 计算；这些方案分别增加竞态/请求、扩大隐私面、或造成两套字段口径漂移。
 - **代价**: 主动需求响应体会增加每个候选的有限公开成员摘要；未来若 Lobby 字段演进，需要同步保持 `ActiveIntentTableCandidate.lobby` 的兼容投影。
 
+### ADR-92: 首页桌发现提供有界 Lobby 卡片集合
+
+- **决策**: 增加只读 `GET /tables/discovery?limit={n}`，默认返回最多 20 张仍开放且未软过期的桌，每张复用 D112 的 `LobbyPreview` 公开投影，并按 `table_id` 稳定排序。该集合接口不接受 viewer 身份、不返回完整 `TableState`、不包含消息/私有资料/邀请队列，也不改变桌状态；`limit` 限制为 1–20。
+- **理由**: 首页桌发现若先读取完整 `/tables` 再由前端过滤，会拿到不适合卡片渲染的状态黑板，并迫使前端重复实现 Lobby 脱敏。批量返回与 D114 相同的有界投影能让首页一次请求完成“谁在里面 / 聊到哪 / 还缺什么视角”的卡片渲染，同时避免 N+1 请求。
+- **替代方案**: 继续让前端读取完整 `TableState`、逐桌调用 `/tables/{id}/lobby`、或复制一套首页卡片字段；这些方案分别扩大内部状态暴露、增加请求竞态、或导致字段口径漂移。
+- **代价**: V1 只支持按桌 ID 的稳定排序，不提供热度/时间排序和分页游标；后续若需要个性化排序，应新增 viewer-scoped 预览而不污染公开集合契约。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -673,6 +680,7 @@ POST /matches/confirm
 POST /intents/preview
 POST /opportunities/source-preview
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
+GET  /tables/discovery?limit={n}
 GET  /tables/{id}
 GET  /tables/{id}/lobby
 POST /tables/{id}/lobby-fit?participant_id={candidate_id}
@@ -815,6 +823,7 @@ LobbyPreview(table_id, core_question, current_subquestion?, phase, mode,
              state_version, participant_count, available_seats,
              members<=5, role_gaps<=5, missing_perspective,
              origin_signal_ids?<=20)
+LobbyPreview[] discovery<=20
 LobbyFitPreview(table_id, participant_id, eligible, matched_role_gap?, reason)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
@@ -923,8 +932,9 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D110 active-intent public signal attribution
                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D111 candidate-initiated join request
                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D112 Lobby public read model
-                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D113 Lobby personalized fit preview
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D114 active-intent Lobby projection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D113 Lobby personalized fit preview
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D114 active-intent Lobby projection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D115 bounded Lobby discovery collection
 ```
 
 ## Progress Ledger
