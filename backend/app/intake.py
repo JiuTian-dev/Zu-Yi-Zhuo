@@ -7,6 +7,7 @@ from app.domain import ActiveIntentPreview, ActiveIntentTableCandidate, TableSta
 from app.lobby import build_lobby_preview
 
 MAX_INTENT_CANDIDATES = 5
+MAX_INTENT_QUESTION_LENGTH = 120
 _GENERIC_INTENTS = {
     "找人聊",
     "找人聊天",
@@ -55,7 +56,7 @@ def _normalise_message(message: str) -> str:
             break
     if not text:
         text = original
-    return text[:120]
+    return text[:MAX_INTENT_QUESTION_LENGTH]
 
 
 def _terms(text: str) -> set[str]:
@@ -134,7 +135,48 @@ def build_active_intent_preview(
     )
 
 
+def merge_active_intent_messages(messages: Sequence[str]) -> str:
+    """Build one bounded question while preserving the most recent clarification."""
+    normalized = [_normalise_message(message) for message in messages if message.strip()]
+    if not normalized:
+        raise ValueError("active intent messages must not be empty")
+    if len(normalized) > 1:
+        meaningful = [
+            message
+            for message in normalized
+            if re.sub(r"\s+", "", message) not in _GENERIC_INTENTS
+        ]
+        normalized = meaningful or [normalized[-1]]
+
+    selected_reversed: list[str] = []
+    used = 0
+    for message in reversed(normalized):
+        separator_length = 1 if selected_reversed else 0
+        available = MAX_INTENT_QUESTION_LENGTH - used - separator_length
+        if available <= 0:
+            break
+        selected_reversed.append(message[-available:])
+        used += min(len(message), available) + separator_length
+    return "；".join(reversed(selected_reversed))
+
+
+def build_active_intent_session_preview(
+    messages: Sequence[str],
+    tables: Sequence[TableState],
+    *,
+    limit: int = MAX_INTENT_CANDIDATES,
+) -> ActiveIntentPreview:
+    """Route the current bounded conversation context without persisting it."""
+    return build_active_intent_preview(
+        merge_active_intent_messages(messages),
+        tables,
+        limit=limit,
+    )
+
+
 __all__ = (
     "MAX_INTENT_CANDIDATES",
     "build_active_intent_preview",
+    "build_active_intent_session_preview",
+    "merge_active_intent_messages",
 )

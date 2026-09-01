@@ -215,6 +215,49 @@ class ActiveIntentPreview(ContractModel):
         return self
 
 
+class ActiveIntentTurnRequest(ContractModel):
+    """One bounded clarification or explicit correction in an intent session."""
+
+    message: str = Field(min_length=1, max_length=1000)
+    replace_context: bool = False
+
+    @model_validator(mode="after")
+    def message_is_not_blank(self) -> "ActiveIntentTurnRequest":
+        if not self.message.strip():
+            raise ValueError("active intent turn must not be blank")
+        return self
+
+
+class ActiveIntentSessionView(ContractModel):
+    """Self-scoped short-term context plus its current non-mutating route preview."""
+
+    session_id: str = Field(min_length=1, max_length=200)
+    participant_id: str = Field(min_length=1)
+    status: Literal["clarifying", "ready", "exhausted"]
+    messages: list[str] = Field(min_length=1, max_length=6)
+    turn_count: int = Field(ge=1, le=6)
+    max_turns: int = Field(default=6, ge=1, le=6)
+    remaining_turns: int = Field(ge=0, le=6)
+    preview: ActiveIntentPreview
+
+    @model_validator(mode="after")
+    def status_and_counts_are_consistent(self) -> "ActiveIntentSessionView":
+        if len(self.messages) > self.turn_count:
+            raise ValueError("active intent messages cannot exceed total turn count")
+        if self.remaining_turns != self.max_turns - self.turn_count:
+            raise ValueError("active intent remaining_turns must match turn_count")
+        expected_status = (
+            "ready"
+            if self.preview.route != "clarify"
+            else "exhausted"
+            if self.remaining_turns == 0
+            else "clarifying"
+        )
+        if self.status != expected_status:
+            raise ValueError("active intent session status must match its preview")
+        return self
+
+
 class LobbyFitPreview(ContractModel):
     """Candidate-scoped, non-persistent explanation for a possible seat."""
 

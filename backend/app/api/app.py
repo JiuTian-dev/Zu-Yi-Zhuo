@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, ActiveIntentSessionView, ActiveIntentTurnRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
 from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
@@ -26,10 +26,11 @@ from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBS
 from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
+from .intent_sessions import ActiveIntentSessionStore, IntentSessionCapacityExhausted, IntentSessionTurnLimitReached, IntentSessionUnavailable
 from .match_tickets import CandidateInvitationTicketStore, SourceMatchTicketStore
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
-from app.intake import build_active_intent_preview
+from app.intake import build_active_intent_preview, build_active_intent_session_preview
 from app.lobby import build_lobby_discovery, build_lobby_fit_preview, build_lobby_preview
 from app.recommendations import MAX_PERSONALIZED_TABLES, build_personalized_table_recommendations
 from app.comment_curation import MAX_COMMENT_PROMOTION_CANDIDATES, build_comment_promotion_candidates
@@ -516,6 +517,7 @@ def create_app(
     websocket_max_events_per_minute: int | None = None,
     rest_max_mutations_per_minute: int | None = None,
     source_match_preview_ttl_seconds: float = 300.0,
+    intent_session_ttl_seconds: float = 900.0,
     sync_window_seconds: float = 1800.0,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
@@ -528,6 +530,8 @@ def create_app(
         raise ValueError("personal_context_source_timeout_seconds must be positive")
     if source_match_preview_ttl_seconds <= 0:
         raise ValueError("source_match_preview_ttl_seconds must be positive")
+    if intent_session_ttl_seconds <= 0:
+        raise ValueError("intent_session_ttl_seconds must be positive")
     if sync_window_seconds <= 0:
         raise ValueError("sync_window_seconds must be positive")
     raw_websocket_origins = (
@@ -584,6 +588,10 @@ def create_app(
     candidate_invitation_tickets = CandidateInvitationTicketStore(
         ttl_seconds=source_match_preview_ttl_seconds,
     )
+    intent_sessions = ActiveIntentSessionStore(
+        ttl_seconds=intent_session_ttl_seconds,
+        clock=clock,
+    )
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
@@ -592,6 +600,7 @@ def create_app(
     api.state.personal_context_source = personal_context_source
     api.state.source_match_tickets = source_match_tickets
     api.state.candidate_invitation_tickets = candidate_invitation_tickets
+    api.state.intent_sessions = intent_sessions
     api.state.identity_resolver = identity_resolver
     api.state.moderator_resolver = moderator_resolver
     api.state.sync_window_seconds = sync_window_seconds
@@ -1220,6 +1229,130 @@ def create_app(
             repo.list_tables(),
             limit=payload.limit,
         )
+
+    def active_intent_session_view(session) -> ActiveIntentSessionView:
+        preview = build_active_intent_session_preview(
+            session.messages,
+            repo.list_tables(),
+            limit=session.limit,
+        )
+        remaining_turns = session.max_turns - session.turn_count
+        session_status = (
+            "ready"
+            if preview.route != "clarify"
+            else "exhausted"
+            if remaining_turns == 0
+            else "clarifying"
+        )
+        return ActiveIntentSessionView(
+            session_id=session.session_id,
+            participant_id=session.participant_id,
+            status=session_status,
+            messages=list(session.messages),
+            turn_count=session.turn_count,
+            max_turns=session.max_turns,
+            remaining_turns=remaining_turns,
+            preview=preview,
+        )
+
+    def require_active_intent_owner(
+        participant_id: str,
+        request: Request,
+        viewer_id: str,
+    ) -> None:
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+
+    @api.post(
+        "/participants/{participant_id}/intent-sessions",
+        response_model=ActiveIntentSessionView,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_active_intent_session(
+        participant_id: str,
+        payload: ActiveIntentRequest,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> ActiveIntentSessionView:
+        """Start a self-scoped, short-lived active-demand clarification session."""
+        require_active_intent_owner(participant_id, request, viewer_id)
+        try:
+            session = intent_sessions.create(
+                participant_id=participant_id,
+                message=payload.message,
+                limit=payload.limit,
+            )
+        except IntentSessionCapacityExhausted as error:
+            raise HTTPException(
+                status_code=503,
+                detail="active intent session temporarily unavailable",
+            ) from error
+        return active_intent_session_view(session)
+
+    @api.get(
+        "/participants/{participant_id}/intent-sessions/{session_id}",
+        response_model=ActiveIntentSessionView,
+    )
+    def get_active_intent_session(
+        participant_id: str,
+        session_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> ActiveIntentSessionView:
+        """Read current short-term context and re-evaluate its public route."""
+        require_active_intent_owner(participant_id, request, viewer_id)
+        try:
+            session = intent_sessions.get(session_id, participant_id)
+        except IntentSessionUnavailable as error:
+            raise HTTPException(status_code=404, detail="active intent session not found") from error
+        return active_intent_session_view(session)
+
+    @api.post(
+        "/participants/{participant_id}/intent-sessions/{session_id}/turns",
+        response_model=ActiveIntentSessionView,
+    )
+    def append_active_intent_turn(
+        participant_id: str,
+        session_id: str,
+        payload: ActiveIntentTurnRequest,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> ActiveIntentSessionView:
+        """Append one clarification, or explicitly replace the current intent context."""
+        require_active_intent_owner(participant_id, request, viewer_id)
+        try:
+            session = intent_sessions.append(
+                session_id,
+                participant_id,
+                payload.message,
+                replace_context=payload.replace_context,
+            )
+        except IntentSessionUnavailable as error:
+            raise HTTPException(status_code=404, detail="active intent session not found") from error
+        except IntentSessionTurnLimitReached as error:
+            raise HTTPException(
+                status_code=409,
+                detail="active intent session turn limit reached",
+            ) from error
+        return active_intent_session_view(session)
+
+    @api.delete(
+        "/participants/{participant_id}/intent-sessions/{session_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def delete_active_intent_session(
+        participant_id: str,
+        session_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> None:
+        """Dismiss a short-term intent session and its in-memory context."""
+        require_active_intent_owner(participant_id, request, viewer_id)
+        try:
+            intent_sessions.delete(session_id, participant_id)
+        except IntentSessionUnavailable as error:
+            raise HTTPException(status_code=404, detail="active intent session not found") from error
 
     @api.post("/opportunities/source-preview", response_model=OpportunityPreview)
     async def preview_source_opportunity(payload: OpportunitySourceRequest) -> OpportunityPreview:
