@@ -9,6 +9,15 @@ from .close import refresh_close_readiness
 TECH = ("技术", "模型", "精度", "延迟", "架构")
 BUYING = ("采购", "预算", "招标", "责任", "供应商")
 CONTRIBUTION = ("亲历", "数据", "试点", "案例", "经验")
+# Fact conflicts are intentionally narrower than ordinary disagreement.  A
+# topic must be explicit and one side must use an unambiguous polarity marker;
+# this keeps normal opinion/layer differences on their existing paths.
+FACT_TOPICS = (
+    "安全审查", "模型精度", "正式生产", "责任归属", "权限边界",
+    "采购", "预算", "招标", "责任", "精度", "延迟", "试点", "验收",
+)
+FACT_NEGATIVE = ("不需要", "无需", "不能", "无法", "没有", "不存在", "不是", "尚未")
+FACT_POSITIVE = ("需要", "可以", "能够", "已经", "支持", "存在", "确实")
 
 def build_initial_state(
     table_id: str,
@@ -52,6 +61,52 @@ def _procurement_expert(state: TableState) -> ParticipantState | None:
                  if p.last_spoke_turn is None and p.unused_relevant_experience and
                  ("采购" in p.role or any("采购" in item.text for item in p.unused_relevant_experience))), None)
 
+
+def _shared_fact_topic(left: str, right: str) -> str | None:
+    return next((topic for topic in FACT_TOPICS if topic in left and topic in right), None)
+
+
+def _fact_polarity(text: str) -> int | None:
+    negative = any(marker in text for marker in FACT_NEGATIVE)
+    # Remove negative phrases before checking positives so "不需要" is not
+    # misread as both negative and positive because it contains "需要".
+    positive_text = text
+    for marker in FACT_NEGATIVE:
+        positive_text = positive_text.replace(marker, "")
+    positive = any(marker in positive_text for marker in FACT_POSITIVE)
+    if negative == positive:
+        return None
+    return -1 if negative else 1
+
+
+def _fact_conflict(
+    state: TableState,
+    speaker_id: str,
+    statement: EvidenceStatement,
+) -> Disagreement | None:
+    polarity = _fact_polarity(statement.text)
+    if polarity is None:
+        return None
+    candidates: list[tuple[int, str, str, EvidenceStatement]] = []
+    for participant_id, participant in state.participants.items():
+        if participant_id == speaker_id or participant.current_position is None:
+            continue
+        other = participant.current_position
+        topic = _shared_fact_topic(statement.text, other.text)
+        if topic is None or _fact_polarity(other.text) != -polarity:
+            continue
+        candidates.append((max(other.evidence_turns), participant_id, topic, other))
+    if not candidates:
+        return None
+    _, other_id, topic, other = max(candidates)
+    evidence = sorted(set(statement.evidence_turns + other.evidence_turns))
+    return Disagreement(
+        text=f"围绕{topic}的事实断言出现相反判断",
+        evidence_turns=evidence,
+        disagreement_type=DisagreementType.FACT_CONFLICT,
+        participant_ids=[other_id, speaker_id],
+    )
+
 def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
     """Return a fresh snapshot after one committed human turn."""
     if turn.participant_id not in previous.participants:
@@ -81,6 +136,14 @@ def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
         reasons_to_stay_silent=[EvidenceStatement(text="讨论仍在自然推进", evidence_turns=[turn.turn_id])],
     )
     positions = [(pid, p.current_position) for pid, p in state.participants.items() if p.current_position]
+    fact_conflict = _fact_conflict(state, turn.participant_id, statement)
+    if fact_conflict is not None:
+        topic_prefix = fact_conflict.text.split("的事实断言", 1)[0]
+        state.disagreements = [
+            item for item in state.disagreements
+            if item.disagreement_type is not DisagreementType.FACT_CONFLICT
+            or not item.text.startswith(topic_prefix)
+        ] + [fact_conflict]
     tech = next(((pid, item) for pid, item in positions if _layer(item.text) == "tech"), None)
     buying = next(((pid, item) for pid, item in positions if _layer(item.text) == "buying"), None)
     if tech and buying:

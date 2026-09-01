@@ -122,6 +122,48 @@ def test_grounding_endpoint_stages_public_card_for_the_real_ground_action() -> N
     }
 
 
+def test_grounding_card_is_used_after_observer_detects_opposite_fact_turns() -> None:
+    source = _Source([_signal("s1", "u1"), _signal("s2", "u2")])
+    client = TestClient(create_app(content_source=source))
+    _table(client, "grounding-observer")
+    staged = client.post(
+        "/tables/grounding-observer/grounding?participant_id=p1",
+        json={"query": "企业 Agent 责任边界", "limit": 2},
+    )
+    assert staged.status_code == 200
+
+    with client.websocket_connect("/ws/tables/grounding-observer?participant_id=p1") as observer, \
+            client.websocket_connect("/ws/tables/grounding-observer?participant_id=p2") as challenger:
+        observer.send_json({
+            "type": "human_message",
+            "message_id": "fact-1",
+            "participant_id": "p1",
+            "text": "采购需要预算。",
+            "client_ts": 1756728000000,
+        })
+        assert observer.receive_json()["type"] == "message_committed"
+        assert observer.receive_json()["type"] == "table_state_changed"
+
+        challenger.send_json({
+            "type": "human_message",
+            "message_id": "fact-2",
+            "participant_id": "p2",
+            "text": "采购不需要预算。",
+            "client_ts": 1756728001000,
+        })
+        events = {}
+        for _ in range(4):
+            event = observer.receive_json()
+            events[event["type"]] = event
+
+    assert events["message_committed"]["message"]["message_id"] == "fact-2"
+    assert events["agent_action"]["action"] == "GROUND"
+    assert events["grounding_card"]["signal_id"] == "s1"
+    assert events["table_state_changed"]["state"]["version"] == 3
+    replay = client.get("/tables/grounding-observer/replay").json()
+    assert replay["interventions"][0]["grounding_card"]["signal_id"] == "s1"
+
+
 def test_grounding_endpoint_is_member_scoped_and_fails_closed_on_missing_results() -> None:
     source = _Source([])
     client = TestClient(create_app(content_source=source))

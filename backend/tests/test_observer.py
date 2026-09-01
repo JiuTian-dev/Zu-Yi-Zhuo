@@ -6,6 +6,7 @@ import pytest
 
 from app.demo import SCENARIOS, flagship_participants
 from app.domain import Action, DisagreementType, HumanTurn
+from app.orchestrator import evaluate_gate, route
 from app.orchestrator import build_initial_state, observe_turn
 
 QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
@@ -67,6 +68,29 @@ def test_flagship_detects_layer_mismatch() -> None:
     assert state.current_subquestion and state.open_loops[0].priority.value == "high"
     assert state.conversation.state == "layer_mismatch surfaced"
     assert state.conversation.most_promising_thread.text == "采购决策链"
+
+
+def test_explicit_opposite_fact_assertions_create_grounding_candidate() -> None:
+    state = initial()
+    state = observe_turn(state, HumanTurn(turn_id=1, participant_id="product", text="采购需要预算。"))
+    state = observe_turn(state, HumanTurn(turn_id=2, participant_id="architect", text="采购不需要预算。"))
+
+    conflicts = [item for item in state.disagreements if item.disagreement_type is DisagreementType.FACT_CONFLICT]
+    assert len(conflicts) == 1
+    assert conflicts[0].evidence_turns == [1, 2]
+    assert conflicts[0].participant_ids == ["product", "architect"]
+    assert route(state, evaluate_gate(state)).action is Action.GROUND
+
+
+@pytest.mark.parametrize("texts", [
+    ("采购需要预算。", "采购需要预算。"),
+    ("技术成熟度很重要。", "采购更关心责任链。"),
+    ("采购需要预算，但不需要招标。", "采购不需要预算，但需要招标。"),
+])
+def test_fact_detector_does_not_promote_ambiguous_or_mixed_claims(texts: tuple[str, str]) -> None:
+    state = observe_turn(initial(), HumanTurn(turn_id=1, participant_id="product", text=texts[0]))
+    state = observe_turn(state, HumanTurn(turn_id=2, participant_id="architect", text=texts[1]))
+    assert not any(item.disagreement_type is DisagreementType.FACT_CONFLICT for item in state.disagreements)
 
 def test_unheard_procurement_expert_is_pass_opportunity() -> None:
     state = replay("flagship")
