@@ -8,6 +8,7 @@
 |---|---|---|
 | 从公开知乎信号发现值得发生的问题 | `POST /opportunities/preview`、`POST /opportunities/source-preview` | `backend/app/opportunities/`、`backend/app/sources/`；`tests/test_opportunities.py`、`tests/test_content_source.py` |
 | 一键验证公开机会发现首入口 | `python -m app.cli.opportunity_demo` | `backend/app/demo/public_signals.py`、`backend/app/cli/opportunity_demo.py`；`tests/test_opportunity_demo.py`；只读、确定性、无网络 |
+| 一键验证主动需求第二入口 | `python -m app.cli.intent_demo` | `backend/app/demo/intent.py`、`backend/app/cli/intent_demo.py`；`tests/test_intent_demo.py`；多轮澄清→授权候选 source→短票据确认，隔离内存、脱敏摘要、无网络 |
 | 一条命令验证公开机会到收桌后回响 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→4 人匹配→动态第 5 席邀请/入席→REST/WS→行动回报/反馈→确定性 JSON |
 | 一键验证授权 source 驱动的 GROUND 闭环 | `python -m app.cli.grounding_demo` | `backend/app/demo/grounding.py`、`backend/app/cli/grounding_demo.py`；`tests/test_grounding_demo.py`；真实 REST/WS→事实冲突→GROUND→来源卡消费→replay，隔离内存且可重复 |
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview`；`POST /participants/{id}/intent-sessions`、`GET/DELETE .../{session_id}`、`POST .../{session_id}/turns`、`POST .../{session_id}/source-preview` | `backend/app/intake.py`、`backend/app/api/intent_sessions.py`；`tests/test_intake.py`、`tests/test_intent_sessions.py`、`tests/test_source.py`；支持多轮 `clarifying / ready / exhausted`、显式上下文纠正、本人身份校验、TTL/轮次/容量边界，以及 `new_table` 到授权候选 source/短票据确认链，最终仍不自动建桌 |
@@ -70,7 +71,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **483 passed**。最近一个后端功能切片是 D142（主动需求到授权候选 source 的短票据接线）；实现提交为 `7c662f1`，设计提交为 `9d11601`。上一切片 D141（本人可见的有界主动需求多轮会话）为 `480 passed`，实现提交 `515c85c`，设计提交 `053ec7f`。
+当前基线为 **485 passed**。最近一个后端功能切片是 D143（主动需求第二入口黑盒 Demo）；实现提交为 `2eaffc2`，设计提交为 `8747fc6`。上一切片 D142（主动需求到授权候选 source 的短票据接线）为 `483 passed`，实现提交 `7c662f1`，设计提交 `9d11601`。
 
 ## 不把以下事项误报为已完成
 

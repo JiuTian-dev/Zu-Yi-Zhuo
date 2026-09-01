@@ -26,6 +26,14 @@ python -m app.cli.opportunity_demo
 
 该命令只输出标准 JSON，不写入仓储、不联网，内置信号明确标记为 `public`。
 
+验证第二入口“多轮澄清 → 候选 source → 确认建桌”时，可运行隔离演示：
+
+```powershell
+python -m app.cli.intent_demo
+```
+
+该命令只输出脱敏摘要，不输出票据或候选私有字段；每次从空内存仓储开始，不读取或写入 `TABLE_REPOSITORY_PATH`，也不会访问网络。
+
 验证一条真正穿过 REST、WebSocket、收桌产物、评估和回放的完整后端旅程时，可运行隔离的内存演示：
 
 ```powershell

@@ -870,6 +870,7 @@
 ```text
 python -m app.cli.seed_demo --path {json_path}
 python -m app.cli.opportunity_demo [--query {text}]
+python -m app.cli.intent_demo
 python -m app.cli.journey_demo
 ```
 
@@ -1340,7 +1341,7 @@ master
 | D140 evidence-backed peripheral comment candidates | complete | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | 474 tests + compileall + diff check | `22c4faa` + `14a4124` |
 | D141 bounded multi-turn active intent | complete | Preserve a user's short-term clarification context across bounded self-scoped turns, support explicit correction, and keep every final route non-mutating | 480 tests + compileall + diff check | `053ec7f` + `515c85c` |
 | D142 active intent candidate source handoff | complete | Reuse an owner-scoped clarified intent to trigger the existing authorized candidate preview and ticket-backed confirmation path without exposing private seeds or auto-creating a table | 483 tests + compileall + diff check | `9d11601` + `7c662f1` |
-| D143 second-entry black-box demo | in progress | Provide a deterministic isolated CLI covering multi-turn active intent, authorized candidate preview, and explicit ticket confirmation without persistence or private-field leakage | pending | design recorded; implementation next |
+| D143 second-entry black-box demo | complete | Provide a deterministic isolated CLI covering multi-turn active intent, authorized candidate preview, and explicit ticket confirmation without persistence or private-field leakage | 485 tests + compileall + diff check | `8747fc6` + `2eaffc2` |
 
 ## 已知坑位（Running Gotchas）
 
