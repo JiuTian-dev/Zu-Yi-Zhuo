@@ -856,6 +856,34 @@
 - **替代方案**: 让 `journey_demo` 混入第二入口、在 CLI 里直接调用 `build_active_intent_preview`/匹配函数、复用持久化种子文件，或把票据/token 写进输出；这些方案分别让失败定位和演示叙事变差、绕过真实身份/HTTP 边界、污染用户数据，或泄露可重放能力。
 - **代价**: Demo 的候选 source 只是本地确定性夹具，不能证明正式知乎授权 source 的召回质量；报告只保留摘要，调试需回到真实 API 测试。若未来扩展更多用户路径，应继续保持每个 Demo 独立内存、无网络、无生产 bootstrap 写入口。
 
+### ADR-121: 共享 JSON 仓储以文件锁完成跨 worker 原子读改写
+
+- **决策**: `JsonTableRepository` 的每个顶层操作都先刷新磁盘快照，再持有同路径 sibling lock 覆盖整个读改写事务；写入继续使用临时文件、`fsync` 和原子替换。嵌套仓储调用复用当前进程锁，避免重复加锁。这样在比赛版不引入数据库的前提下，多个 ASGI worker 共享同一路径不会互相覆盖较新的状态。
+- **理由**: 原有 JSON 原子替换只保证单个写入不产生半文件，无法阻止两个 worker 基于旧内存快照同时写回而丢失一方状态。文件锁 + 顶层刷新可以在不改变 repository protocol 的情况下补齐跨进程一致性。
+- **替代方案**: 继续依赖进程内 `RLock`、让网关串行所有请求，或立即把完整仓储重写为 PostgreSQL；前两者不能保证状态，后者超出当前比赛版最小改动。
+- **代价**: 该方案依赖共享文件系统和单文件写入吞吐，不能替代高并发数据库；跨主机部署仍应迁移同一事务语义到数据库。
+
+### ADR-122: 多实例短期状态使用 SQLite 事务存储
+
+- **决策**: source-match 票据、候选邀请票据和主动需求会话可通过 `SHARED_EPHEMERAL_STORE_PATH` 写入 SQLite。票据 issue/claim/release/consume、会话 create/append/delete 都在 `BEGIN IMMEDIATE` 下执行，使用服务端 TTL、owner 绑定和容量上限；默认仍为进程内内存，不改变本地 Demo 的无持久化语义。
+- **理由**: 预览票据和多轮会话原本只在单 worker 内存中，多实例切换会出现“预览成功但确认找不到”的失败；将短期能力状态集中到共享 SQLite 可以保持单次消费和 owner 边界，同时不把它们写进桌事实快照。
+- **替代方案**: 让客户端重新提交完整候选、把私有 seed 放进浏览器，或在每个 worker 复制票据；这些方案分别扩大隐私泄露、破坏短期能力模型或产生跨实例不一致。
+- **代价**: SQLite 适合作为小规模参考协调层；大规模部署应换成带 TTL/条件更新的托管 KV 或数据库表，但必须保留同样的 claim/owner/expiry 契约。
+
+### ADR-123: 公共实时事件通过可选 SQLite 总线跨 worker 转发
+
+- **决策**: 配置 `EVENT_BUS_PATH` 后，REST/WS 的公共语义事件和状态版本提示写入有序 SQLite event log；每个 worker 启动一个受控轮询任务，跳过自身 origin，转发其他 worker 的公共事件。状态事件只携带 table/version hint，接收端从共享仓储读取最新状态并重新执行 viewer 隐私投影；本地广播仍是低延迟快路径，事件总线故障不阻断本地写入。
+- **理由**: 仅共享仓储仍无法让连接在不同 worker 时看到另一端的桌面事件。把事件与状态存储分开，可以避免广播个人卡和私有资料，同时复用已有单调版本投影器。
+- **替代方案**: 前端轮询、把完整 TableState 写进消息队列，或让每个 worker 直接连接其他 worker；这些方案分别增加延迟、扩大隐私面或耦合部署拓扑。
+- **代价**: 轮询总线不是高吞吐消息系统，事件需要按游标裁剪；生产环境可替换为 Redis/NATS/Kafka adapter，保持 envelope 的 `origin/kind/table_id/state_version/payload` 语义。
+
+### ADR-124: 正式 source 提供服务器侧 HTTPS/OAuth JSON 适配器
+
+- **决策**: 增加 `HttpCandidateSource`、`HttpContentSignalSource` 和 `HttpPersonalContextSource`。适配器只接受绝对 HTTPS endpoint（本地测试可显式放宽），token 仅作为后端 `Authorization: Bearer` header；响应大小、HTTP 状态、JSON 结构和 Pydantic schema 全部在服务端校验，任何失败统一 fail-closed。部署可用 `*_SOURCE_URL` + `*_SOURCE_TOKEN`，与现有无 shell command bridge 二选一。
+- **理由**: 正式知乎 CLI/MCP/OAuth 的凭证和字段由部署方掌握，核心服务不应绑定 undocumented endpoint 或把 token 交给前端；HTTP gateway 边界能让官方适配器独立演进，同时提供可直接联调的生产接线。
+- **替代方案**: 后端硬编码知乎抓取、让浏览器携带 Cookie/token，或接收未经 schema 校验的任意 JSON；这些方案都无法满足授权、隐私和 fail-closed 要求。
+- **代价**: 仓库仍不能凭空提供真实知乎凭证或召回质量；部署者需提供 gateway URL/token 和字段映射，真实质量需要试跑数据验证。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1342,10 +1370,14 @@ master
 | D141 bounded multi-turn active intent | complete | Preserve a user's short-term clarification context across bounded self-scoped turns, support explicit correction, and keep every final route non-mutating | 480 tests + compileall + diff check | `053ec7f` + `515c85c` |
 | D142 active intent candidate source handoff | complete | Reuse an owner-scoped clarified intent to trigger the existing authorized candidate preview and ticket-backed confirmation path without exposing private seeds or auto-creating a table | 483 tests + compileall + diff check | `9d11601` + `7c662f1` |
 | D143 second-entry black-box demo | complete | Provide a deterministic isolated CLI covering multi-turn active intent, authorized candidate preview, and explicit ticket confirmation without persistence or private-field leakage | 485 tests + compileall + diff check | `8747fc6` + `2eaffc2` |
+| D144 shared JSON repository coordination | complete | Refresh shared snapshots before each top-level operation and serialize the full JSON read/modify/write transaction with a cross-process sibling lock | focused coordination tests + compileall | working tree (pending commit) |
+| D145 shared short-lived handoffs | complete | Add SQLite TTL stores for source-match tickets, candidate invitation tickets and active-intent sessions with owner checks and atomic single-use claims | focused coordination tests + compileall | working tree (pending commit) |
+| D146 shared realtime event bus and REST limiter | complete | Add optional SQLite ordered event bus for cross-worker public WS fanout and atomic SQLite sliding-window REST limiter | cross-worker WebSocket + limiter tests + compileall | working tree (pending commit) |
+| D147 HTTPS/OAuth source adapters | complete | Add server-side HTTPS JSON adapters for candidate/public-content/personal sources with Bearer-header isolation, size/time/schema validation and runtime URL/token configuration | HTTP adapter + runtime configuration tests + compileall | working tree (pending commit) |
 
 ## 已知坑位（Running Gotchas）
 
 - 当前前端展示题目是“为什么我们越来越不会休息？”，后端旗舰评测题目是“AI Agent 真正进入企业，卡住的是技术还是采购？”；在 API 联调前需明确采用双 demo table 还是统一题目。
 - 本机系统 Python 为 3.14；项目必须声明 3.11+ 兼容范围，避免无意使用 3.14 专属语法。
-- 当前实时广播与仓储仍是单进程实现；多实例部署前需要接入共享消息总线和数据库事务，但不能改变现有事件/状态契约。
-- 正式知乎身份、候选 source 与个人 source 仍由部署方注入获授权适配器；未配置时后端必须继续 fail-closed，不回退到网页抓取或前端 token。
+- 默认运行仍是单进程内存模式；设置共享路径后可启用 JSON 跨 worker 锁、SQLite 短期状态、SQLite 事件总线和共享 REST 限流。高并发/跨主机生产环境仍应替换为托管数据库与消息系统，但不能改变现有事件/状态契约。
+- 正式知乎身份、候选 source 与个人 source 仍由部署方注入获授权适配器；仓库已提供 HTTPS/OAuth JSON 接线，但没有凭空伪造平台凭证。未配置时后端必须继续 fail-closed，不回退到网页抓取或前端 token。

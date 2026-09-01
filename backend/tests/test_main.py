@@ -1,6 +1,12 @@
 import pytest
 
-from app.main import _build_provider, _build_source_match_preview_ttl, _build_sync_window
+from app.main import (
+    _build_candidate_source,
+    _build_provider,
+    _build_source_match_preview_ttl,
+    _build_sync_window,
+)
+from app.sources import HttpCandidateSource
 
 
 def test_runtime_provider_defaults_to_deterministic(monkeypatch) -> None:
@@ -43,3 +49,20 @@ def test_runtime_sync_window_rejects_non_positive_or_invalid_values(monkeypatch,
     monkeypatch.setenv("SYNC_WINDOW_SECONDS", raw)
     with pytest.raises(RuntimeError, match="positive number"):
         _build_sync_window()
+
+
+def test_runtime_candidate_source_can_use_server_side_https_adapter(monkeypatch) -> None:
+    monkeypatch.delenv("CANDIDATE_SOURCE_COMMAND", raising=False)
+    monkeypatch.setenv("CANDIDATE_SOURCE_URL", "https://adapter.example/candidates")
+    monkeypatch.setenv("CANDIDATE_SOURCE_TOKEN", "server-only-token")
+    source = _build_candidate_source()
+    assert isinstance(source, HttpCandidateSource)
+    assert source.endpoint == "https://adapter.example/candidates"
+
+
+def test_runtime_candidate_source_rejects_token_without_endpoint(monkeypatch) -> None:
+    monkeypatch.delenv("CANDIDATE_SOURCE_COMMAND", raising=False)
+    monkeypatch.delenv("CANDIDATE_SOURCE_URL", raising=False)
+    monkeypatch.setenv("CANDIDATE_SOURCE_TOKEN", "server-only-token")
+    with pytest.raises(RuntimeError, match="requires CANDIDATE_SOURCE_URL"):
+        _build_candidate_source()

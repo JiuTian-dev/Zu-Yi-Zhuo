@@ -125,7 +125,13 @@ WebSocket 单个 JSON 文本帧默认最多 64 KiB，可用 `WS_MAX_FRAME_BYTES`
 
 每条 WebSocket 连接默认每 60 秒最多接收 120 个事件，可用 `WS_MAX_EVENTS_PER_MINUTE` 调整。超限事件会在 JSON 解析和桌锁之前被丢弃，并返回 `rate_limited` 与 `retry_after_seconds`；连接保持可用，客户端应等待提示时间后再重试。
 
-REST 的 `POST`、`PUT`、`PATCH`、`DELETE` 写请求默认按客户端地址每 60 秒最多 600 次，可用 `REST_MAX_MUTATIONS_PER_MINUTE` 或 `create_app(..., rest_max_mutations_per_minute=...)` 调整。超限返回 HTTP 429 和 `Retry-After`；`GET`、健康探针和 WebSocket 不计入此窗口。该限流器是单进程保护，多实例部署应在可信网关或共享限流器处统一执行。
+REST 的 `POST`、`PUT`、`PATCH`、`DELETE` 写请求默认按客户端地址每 60 秒最多 600 次，可用 `REST_MAX_MUTATIONS_PER_MINUTE` 或 `create_app(..., rest_max_mutations_per_minute=...)` 调整。超限返回 HTTP 429 和 `Retry-After`；`GET`、健康探针和 WebSocket 不计入此窗口。单进程默认使用内存滑动窗口；多实例可设置 `SHARED_RATE_LIMIT_PATH`，切换到 SQLite 原子窗口限流器：
+
+```powershell
+$env:SHARED_RATE_LIMIT_PATH = "D:\知乎黑客松\runtime\coordination.sqlite"
+```
+
+共享限流器只保存客户端地址和时间戳，不保存消息、身份或 token。
 
 通过 REST 完成补位、邀请接受、加入申请创建/审核/拒绝、同步升级、同意变更、邀请偏好更新、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`join_request_created`、`join_request_approved`、`join_request_declined`、`participant_invitation_preference_changed`、`table_closed`）；只有桌状态真的迁移时，才会继续发送按 viewer 隐私投影的 `table_state_changed`。加入申请本身不改变桌状态，因此不会发送状态迁移。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
 REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
@@ -160,12 +166,26 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 不再匹配偏好是参与者本人可写的全局关系账本，关系对两端对称生效；命中后服务端拒绝新邀请、过滤
 动态候选预览，但不删除已有桌成员、历史消息或旧邀请。删除操作幂等，JSON 仓储会在重启后恢复。
 
-默认使用内存仓储；设置 `TABLE_REPOSITORY_PATH` 后使用同目录原子 JSON 快照：
+默认使用内存仓储；设置 `TABLE_REPOSITORY_PATH` 后使用带原子替换和跨进程锁的 JSON 快照。多个 ASGI worker 共享同一路径时，每次顶层读写会先刷新快照并在 sibling lock 上串行化整个读改写事务：
 
 ```powershell
 $env:TABLE_REPOSITORY_PATH = "D:\知乎黑客松\runtime\tables.json"
 python -m uvicorn app.main:app
 ```
+
+主动需求会话、source-match 票据和动态邀请票据默认只在当前进程内存中。多实例联调可设置 `SHARED_EPHEMERAL_STORE_PATH`，三类短期数据会进入同一个 SQLite 文件，仍按 TTL、单次 claim 和 owner 作用域清理，不进入桌状态：
+
+```powershell
+$env:SHARED_EPHEMERAL_STORE_PATH = "D:\知乎黑客松\runtime\coordination.sqlite"
+```
+
+桌级 REST/WS 公共事件默认只在当前 worker 广播；设置 `EVENT_BUS_PATH` 后会启用 SQLite 有序事件总线，其他 worker 通过轮询转发公开事件，状态事件在接收端重新按 viewer 做隐私投影：
+
+```powershell
+$env:EVENT_BUS_PATH = "D:\知乎黑客松\runtime\coordination.sqlite"
+```
+
+`TABLE_REPOSITORY_PATH`、`SHARED_EPHEMERAL_STORE_PATH`、`SHARED_RATE_LIMIT_PATH` 和 `EVENT_BUS_PATH` 可以指向同一个 SQLite/JSON 所在目录，但不要把 JSON 快照路径本身当作 SQLite 路径；协调文件会自动创建。事件总线只发送公开桌面事件和版本提示，不发送个人卡、私有资料或授权 token。
 
 候选 source 默认未配置。需要接入已获授权的 CLI/MCP/OAuth wrapper 时，可设置
 `CANDIDATE_SOURCE_COMMAND` 为 JSON 字符串数组；后端会以无 shell 子进程方式调用它，stdin 输入
@@ -180,8 +200,21 @@ python -m uvicorn app.main:app
 
 wrapper 自己负责知乎授权和 token 管理；不要把 secret、Cookie 或 MCP 配置交给浏览器或前端。
 
-匹配预览票据默认保留 300 秒，可用 `SOURCE_MATCH_PREVIEW_TTL_SECONDS` 调整；票据只保存在当前进程内存中，
-进程重启或多实例切换后不会继续有效。多实例部署需要在保持相同接口语义的前提下替换为共享、带 TTL 的票据存储。
+如果部署方有 HTTPS 的 OAuth/CLI/MCP gateway，也可以不经过子进程直接配置服务器侧 JSON source。三类 URL 使用同一份最小契约：后端 POST `{"query":"...","limit":20}`（个人上下文额外带 `viewer_id` 和 `scopes`），gateway 返回数组或带 `candidates`/`signals` 键的 JSON；响应会先限大小再逐条做 `ParticipantSeed`、`ContentSignal` 或 `PersonalContextSignal` 校验：
+
+```powershell
+$env:CANDIDATE_SOURCE_URL = "https://adapter.example/zhihu/candidates"
+$env:CANDIDATE_SOURCE_TOKEN = "<server-only-token>"
+$env:CONTENT_SIGNAL_SOURCE_URL = "https://adapter.example/zhihu/public-signals"
+$env:CONTENT_SIGNAL_SOURCE_TOKEN = "<server-only-token>"
+$env:PERSONAL_CONTEXT_SOURCE_URL = "https://adapter.example/zhihu/personal-context"
+$env:PERSONAL_CONTEXT_SOURCE_TOKEN = "<server-only-token>"
+python -m uvicorn app.main:app
+```
+
+URL source 默认只允许 HTTPS；本地测试可显式设置 `SOURCE_ALLOW_INSECURE_HTTP=1`。同一类 source 同时设置 `*_COMMAND` 和 `*_URL` 时，以 command 为准。token 只放在后端进程的 `Authorization: Bearer` 请求头，不进入 URL、日志、能力探针或错误正文；网络失败、超时、非 2xx、超大响应和非法 JSON 都 fail-closed 为 502。
+
+匹配预览票据默认保留 300 秒，可用 `SOURCE_MATCH_PREVIEW_TTL_SECONDS` 调整；默认票据只保存在当前进程内存中。设置 `SHARED_EPHEMERAL_STORE_PATH` 后，source-match、候选邀请票据和主动需求会话共享 SQLite 短期存储，进程重启后仍只在 TTL 内有效，claim/consume/release 由数据库事务保证单次语义。
 
 机会发现可额外设置 `CONTENT_SIGNAL_SOURCE_COMMAND` 接入公开内容 CLI/MCP/OAuth wrapper。stdin 同样是
 `{"query":"...","limit":20}`，stdout 返回信号数组或 `{"signals":[...]}`；每条信号必须符合
@@ -251,8 +284,9 @@ provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案
 - 可选 `CommandCandidateSource` 为官方/获授权的 CLI、MCP 或 OAuth wrapper 提供 stdin/stdout 接入；命令不经 shell，默认 5 秒超时和 1 MB 输出上限，后端只接收规范化 `ParticipantSeed`。
 - 可选 `CommandContentSignalSource` 为机会发现接入同样的官方/获授权 wrapper；后端只接收 `visibility=public` 的规范化 `ContentSignal`，不会把原始 token 或私有行为写入桌状态。
 - 可选 `CommandPersonalContextSource` 为用户授权个人层接入官方/获授权 wrapper；后端只接受 `visibility=private` 且 owner 与 viewer 一致的 `PersonalContextSignal`，预览响应只回给该 viewer，默认不持久化。
+- 可选 `HttpCandidateSource`、`HttpContentSignalSource` 和 `HttpPersonalContextSource` 为服务器侧 HTTPS/OAuth gateway 提供同一份规范化 JSON 接入；适配器只接收已授权结果，token 只存在后端请求头，默认拒绝明文 HTTP。
 - 接入正式知乎 CLI/MCP/OAuth 时，通过 `create_app(..., candidate_source=...)` 注入适配器，适配器只返回已授权、规范化候选资料，服务端不会接收或记录 access token。
-- 外部 source 调用默认有 5 秒超时；可在 `create_app(..., candidate_source_timeout_seconds=...)` 注入不同正数。超时统一返回通用 502，不会回退到未经授权的候选。
+- 外部 source 调用默认有 5 秒超时；可在 `create_app(..., candidate_source_timeout_seconds=...)` 注入不同正数。命令和 HTTPS 适配器均覆盖请求、响应读取和解析边界，超时统一返回通用 502，不会回退到未经授权的候选。
 - source 命令的超时从子进程启动开始，覆盖 stdin 写入/关闭、stdout/stderr drain、进程退出和清理；任一阶段超时都会杀掉子进程并 fail-closed，避免 wrapper 卡在输入阶段占住 worker。
 - 软过期桌不再出现在默认 `GET /tables`；使用 `include_closed=true` 可在历史/运营视图中看到它，且仍按 viewer 做隐私投影。
 - 关系记忆只从已收桌状态的 `worth_continuing_with` 证据派生；本人身份通过 `viewer_id` 自证，响应只含旧桌问题、对方公开姓名、理由和证据定位，不含私有画像或个人卡全文。

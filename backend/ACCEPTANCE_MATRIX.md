@@ -11,6 +11,7 @@
 | 一键验证主动需求第二入口 | `python -m app.cli.intent_demo` | `backend/app/demo/intent.py`、`backend/app/cli/intent_demo.py`；`tests/test_intent_demo.py`；多轮澄清→授权候选 source→短票据确认，隔离内存、脱敏摘要、无网络 |
 | 一条命令验证公开机会到收桌后回响 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→4 人匹配→动态第 5 席邀请/入席→REST/WS→行动回报/反馈→确定性 JSON |
 | 一键验证授权 source 驱动的 GROUND 闭环 | `python -m app.cli.grounding_demo` | `backend/app/demo/grounding.py`、`backend/app/cli/grounding_demo.py`；`tests/test_grounding_demo.py`；真实 REST/WS→事实冲突→GROUND→来源卡消费→replay，隔离内存且可重复 |
+| 多实例共享短期 handoff 与实时事件 | `SHARED_EPHEMERAL_STORE_PATH`、`EVENT_BUS_PATH` | `backend/app/api/match_tickets.py`、`backend/app/api/intent_sessions.py`、`backend/app/api/event_bus.py`、`backend/app/api/websocket.py`；`tests/test_shared_coordination.py`；SQLite 事务保证票据单次 claim、会话 owner/TTL、跨 worker WebSocket 公共事件转发 |
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview`；`POST /participants/{id}/intent-sessions`、`GET/DELETE .../{session_id}`、`POST .../{session_id}/turns`、`POST .../{session_id}/source-preview` | `backend/app/intake.py`、`backend/app/api/intent_sessions.py`；`tests/test_intake.py`、`tests/test_intent_sessions.py`、`tests/test_source.py`；支持多轮 `clarifying / ready / exhausted`、显式上下文纠正、本人身份校验、TTL/轮次/容量边界，以及 `new_table` 到授权候选 source/短票据确认链，最终仍不自动建桌 |
 | 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...`；同步桌透传 `sync_expires_at` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 后续选桌随本人真实行为变聪明且可解释、可重置 | `GET /participants/{id}/table-recommendations`；`DELETE /participants/{id}/behavior-events` 立即恢复冷启动 | `backend/app/recommendations.py`、`backend/app/api/app.py`；`tests/test_table_recommendations.py`；弱信号按桌限权、过滤 no-match/不可入席桌、不返回原始消息或黑箱分数 |
@@ -58,6 +59,8 @@
 | 安全按风险逐级处理，不误伤正常分歧 | 气氛升温 `safety_soft_intervention`、首次边界 `safety_private_reminder`、重复边界 critical 暂停；strike 计数私有且可重启恢复 | `backend/app/orchestrator/safety.py`、`backend/app/api/repository.py`、`backend/app/api/websocket.py`；`tests/test_safety.py`、`tests/test_websocket.py`、`tests/test_comment_promotion.py`、`tests/test_persistence.py` |
 | 重启后仍可恢复桌面与公开来源 | 原子 JSON snapshot repository，旧快照兼容 | `backend/app/api/repository.py`、`backend/app/main.py`；`tests/test_persistence.py` |
 | 外部 source 失败时 fail-closed | 无 shell 命令桥、全链路超时、输出上限和通用错误 | `backend/app/sources/`；`tests/test_source.py`、`tests/test_content_source.py` |
+| 正式授权 gateway 的 HTTPS/OAuth 接入 | `CANDIDATE_SOURCE_URL`、`CONTENT_SIGNAL_SOURCE_URL`、`PERSONAL_CONTEXT_SOURCE_URL` 及对应 server-only token | `backend/app/sources/http.py`、`backend/app/main.py`；`tests/test_http_sources.py`、`tests/test_main.py`；仅 HTTPS（本地可显式放宽）、Bearer header 不泄漏、响应限大小/规范化校验/fail-closed |
+| 多实例 REST 共享限流 | `SHARED_RATE_LIMIT_PATH` | `backend/app/api/rate_limit.py`、`backend/app/api/app.py`；`tests/test_shared_coordination.py`；SQLite `BEGIN IMMEDIATE` 原子滑动窗口和 Retry-After 语义 |
 | 前端可判断运行能力，不探测业务接口 | `GET /capabilities`、`/healthz`、`/readyz` | `backend/app/api/app.py`；`tests/test_api.py`、`tests/test_main.py` |
 | REST/WS 写入可控，避免重复和资源滥用 | message 幂等、WS 帧/事件限额、REST mutation rate limit、状态广播版本单调、source 匹配票据有界且单次消费 | `backend/app/api/rate_limit.py`、`websocket.py`、`match_tickets.py`；`tests/test_rate_limit.py`、`tests/test_websocket.py`、`tests/test_source.py` |
 
@@ -71,10 +74,10 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **485 passed**。最近一个后端功能切片是 D143（主动需求第二入口黑盒 Demo）；实现提交为 `2eaffc2`，设计提交为 `8747fc6`。上一切片 D142（主动需求到授权候选 source 的短票据接线）为 `483 passed`，实现提交 `7c662f1`，设计提交 `9d11601`。
+当前基线为 **496 passed**。全量验证包含 `compileall` 和后端范围 `git diff --check`；最近四个后端切片为 D144（共享 JSON 仓储协调）、D145（共享短期 handoff）、D146（共享事件总线/REST 限流）和 D147（HTTPS/OAuth source 适配器）。
 
 ## 不把以下事项误报为已完成
 
-- 正式知乎 CLI/MCP/OAuth 凭证和 source 由部署方注入；仓库提供的是规范化适配器和 fail-closed 边界，不伪造授权数据。
-- 多实例消息总线、数据库事务和共享限流器尚未纳入比赛版单进程目标。
+- 正式知乎 CLI/MCP/OAuth 凭证仍由部署方注入；仓库现在提供 CLI/命令桥和服务器侧 HTTPS/OAuth JSON 适配器、配置校验与 fail-closed 边界，不伪造授权数据。
+- 多实例协调已提供 SQLite 参考实现（共享 JSON 事务锁、短期 handoff 存储、公共事件总线、共享 REST 限流）；生产规模继续建议替换为托管数据库/消息系统，但不改变现有契约。
 - 本文不验收前端视觉、3D 资产、动画或浏览器部署；这些属于另一个 agent 的工作区内容。

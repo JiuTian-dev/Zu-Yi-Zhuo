@@ -23,11 +23,17 @@ from app.domain.schemas import EvidenceStatement
 from .repository import MAX_ACTION_ECHO_ITEMS, MAX_QUESTION_FOOTPRINT_ITEMS, MAX_SAVED_TABLES_PER_PARTICIPANT, MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
-from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
+from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter, SQLiteMutationRateLimiter
+from .event_bus import EventBus
 from .nudge import NudgeCooldown, NudgeResult, NudgeUnavailable, run_nudge
 from .identity import ModeratorResolver, IdentityResolver, require_moderator_identity, require_request_identity
-from .intent_sessions import ActiveIntentSessionStore, IntentSessionCapacityExhausted, IntentSessionTurnLimitReached, IntentSessionUnavailable
-from .match_tickets import CandidateInvitationTicketStore, SourceMatchTicketStore
+from .intent_sessions import ActiveIntentSessionStore, IntentSessionCapacityExhausted, IntentSessionTurnLimitReached, IntentSessionUnavailable, SQLiteActiveIntentSessionStore
+from .match_tickets import (
+    CandidateInvitationTicketStore,
+    SQLiteCandidateInvitationTicketStore,
+    SQLiteSourceMatchTicketStore,
+    SourceMatchTicketStore,
+)
 from app.sources import CandidateSource, CandidateSourceError, ContentSignalSource, ContentSignalSourceError, PersonalContextSource, PersonalContextSourceError
 from app.personal import build_personal_context_preview
 from app.intake import build_active_intent_preview, build_active_intent_session_preview
@@ -519,6 +525,9 @@ def create_app(
     source_match_preview_ttl_seconds: float = 300.0,
     intent_session_ttl_seconds: float = 900.0,
     sync_window_seconds: float = 1800.0,
+    event_bus: EventBus | None = None,
+    shared_rate_limit_path: str | os.PathLike[str] | None = None,
+    shared_ephemeral_store_path: str | os.PathLike[str] | None = None,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
@@ -584,14 +593,36 @@ def create_app(
     if max_rest_mutations_per_minute <= 0:
         raise ValueError("rest_max_mutations_per_minute must be a positive integer")
     repo = repository or InMemoryTableRepository()
-    source_match_tickets = SourceMatchTicketStore(ttl_seconds=source_match_preview_ttl_seconds)
-    candidate_invitation_tickets = CandidateInvitationTicketStore(
-        ttl_seconds=source_match_preview_ttl_seconds,
+    configured_ephemeral_path = (
+        os.getenv("SHARED_EPHEMERAL_STORE_PATH", "").strip()
+        if shared_ephemeral_store_path is None
+        else os.fspath(shared_ephemeral_store_path)
     )
-    intent_sessions = ActiveIntentSessionStore(
-        ttl_seconds=intent_session_ttl_seconds,
-        clock=clock,
-    )
+    if configured_ephemeral_path:
+        source_match_tickets = SQLiteSourceMatchTicketStore(
+            configured_ephemeral_path,
+            ttl_seconds=source_match_preview_ttl_seconds,
+            clock=time.time,
+        )
+        candidate_invitation_tickets = SQLiteCandidateInvitationTicketStore(
+            configured_ephemeral_path,
+            ttl_seconds=source_match_preview_ttl_seconds,
+            clock=time.time,
+        )
+        intent_sessions = SQLiteActiveIntentSessionStore(
+            configured_ephemeral_path,
+            ttl_seconds=intent_session_ttl_seconds,
+            clock=time.time,
+        )
+    else:
+        source_match_tickets = SourceMatchTicketStore(ttl_seconds=source_match_preview_ttl_seconds)
+        candidate_invitation_tickets = CandidateInvitationTicketStore(
+            ttl_seconds=source_match_preview_ttl_seconds,
+        )
+        intent_sessions = ActiveIntentSessionStore(
+            ttl_seconds=intent_session_ttl_seconds,
+            clock=clock,
+        )
     api = FastAPI(title="组一桌 Conversation Orchestrator")
     api.state.repository = repo
     api.state.provider = provider
@@ -604,7 +635,19 @@ def create_app(
     api.state.identity_resolver = identity_resolver
     api.state.moderator_resolver = moderator_resolver
     api.state.sync_window_seconds = sync_window_seconds
-    rest_rate_limiter = MutationRateLimiter(max_rest_mutations_per_minute)
+    configured_rate_limit_path = (
+        os.getenv("SHARED_RATE_LIMIT_PATH", "").strip()
+        if shared_rate_limit_path is None
+        else os.fspath(shared_rate_limit_path)
+    )
+    rest_rate_limiter = (
+        SQLiteMutationRateLimiter(
+            configured_rate_limit_path,
+            max_rest_mutations_per_minute,
+        )
+        if configured_rate_limit_path
+        else MutationRateLimiter(max_rest_mutations_per_minute)
+    )
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -640,6 +683,7 @@ def create_app(
         max_websocket_frame_bytes,
         max_websocket_events_per_minute,
         clock,
+        event_bus,
     )
 
     @api.get("/healthz")

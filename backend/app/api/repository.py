@@ -1,6 +1,7 @@
 """Small repositories used by the first HTTP integration slice."""
 
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from functools import wraps
 import json
 import os
@@ -121,7 +122,19 @@ def _synchronized(method: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(method)
     def wrapped(self, *args: Any, **kwargs: Any) -> Any:
         with self._lock:
-            return method(self, *args, **kwargs)
+            # ``JsonTableRepository`` overrides these hooks to coordinate
+            # multiple worker processes.  The in-memory implementation keeps
+            # the same call shape but uses a no-op external scope.
+            depth = getattr(self, "_operation_depth", 0)
+            if depth:
+                return method(self, *args, **kwargs)
+            with self._external_lock():
+                self._operation_depth = 1
+                try:
+                    self._before_operation()
+                    return method(self, *args, **kwargs)
+                finally:
+                    self._operation_depth = 0
 
     return wrapped
 
@@ -131,6 +144,7 @@ class InMemoryTableRepository:
 
     def __init__(self) -> None:
         self._lock = RLock()
+        self._operation_depth = 0
         self._states: dict[str, list[TableState]] = {}
         self._turns: dict[str, list[HumanTurn]] = {}
         self._interventions: dict[str, list[InterventionRecord]] = {}
@@ -152,6 +166,17 @@ class InMemoryTableRepository:
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
         self._behavior_events: dict[str, list[BehaviorEvent]] = {}
         self._public_source_signals: dict[str, dict[str, ContentSignal]] = {}
+
+    @contextmanager
+    def _external_lock(self):
+        """Hook for repositories that coordinate across worker processes."""
+
+        yield
+
+    def _before_operation(self) -> None:
+        """Hook for refreshing state before a top-level repository call."""
+
+        return None
 
     @_synchronized
     def create(
@@ -1547,34 +1572,82 @@ class InMemoryTableRepository:
 
 
 class JsonTableRepository(InMemoryTableRepository):
-    """A small, atomically-written JSON snapshot store for one-process deployments."""
+    """Atomically-written JSON snapshots with optional cross-process locking.
+
+    The JSON file remains intentionally simple for the competition deployment,
+    but every top-level operation now takes a sibling lock file and refreshes
+    from disk first.  Two ASGI workers sharing the same path therefore cannot
+    interleave a read/modify/write transaction or silently overwrite a newer
+    snapshot.  A database/event bus can still be substituted through the same
+    repository protocol when deployment scale requires it.
+    """
 
     def __init__(self, path: str | Path) -> None:
         super().__init__()
         self.path = Path(path)
+        self.lock_path = self.path.with_name(f".{self.path.name}.lock")
         if self.path.exists():
-            (
-                self._states,
-                self._turns,
-                self._trusted_grounding_cards,
-                self._interventions,
-                self._invitations,
-                self._join_requests,
-                self._follow_up_outcomes,
-                self._value_feedback,
-                self._comments,
-                self._comment_promotions,
-                self._no_match,
-                self._account_invitation_preferences,
-                self._safety_reports,
-                self._safety_report_audits,
-                self._safety_resolutions,
-                self._safety_strikes,
-                self._personal_context_consents,
-                self._behavior_events,
-                self._saved_tables,
-                self._public_source_signals,
-            ) = self._load()
+            self._replace_loaded(self._load())
+
+    def _replace_loaded(self, loaded: tuple[Any, ...]) -> None:
+        (
+            self._states,
+            self._turns,
+            self._trusted_grounding_cards,
+            self._interventions,
+            self._invitations,
+            self._join_requests,
+            self._follow_up_outcomes,
+            self._value_feedback,
+            self._comments,
+            self._comment_promotions,
+            self._no_match,
+            self._account_invitation_preferences,
+            self._safety_reports,
+            self._safety_report_audits,
+            self._safety_resolutions,
+            self._safety_strikes,
+            self._personal_context_consents,
+            self._behavior_events,
+            self._saved_tables,
+            self._public_source_signals,
+        ) = loaded
+
+    @contextmanager
+    def _external_lock(self):
+        """Take a small sibling lock that works on Windows and POSIX hosts."""
+
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _before_operation(self) -> None:
+        if self.path.exists():
+            self._replace_loaded(self._load())
 
     @_synchronized
     def create(

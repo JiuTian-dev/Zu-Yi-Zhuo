@@ -4,6 +4,7 @@ from .base import CandidateSource, CandidateSourceError, ContentSignalSource, Co
 from .content import CommandContentSignalSource
 from .command import CommandCandidateSource
 from .personal import CommandPersonalContextSource
+from .http import HttpCandidateSource, HttpContentSignalSource, HttpPersonalContextSource
 
 __all__ = (
     "CandidateSource",
@@ -13,6 +14,9 @@ __all__ = (
     "ContentSignalSource",
     "ContentSignalSourceError",
     "CommandPersonalContextSource",
+    "HttpCandidateSource",
+    "HttpContentSignalSource",
+    "HttpPersonalContextSource",
     "PersonalContextSource",
     "PersonalContextSourceError",
 )

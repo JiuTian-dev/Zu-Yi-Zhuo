@@ -2,11 +2,13 @@
 
 import asyncio
 from collections import deque
+from contextlib import asynccontextmanager
 import json
 import math
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
@@ -31,6 +33,7 @@ from .intervention import build_intervention_record
 from .privacy import project_state_for_viewer
 from .repository import MAX_SAFETY_STRIKES_PER_PARTICIPANT, InMemoryTableRepository
 from .identity import IdentityResolver, websocket_identity_error
+from .event_bus import EventBus
 
 DEFAULT_MAX_WEBSOCKET_FRAME_BYTES = 64 * 1024
 DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE = 120
@@ -237,6 +240,7 @@ def register_websocket_routes(
     max_frame_bytes: int = DEFAULT_MAX_WEBSOCKET_FRAME_BYTES,
     max_events_per_minute: int = DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE,
     clock: Callable[[], float] = time.time,
+    event_bus: EventBus | None = None,
 ) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
     if max_frame_bytes <= 0:
@@ -247,6 +251,36 @@ def register_websocket_routes(
     connections: dict[str, dict[WebSocket, str]] = {}
     table_locks: dict[str, asyncio.Lock] = {}
     state_broadcast = _MonotonicStateBroadcast()
+    instance_id = uuid4().hex
+    bus_task: asyncio.Task[None] | None = None
+
+    async def _publish_bus(
+        table_id: str,
+        *,
+        kind: Literal["event", "state", "safety"],
+        payload: dict,
+        state_version: int | None = None,
+    ) -> None:
+        """Publish only public event metadata; local fanout never depends on it."""
+        if event_bus is None:
+            return
+        envelope = {
+            "origin": instance_id,
+            "kind": kind,
+            "table_id": table_id,
+            "state_version": state_version,
+            "payload": payload,
+        }
+        try:
+            await asyncio.to_thread(
+                event_bus.publish,
+                channel=f"table:{table_id}",
+                payload=envelope,
+            )
+        except Exception:
+            # The shared bus is an optional cross-worker enhancement.  A local
+            # connection must remain usable if its coordination store is down.
+            return
 
     async def _broadcast(table_id: str, factory: Callable[[str], dict]) -> None:
         """Fan out public table events and discard peers that already closed."""
@@ -265,18 +299,40 @@ def register_websocket_routes(
                 if not current:
                     connections.pop(table_id, None)
 
-    async def broadcast(table_id: str, payload: dict) -> None:
-        await _broadcast(table_id, lambda _viewer_id: payload)
-
-    async def broadcast_state(table_id: str, state: TableState) -> None:
+    async def _broadcast_state_local(table_id: str, state: TableState) -> None:
         await state_broadcast.send(
             table_id,
             state.version,
             lambda: _broadcast(
                 table_id,
-                lambda viewer_id: _state_event(project_state_for_viewer(state, viewer_id or None)),
+                lambda viewer_id: _state_event(
+                    project_state_for_viewer(state, viewer_id or None)
+                ),
             ),
         )
+
+    async def broadcast(table_id: str, payload: dict) -> None:
+        await _broadcast(table_id, lambda _viewer_id: payload)
+        await _publish_bus(table_id, kind="event", payload=payload)
+
+    async def broadcast_state(table_id: str, state: TableState) -> None:
+        sent = await state_broadcast.send(
+            table_id,
+            state.version,
+            lambda: _broadcast(
+                table_id,
+                lambda viewer_id: _state_event(
+                    project_state_for_viewer(state, viewer_id or None)
+                ),
+            ),
+        )
+        if sent:
+            await _publish_bus(
+                table_id,
+                kind="state",
+                state_version=state.version,
+                payload={"type": "table_state_changed"},
+            )
 
     async def broadcast_safety(table_id: str, decision, state: TableState) -> None:
         await _broadcast(
@@ -287,6 +343,105 @@ def register_websocket_routes(
                 "state": project_state_for_viewer(state, viewer_id or None).model_dump(mode="json"),
             },
         )
+        await _publish_bus(
+            table_id,
+            kind="safety",
+            state_version=state.version,
+            payload={
+                "type": "safety_enforced",
+                "decision": decision.model_dump(mode="json"),
+            },
+        )
+
+    async def _poll_shared_bus() -> None:
+        """Forward events written by other workers to this worker's sockets."""
+        if event_bus is None:
+            return
+        cursor = 0
+        latest_id = getattr(event_bus, "latest_id", None)
+        if latest_id is not None:
+            try:
+                cursor = int(await asyncio.to_thread(latest_id))
+            except Exception:
+                cursor = 0
+        while True:
+            try:
+                events = await asyncio.to_thread(
+                    event_bus.read_since, cursor=cursor, limit=100
+                )
+                if events:
+                    for item in events:
+                        cursor = max(cursor, item.event_id)
+                        payload = item.payload
+                        if payload.get("origin") == instance_id:
+                            continue
+                        table_id = payload.get("table_id")
+                        if not isinstance(table_id, str) or not table_id:
+                            continue
+                        kind = payload.get("kind")
+                        if kind == "event":
+                            event_payload = payload.get("payload")
+                            if isinstance(event_payload, dict):
+                                await _broadcast(
+                                    table_id,
+                                    lambda _viewer_id, event_payload=event_payload: event_payload,
+                                )
+                        elif kind == "state":
+                            try:
+                                state = repository.get(table_id)
+                            except KeyError:
+                                continue
+                            version = payload.get("state_version")
+                            if isinstance(version, int) and state.version < version:
+                                continue
+                            await _broadcast_state_local(table_id, state)
+                        elif kind == "safety":
+                            try:
+                                state = repository.get(table_id)
+                            except KeyError:
+                                continue
+                            event_payload = payload.get("payload")
+                            if not isinstance(event_payload, dict):
+                                continue
+                            decision = event_payload.get("decision")
+                            if not isinstance(decision, dict):
+                                continue
+                            await _broadcast(
+                                table_id,
+                                lambda viewer_id, event_payload=event_payload, state=state: {
+                                    **event_payload,
+                                    "state": project_state_for_viewer(
+                                        state, viewer_id or None
+                                    ).model_dump(mode="json"),
+                                },
+                            )
+                else:
+                    await asyncio.sleep(0.05)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(0.25)
+
+    if event_bus is not None:
+        previous_lifespan = api.router.lifespan_context
+
+        @asynccontextmanager
+        async def _shared_bus_lifespan(application: FastAPI):
+            nonlocal bus_task
+            async with previous_lifespan(application):
+                bus_task = asyncio.create_task(_poll_shared_bus())
+                try:
+                    yield
+                finally:
+                    if bus_task is not None:
+                        bus_task.cancel()
+                        try:
+                            await bus_task
+                        except asyncio.CancelledError:
+                            pass
+                        bus_task = None
+
+        api.router.lifespan_context = _shared_bus_lifespan
 
     # REST routes can reuse the same table-scoped fanout without reaching into
     # the connection registry or duplicating privacy projection logic.
@@ -486,16 +641,7 @@ def register_websocket_routes(
                             state = repository.append_safety_state(
                                 table_id, enforce_safety(repository.get(table_id), safety)
                             )
-                            await _broadcast(
-                                table_id,
-                                lambda viewer_id: {
-                                    "type": "safety_enforced",
-                                    "decision": safety.model_dump(mode="json"),
-                                    "state": project_state_for_viewer(
-                                        state, viewer_id
-                                    ).model_dump(mode="json"),
-                                },
-                            )
+                            await broadcast_safety(table_id, safety, state)
                             continue
 
                         state, created = repository.append_message_once(
