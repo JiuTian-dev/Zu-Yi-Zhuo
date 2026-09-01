@@ -135,7 +135,6 @@ function HallwayBackdrop({ tables, flowTexture, reducedMotion }: {
 export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnFocusId }: HallwayProps) {
   const [index, setIndex] = useState(0)
   const [forming, setForming] = useState(false)
-  const mediaRef = useRef<HTMLDivElement>(null!)
   const cooldown = useRef(0)
   const wheelDelta = useRef(0)
   const galleryActive = phase === 'gallery'
@@ -208,8 +207,7 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
       setForming(true)
       return
     }
-    const { left, top, width, height } = mediaRef.current.getBoundingClientRect()
-    onEnter(featured, { left, top, width, height })
+    onEnter(featured, { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight })
   }
 
   return (
@@ -241,9 +239,6 @@ export default function Hallway({ onEnter, enhanced, flowTexture, phase, returnF
             {featured.entryMode === 'immersive' ? '坐下来看看' : forming ? '还在等合适的人' : '正在形成'} <i>→</i>
           </button>
           <p className="hallway-forming" role="status" aria-live="polite">{forming && featured.entryMode !== 'immersive' ? '这张桌还在等待合适的人，形成后会从这里亮起来。' : ''}</p>
-        </div>
-        <div className="hallway-thumb" ref={mediaRef} aria-hidden="true">
-          <img src={featured.sceneTexture} alt="" style={{ objectPosition: `${featured.coverFocus.x * 100}% ${featured.coverFocus.y * 100}%` }} />
         </div>
       </section>
 

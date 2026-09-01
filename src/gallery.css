@@ -61,7 +61,7 @@ html.hallway-mode,body.hallway-mode{height:100%;overflow:hidden;background:#eef0
 .hallway-beacon span{display:grid;gap:4px}
 .hallway-beacon small{font-size:9px;letter-spacing:.16em;opacity:.6}
 .hallway-beacon b{font-size:12px;font-weight:400;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.hallway-featured{position:relative;z-index:3;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.9fr);gap:clamp(28px,4.5vw,80px);align-items:end;width:min(1060px,76vw);margin:0 auto;padding-bottom:12vh}
+.hallway-featured{position:relative;z-index:3;display:grid;grid-template-columns:minmax(0,1fr);align-items:center;width:min(1060px,76vw);margin:0 auto;margin-top:34vh;padding-bottom:12vh}
 .hallway-copy{display:grid;gap:0;justify-items:start}
 .hallway-kicker{display:flex;gap:20px;align-items:baseline;margin:0 0 22px;font-size:11px;letter-spacing:.18em;opacity:.78}
 .hallway-kicker span{font-size:12px;opacity:1}
@@ -90,7 +90,7 @@ html.hallway-mode,body.hallway-mode{height:100%;overflow:hidden;background:#eef0
   .hallway-brand span{display:none}
   .hallway-beacon{width:64px;padding:10px}
   .hallway-beacon span{display:none}
-  .hallway-featured{display:flex;flex-direction:column;align-items:stretch;width:calc(100% - 40px);padding-bottom:9vh;gap:22px}
+  .hallway-featured{display:flex;flex-direction:column;align-items:stretch;width:calc(100% - 40px);padding-bottom:9vh;gap:22px;margin-top:9vh}
   .hallway-copy h1{font-size:30px}
   .hallway-thumb{order:-1;aspect-ratio:1.3}
   .hallway-footer{left:20px;right:20px}
@@ -140,4 +140,23 @@ html.hallway-mode,body.hallway-mode{height:100%;overflow:hidden;background:#eef0
 }
 @media (min-width:1281px){
   .hallway-featured{width:min(880px,calc(100vw - 620px))}
+}
+
+/* ---- Hallway visual pass after first real look (vision QA) ---- */
+@media (min-width:761px){
+  .hallway-featured{grid-template-columns:minmax(0,1fr);width:min(640px,calc(100vw - 560px))}
+}
+.hallway-recommend{background:rgba(255,255,255,.52);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-left:2px solid #315246}
+.hallway-page[data-world='campfire'] .hallway-recommend{background:rgba(13,19,27,.58);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-left:2px solid #ffd9a0}
+.hallway-brand span{opacity:1;color:#5a6167}
+.hallway-page[data-world='campfire'] .hallway-brand span{color:rgba(255,246,227,.88);text-shadow:0 1px 10px rgba(0,0,0,.55)}
+.hallway-page[data-world='campfire'] .hallway-copy h1,.hallway-page[data-world='campfire'] .hallway-missing{text-shadow:0 2px 18px rgba(0,0,0,.45)}
+.hallway-kicker{opacity:1;color:#4d545a}
+.hallway-page[data-world='campfire'] .hallway-kicker{color:rgba(255,236,200,.92);text-shadow:0 1px 8px rgba(0,0,0,.5)}
+.hallway-cta{text-shadow:inherit}
+.hallway-page[data-world='campfire'] .hallway-cta{text-shadow:0 1px 10px rgba(0,0,0,.5)}
+@media (max-width:1280px) and (min-width:761px){
+  .hallway-beacon{width:auto;min-width:54px;padding:12px 14px}
+  .hallway-beacon b{display:none}
+  .hallway-beacon small{font-size:10px;letter-spacing:.1em;opacity:.85}
 }
