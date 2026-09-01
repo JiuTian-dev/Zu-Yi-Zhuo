@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
+from app.domain import ParticipantSeed
 
 from .public_signals import flagship_public_signals
 
@@ -14,6 +15,25 @@ JOURNEY_CORE_QUESTION = "AI Agent 真正进入企业，卡住的是技术还是�
 JOURNEY_ACTOR_ID = "public-architect"
 JOURNEY_MESSAGE_ID = "journey-demo-message-1"
 JOURNEY_TEXT = "我亲历过企业采购；我会先和采购团队验证责任归属，再决定是否扩大试点。"
+JOURNEY_REPLENISHMENT_ID = "public-practitioner"
+
+
+class _JourneyCandidateSource:
+    """Deterministic fifth-seat source used only by the isolated demo."""
+
+    async def search(self, *, query: str, limit: int) -> list[ParticipantSeed]:
+        if limit <= 0:
+            return []
+        return [ParticipantSeed(
+            participant_id=JOURNEY_REPLENISHMENT_ID,
+            display_name="公开实践者",
+            role="实践者",
+            declared_position="先从真实业务的小闭环验证开始",
+            relevant_experience=[{
+                "text": "参与过企业 AI 试点和责任链验证",
+                "source_ref": "demo:public-practitioner:experience",
+            }],
+        )]
 
 
 def _expect(response: Any, status_code: int, label: str) -> dict[str, Any]:
@@ -37,7 +57,7 @@ def run_journey_demo() -> dict[str, Any]:
     overwrite a user's JSON demo file or leave a closed table behind.
     """
     repository = InMemoryTableRepository()
-    client = TestClient(create_app(repository))
+    client = TestClient(create_app(repository, candidate_source=_JourneyCandidateSource()))
     opportunity = _expect(
         client.post(
             "/opportunities/preview",
@@ -65,6 +85,32 @@ def run_journey_demo() -> dict[str, Any]:
         "confirm match",
     )
     created = matched["state"]
+    candidate_preview = _expect(
+        client.post(
+            f"/tables/{JOURNEY_TABLE_ID}/candidate-preview?participant_id={JOURNEY_ACTOR_ID}",
+            json={"limit": 1},
+        ),
+        200,
+        "preview replenishment candidate",
+    )
+    recommendation = candidate_preview["candidates"][0]
+    invitation = _expect(
+        client.post(
+            f"/tables/{JOURNEY_TABLE_ID}/invitations/from-preview?inviter_id={JOURNEY_ACTOR_ID}",
+            json={"preview_token": recommendation["preview_token"]},
+        ),
+        201,
+        "create replenishment invitation",
+    )
+    accepted = _expect(
+        client.post(
+            f"/tables/{JOURNEY_TABLE_ID}/invitations/{invitation['invitation_id']}/respond?participant_id={JOURNEY_REPLENISHMENT_ID}",
+            json={"accept": True},
+        ),
+        200,
+        "accept replenishment invitation",
+    )
+    created = accepted["state"]
     lobby = _expect(
         client.get(f"/tables/{JOURNEY_TABLE_ID}/lobby"), 200, "load lobby"
     )
@@ -185,6 +231,9 @@ def run_journey_demo() -> dict[str, Any]:
             "opportunity_previewed": opportunity["core_question"] == JOURNEY_CORE_QUESTION,
             "match_confirmed": matched["plan"]["core_question"] == JOURNEY_CORE_QUESTION,
             "table_created": created["table_id"] == JOURNEY_TABLE_ID,
+            "candidate_previewed": bool(candidate_preview["candidates"]),
+            "invitation_created": invitation["status"] == "pending",
+            "candidate_joined": JOURNEY_REPLENISHMENT_ID in created["participants"],
             "lobby_loaded": lobby["table_id"] == JOURNEY_TABLE_ID,
             "human_turn_committed": message["type"] == "message_committed",
             "close_started": close_started["type"] == "close_started",
@@ -202,6 +251,17 @@ def run_journey_demo() -> dict[str, Any]:
             "selected": matched["plan"]["selected"],
             "reasons": matched["plan"]["reasons"],
             "unmatched_participant_ids": matched["plan"]["unmatched_participant_ids"],
+        },
+        "replenishment": {
+            "candidate": {
+                "participant_id": recommendation["participant_id"],
+                "display_name": recommendation["display_name"],
+                "role": recommendation["role"],
+                "reason": recommendation["reason"],
+                "evidence_signal_ids": recommendation.get("evidence_signal_ids", []),
+            },
+            "invitation": invitation,
+            "accepted": accepted["invitation"],
         },
         "lobby": lobby,
         "turn": {
@@ -237,6 +297,7 @@ __all__ = (
     "JOURNEY_ACTOR_ID",
     "JOURNEY_CORE_QUESTION",
     "JOURNEY_MESSAGE_ID",
+    "JOURNEY_REPLENISHMENT_ID",
     "JOURNEY_TABLE_ID",
     "run_journey_demo",
 )

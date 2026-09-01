@@ -20,7 +20,7 @@ def test_journey_demo_report_covers_real_api_boundaries() -> None:
     assert report["evaluation"]["intervention_count"] == 1
     assert report["evaluation"]["follow_up_count"] == 1
     assert report["evaluation"]["follow_up_completed_count"] == 1
-    assert report["evaluation"]["feedback_completion_rate"] == 0.25
+    assert report["evaluation"]["feedback_completion_rate"] == 0.2
     assert report["evaluation"]["would_join_again_rate"] == 1.0
     assert report["post_close"]["outcome"]["outcome"]["status"] == "completed"
     assert report["post_close"]["action_echoes"][0]["status"] == "completed"
@@ -30,9 +30,15 @@ def test_journey_demo_report_covers_real_api_boundaries() -> None:
         "follow_up_outcome",
         "value_feedback_submitted",
     ]
+    assert report["steps"]["candidate_previewed"] is True
+    assert report["steps"]["invitation_created"] is True
+    assert report["steps"]["candidate_joined"] is True
+    assert report["replenishment"]["invitation"]["status"] == "pending"
+    assert report["replenishment"]["accepted"]["status"] == "accepted"
+    assert report["lobby"]["participant_count"] == 5
     assert report["replay_summary"] == {
         "message_count": 1,
-        "snapshot_count": 4,
+        "snapshot_count": 5,
         "intervention_count": 1,
         "source_signal_count": 4,
         "closed": True,
