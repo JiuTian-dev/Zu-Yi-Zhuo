@@ -758,6 +758,13 @@
 - **替代方案**: 前端自行猜测固定 30 分钟、让 Lobby 额外调用 `/state`、或在 Lobby 维护自己的计时器；这些方案分别会与部署配置/服务端到期迁移漂移、增加 N+1 请求、或形成第二份易失状态。
 - **代价**: Lobby JSON 增加一个向后兼容的可选字段；截止时间仍由服务端时钟和仓储决定，跨实例部署需沿用 D127 的共享事务语义。
 
+### ADR-106: GROUND 卡保留授权内容信号 ID
+
+- **决策**: `GroundingCard` 增加可选 `signal_id`。`POST /tables/{id}/grounding` 在校验 source 返回的公开 `ContentSignal` 后，将其 `signal_id` 写入卡片；WebSocket 事件、`InterventionRecord` 和 replay 沿用同一字段。手工注入或旧 JSON 卡片没有该 ID 时继续合法，不能由客户端在 GROUND 动作中自行提交或覆盖。
+- **理由**: D126 已把卡片持久化进干预账本，但只有 `source_ref` 时，评估方无法稳定地把一次 GROUND 和 source 返回的具体信号对应起来（同源 URL 可能重复或被重写）。保留已授权信号的 ID 能加强 evidence-first 审计，同时不复制私有 source payload。
+- **替代方案**: 仅依赖 URL、把完整 `ContentSignal` 塞进每条干预、或让前端回传 signal ID；这些方案分别不稳定、扩大快照与隐私面、或允许客户端伪造来源关联。
+- **代价**: 公开 GROUND 响应与回放卡片增加一个可选字符串；source 仍需自行保证 ID 在其授权范围内唯一，服务端不把它当作跨桌全局账号标识。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -1050,7 +1057,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D125 content source grounding handoff
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ←── D126 grounded card replay ledger
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ←── D127 timed sync window
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D128 Lobby sync deadline projection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D128 Lobby sync deadline projection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D129 grounded source signal link
 ```
 
 ## Progress Ledger
