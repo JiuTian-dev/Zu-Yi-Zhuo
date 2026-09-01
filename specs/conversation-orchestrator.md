@@ -842,6 +842,13 @@
 - **替代方案**: 前端自行拼接所有消息后反复调用单轮接口、把会话永久写入账号画像、让 LLM 自由保存无限历史，或一旦判断 `ready` 就自动入桌/建桌；这些方案分别造成客户端语义漂移和身份边界缺失、扩大隐私与删除负担、失去容量/回归上限，或越过用户最终选择。
 - **代价**: V1 仍使用确定性归一化和词项匹配，短期上下文会优先保留较新的表达但不能声称理解复杂隐含偏好；进程重启会自然丢弃未完成会话，多实例部署前需把同一 owner/TTL/容量语义迁移到共享短期存储。`new_table` 只是路由预览，候选 source 搜索与建桌仍由后续显式步骤完成。
 
+### ADR-119: 主动需求的新桌路由复用授权候选票据
+
+- **决策**: 增加本人作用域的 `POST /participants/{id}/intent-sessions/{session_id}/source-preview?viewer_id={id}`，请求只允许 `table_size`（2–5，默认 4）和候选 source `limit`（2–20，默认 20），不再让客户端重复提交核心问题。服务端读取当前会话并重新生成公开路由；只有 `new_table` 才触发已注入的候选 source，查询使用会话当前有界归一化问题，`clarify` 或已有 `join_existing` 路由返回冲突。source 结果继续经过账号邀请偏好、五席上限和确定性匹配计划，响应复用 `MatchPlan`，只携带公开席位/理由及短期 `preview_token`；真正建桌仍由既有 `POST /matches/source-confirm` 单次票据确认完成。该入口要求会话 owner 身份，失败、超时、非法 source 结果继续 fail-closed，不写会话/桌状态/行为账本，不自动发送邀请或入席。
+- **理由**: 产品第二入口要求 Agent 在理解目标后可以“继续寻找候选人”，而此前 D101/D141 只能返回 `new_table`，前端还要重新拼接问题并自行决定何时调用 source。[Microsoft Research 的人机交互指南](https://www.microsoft.com/en-us/research/blog/guidelines-for-human-ai-interaction-design/)强调系统应说明能力边界并在不确定时逐步消歧；[Google PAIR 的反馈与控制指南](https://pair.withgoogle.com/guidebook-v2/chapter/feedback-controls/)要求在自动化与用户控制之间留出明确的确认点。因此本切片把“继续找人”作为用户已完成澄清后的显式预览动作，复用既有授权 source 和服务端票据，避免把候选私有资料泄露给浏览器或把 Agent 变成自动建桌者。
+- **替代方案**: 让前端直接调用 `/matches/source-preview` 并重复发送问题、在会话创建时自动搜索候选、返回 `ParticipantSeed` 让客户端排序，或把 source 结果写入会话以便多次确认；这些方案分别造成跨入口语义漂移、用户尚未确认就产生外部检索/资源消耗、扩大私有字段暴露，或制造第二份会漂移的候选真相。
+- **代价**: 候选 source 未配置时仍返回 503，查询质量受当前确定性归一化限制；预览票据仍沿用 D99 的 bearer capability 语义，跨实例部署需将 owner/TTL/票据存储一起迁移到共享服务。`join_existing` 分支仍由 Lobby/JoinRequest 流程承接，不在此入口重复召回候选人。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1324,6 +1331,7 @@ master
 | D139 private saved-table library | complete | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | 470 tests + compileall + diff check | `a49ad58` + `3f64c9c` |
 | D140 evidence-backed peripheral comment candidates | complete | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | 474 tests + compileall + diff check | `22c4faa` + `14a4124` |
 | D141 bounded multi-turn active intent | complete | Preserve a user's short-term clarification context across bounded self-scoped turns, support explicit correction, and keep every final route non-mutating | 480 tests + compileall + diff check | `053ec7f` + `515c85c` |
+| D142 active intent candidate source handoff | in progress | Reuse an owner-scoped clarified intent to trigger the existing authorized candidate preview and ticket-backed confirmation path without exposing private seeds or auto-creating a table | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
