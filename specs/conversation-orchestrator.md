@@ -716,6 +716,13 @@
 - **替代方案**: 把完整候选种子返回前端、确认时重新调用 source、或把候选永久写进公共桌状态；这些方案分别扩大隐私面、可能得到不同候选/重复消耗上游、或让私有资料进入错误的数据生命周期。
 - **代价**: 票据只在当前进程有效，默认保留 5 分钟且单次消费；进程重启或多实例部署需要共享短期票据/事务存储。票据本身是 bearer capability，生产环境必须通过 HTTPS 传输且不写入日志。
 
+### ADR-100: 动态补位推荐通过短期票据发出邀请
+
+- **决策**: `POST /tables/{id}/candidate-preview` 为每条公开候选推荐附带短期 `preview_token`；服务端保存对应的已校验 `ParticipantSeed`、桌 ID、推荐发起人 ID、默认邀请理由和过期时间。新增 `POST /tables/{id}/invitations/from-preview?inviter_id={member_id}`，只接收票据和可选自定义理由，校验票据绑定、桌生命周期、邀请人席位、no-match、候选偏好和容量后，复用现有邀请账本创建 pending invitation。成功才消费票据，冲突则释放票据以便在有效期内重试；响应始终是既有脱敏 `InvitationView`。
+- **理由**: 当前动态候选预览为了隐私只返回姓名、角色、理由和公开 signal ID，但普通邀请接口需要完整 `ParticipantSeed`，因此前端无法从“推荐一个补位人”安全地完成邀请。服务端票据能让浏览器只携带不透明 capability，既不泄露候选立场/经历，也不需要再次调用可能漂移的 source。
+- **替代方案**: 把完整候选种子放回预览响应、让前端拼装邀请请求、或为确认重新检索 source；这些方案分别扩大私有资料暴露面、允许客户端篡改候选资料、或造成候选变化和重复上游调用。
+- **代价**: 推荐票据与 D122 一样只在当前进程内存有效，默认 TTL 5 分钟且有界；多实例部署需替换为共享短期票据存储。票据是 bearer capability，生产必须使用 HTTPS 且禁止日志记录。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -746,6 +753,7 @@ POST /tables/{id}/lobby-fit?participant_id={candidate_id}
 POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
+POST /tables/{id}/invitations/from-preview?inviter_id={member_id}
 POST /tables/{id}/nudge?participant_id={participant_id}
 PUT  /tables/{id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}
 POST /tables/{id}/invitations
@@ -1000,7 +1008,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D119 opportunity-to-match journey demo
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D120 post-close action echo journey
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D121 monotonic realtime state broadcast
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D122 source match confirmation handoff
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ←── D122 source match confirmation handoff
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D123 candidate invitation handoff
 ```
 
 ## Progress Ledger
