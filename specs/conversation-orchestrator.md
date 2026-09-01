@@ -948,7 +948,7 @@ master
 | D103 single-table evaluation projection | complete | Add member-scoped read-only closure metrics derived from state, turns, interventions, follow-ups, and anonymous feedback | 370 tests + compileall + diff check | `800d5f3` |
 | D104 question footprint projection | complete | Add self-scoped bounded contribution/changed-evidence view derived from closed table snapshots | 372 tests + compileall + diff check | `698f2b9` |
 | D105 action echoes projection | complete | Add self-scoped bounded action outcome history derived from closed follow-up ledgers | 374 tests + compileall + diff check | `8554116` |
-| D106 evaluation funnel and attention metrics | in_progress | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | pending | — |
+| D106 evaluation funnel and attention metrics | complete | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | 375 tests + compileall + diff check | `c6a93d4` |
 
 ## 已知坑位（Running Gotchas）
 
