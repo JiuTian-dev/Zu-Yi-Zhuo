@@ -71,7 +71,8 @@ python -m app.cli.grounding_demo
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级；成功状态带服务端 `sync_expires_at` 截止时间（默认 30 分钟），到期后首次 REST/列表/WS 访问会原子退回异步并广播 `table_mode_changed(reason=sync_window_expired)`。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
 - `POST /tables/{table_id}/participants/{participant_id}/leave?viewer_id=...`：参与者本人离桌；保留历史快照并立即停止该席位的后续写入。
-- `POST /tables/{table_id}/candidate-preview?participant_id=...` → `POST /tables/{table_id}/invitations/from-preview?inviter_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和带公开 `evidence_signal_ids` 的候选推荐；每条推荐附短期不透明 `preview_token`，服务端用票据复用已授权候选创建 pending invitation，不把私有立场/经历交给浏览器。预览本身不修改桌状态、不创建邀请、不自动入席。
+- `GET /tables/{table_id}/recruitment?participant_id=...`：桌内成员查看当前是否应该补位。少于 4 人时建议补足基线；4 人桌只有在 high-priority 未决问题同时得到至少两位真人的 turn 证据、且仍缺通用信息角色时才返回 `live_role_gap`。满席、关闭、软过期和 critical 安全暂停均明确不建议补位；响应不含消息正文、成员身份或个人画像。
+- `POST /tables/{table_id}/candidate-preview?participant_id=...` → `POST /tables/{table_id}/invitations/from-preview?inviter_id=...`：桌内成员主动请求候选 source；响应带同一份 `recruitment` 判断、角色缺口和含公开 `evidence_signal_ids` 的候选推荐，未给自定义 query 时用真人讨论派生的有界查询提示。每条推荐附短期不透明 `preview_token`，服务端用票据复用已授权候选创建 pending invitation，不把私有立场/经历交给浏览器。预览本身不修改桌状态、不创建邀请、不自动入席。
 - `GET /tables/{table_id}/close-artifacts?participant_id=...`：收桌后重新取得共享基线和当前参与者的个人回响卡。
 - `GET /tables/{table_id}/replay`：返回原始真人消息和状态快照，并附带公开的 `interventions`、`comments`、`comment_promotions` 账本和已保存的 `source_signals`；每条实际引用公开资料的 GROUND 干预还会在 `interventions[].grounding_card` 留下 `signal_id`、标题、摘要和来源引用，来源卡消费与状态/干预审计在仓储中一次提交，重连/重启时可直接恢复整桌叙事与来源链；生产注入 `identity_resolver` 后必须带当前成员 `participant_id`，本地无认证 Demo 才允许省略。
 - `GET /tables/{table_id}/lineage`：沿 `origin_table_id` 返回最多 10 代、从最早祖先到当前桌的公开问题谱系；每代只含问题、版本、来源 ID 和公开来源快照，不返回成员或个人卡。
@@ -192,8 +193,7 @@ python -m uvicorn app.main:app
 
 三类 source 入口（候选、公开内容、个人上下文）都会在服务端先限制结果消费数量，再进行逐条 schema 校验；不会先把适配器的完整返回值读入内存后再切片。
 
-动态补位预览会过滤现有参与者、已被邀请过的候选人以及明确选择 `none` 的候选人；返回的 `open_seats`、`role_gaps`
-和候选理由（含可选公开 `evidence_signal_ids`）只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。
+动态补位判断由现有席位、公开角色缺口和真人讨论账本只读派生，不写第二份状态：4 人桌需要至少两条、两位不同发言者支持同一 high-priority open loop 才会建议补位。候选预览会过滤现有参与者、已被邀请过的候选人以及明确选择 `none` 的候选人；返回的 `recruitment`、`open_seats`、`role_gaps` 和候选理由（含可选公开 `evidence_signal_ids`）只用于成员选择，仍需通过现有邀请接口逐个发出邀请，候选人接受后才会新增席位。
 
 机会预览只接受公开 source signal（问题/回答/文章标题、摘要、公开作者角色和公开立场），信号数量最多 20、
 至少覆盖 2 位作者。输出的 `signal_ids` 和 `unfinishedness` 可回溯到原始来源；候选人仍需经过

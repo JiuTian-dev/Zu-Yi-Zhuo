@@ -16,6 +16,7 @@
 | 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm`；授权 source 使用 `POST /matches/source-preview` → `POST /matches/source-confirm` 短期票据闭环 | `backend/app/matching/`、`backend/app/api/match_tickets.py`；`tests/test_matching.py`、`tests/test_candidate_preview.py`、`tests/test_source.py`；票据单次消费、过期与冲突重试，不重复调用 source |
 | 4 人可开桌、5 席硬上限、邀请先于入席 | `/tables/{id}/invitations`、`/tables/{id}/join-requests` 及接受接口 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_join_requests.py`、`tests/test_api.py` |
 | 用户无需预知桌 ID 即可发现并处理自己的邀请 | `GET /participants/{id}/invitations` 返回本人跨桌、可过滤分页的邀请收件箱；每项附公共 Lobby 上下文和服务端可响应状态 | `backend/app/api/app.py`、`backend/app/api/repository.py`；`tests/test_invitation_inbox.py`；身份错配、私有字段泄露、失效原因、接受闭环和 JSON 重启均有回归 |
+| Agent 根据真实讨论判断“现在最缺谁” | `GET /tables/{id}/recruitment`；`candidate-preview.recruitment` | `backend/app/matching/engine.py`、`backend/app/api/app.py`；`tests/test_recruitment.py`；覆盖少于 4 人基线、4 人多说话者证据、角色已齐、满席/关闭/过期/安全暂停、身份隔离、无消息正文泄露和 JSON 重启 |
 | 动态补位推荐可安全发邀请 | `POST /tables/{id}/candidate-preview` → `POST /tables/{id}/invitations/from-preview`；推荐票据绑定桌与邀请人，成功单次消费，冲突可重试 | `backend/app/api/match_tickets.py`、`backend/app/api/app.py`；`tests/test_candidate_preview.py`；候选接受后才新增席位，响应不含私有候选种子 |
 | 入席前回答“谁在里面 / 聊到哪 / 为什么缺我” | `GET /tables/{id}/lobby`、`POST /tables/{id}/lobby-fit` | `backend/app/lobby.py`；`tests/test_lobby.py`；公开成员摘要与角色缺口均有界 |
 
@@ -66,7 +67,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **451 passed**。最近一个后端功能切片是 D136（本人跨桌邀请收件箱）；实现提交为 `656672f`，设计提交为 `cef8efb`。上一切片 D135（账号级邀桌偏好）为 `446 passed`，实现提交 `7a661ed`，设计提交 `3401545`。
+当前基线为 **457 passed**。最近一个后端功能切片是 D137（基于真人讨论证据的动态补局判断）；实现提交为 `78328da`，设计提交为 `c12e338`。上一切片 D136（本人跨桌邀请收件箱）为 `451 passed`，实现提交 `656672f`，设计提交 `cef8efb`。
 
 ## 不把以下事项误报为已完成
 

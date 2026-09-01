@@ -919,6 +919,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
 模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步；升级写入 `sync_expires_at`，到期后服务端惰性生成新的异步快照并广播 `sync_window_expired`，不依赖客户端倒计时。
 邀请偏好：候选人账号级保存值优先于请求/source 快照；有效值为 `none` 时不会被平台或他人主动匹配、推荐或新邀请，未保存时沿用候选值且默认 `few`。本人主动 Lobby 适配预览与 join request 不受该开关阻断。
+补局边界：`recruitment` 只从当前席位、公开角色和已提交真人 turn/open-loop 证据派生；4 人桌必须有至少两位真人支持同一 high-priority 未决问题且仍有角色缺口才建议补位。判断不返回消息正文或成员身份，不自动调用 source、发送邀请、广播事件或持久化第二份状态。
 席位偏好更新：REST 与参与者 WebSocket 只允许本人修改当前桌席位的 `many/few/none`；真实变更递增状态版本并广播投影状态，重复值幂等，关闭/软过期桌拒绝写入，不会移除现有席位或撤回已发邀请。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
 软过期边界：软过期桌默认从发现列表隐藏；桌内对话、成员、邀请、同步、主持/安全快照和来源卡片写入均返回冲突，历史回放、状态查询、收桌和收桌后行动回响仍可用；重复软过期不增加版本。
@@ -1273,7 +1274,7 @@ master
 | D134 evaluation rhythm metrics | complete | Derive member-scoped intervention/effect rates and bounded phase distribution from existing turn, snapshot, and intervention ledgers; persist a backward-compatible effective-reflection flag | 440 tests + compileall + diff check | `1acaf88` + `fdc7062` |
 | D135 account invitation preference | complete | Persist self-scoped many/few/none across tables; override stale request/source seeds for matching, source handoff, dynamic recommendations and new invitations; recheck post-preview opt-outs while preserving Lobby fit and explicit join intent | 446 tests + compileall + diff check | `3401545` + `7a661ed` |
 | D136 participant invitation inbox | complete | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with stable status ordering/filter/pagination, redacted invitation data, public Lobby context and server-derived actionability; reuse the existing durable invitation ledger | 451 tests + compileall + diff check | `cef8efb` + `656672f` |
-| D137 evidence-backed recruitment decision | in progress | Derive a member-visible, privacy-safe decision about whether the table should recruit now from seat count, live role gaps and multi-speaker high-priority turn evidence; keep candidate search and invitation human-confirmed | pending | design recorded; implementation next |
+| D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
 
 ## 已知坑位（Running Gotchas）
 
