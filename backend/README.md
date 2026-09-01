@@ -12,6 +12,12 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload
 ```
 
+需要一份可重复的三桌评委/联调数据时，可执行幂等种子命令；已有同 ID 桌不会被覆盖：
+
+```powershell
+python -m app.cli.seed_demo --path D:\知乎黑客松\runtime\demo-tables.json
+```
+
 启动后可用：
 
 - `GET /healthz`：进程存活探针。
