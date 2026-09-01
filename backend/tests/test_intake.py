@@ -34,7 +34,14 @@ def test_active_intent_routes_to_matching_open_table_without_writing() -> None:
     assert payload["candidates"][0]["table_id"] == "agent-table"
     assert payload["candidates"][0]["participant_count"] == 2
     assert payload["candidates"][0]["available_seats"] == 3
+    assert payload["candidates"][0]["lobby"]["table_id"] == "agent-table"
+    assert payload["candidates"][0]["lobby"]["members"] == [
+        {"participant_id": "p1", "display_name": "p1", "role": "产品"},
+        {"participant_id": "p2", "display_name": "p2", "role": "采购"},
+    ]
     assert "participants" not in payload["candidates"][0]
+    assert "declared_position" not in response.text
+    assert "conversation" not in response.text
     assert [state.table_id for state in repository.list_tables()] == ["agent-table"]
 
 
@@ -100,3 +107,25 @@ def test_active_intent_candidate_carries_public_origin_signal_ids() -> None:
     assert response.json()["route"] == "join_existing"
     assert response.json()["candidates"][0]["origin_signal_ids"] == ["signal-1"]
     assert "source_ref" not in response.text
+
+
+def test_active_intent_lobby_projection_does_not_leak_private_fields() -> None:
+    repository = InMemoryTableRepository()
+    repository.create(
+        "private-check",
+        "企业 Agent 的采购责任如何落地？",
+        [_seed("p1", "产品")],
+    )
+    client = TestClient(create_app(repository))
+
+    response = client.post("/intents/preview", json={
+        "message": "我想找人聊企业 Agent 的采购责任",
+    })
+
+    assert response.status_code == 200
+    lobby = response.json()["candidates"][0]["lobby"]
+    assert lobby["participant_count"] == 1
+    assert lobby["available_seats"] == 4
+    assert "declared_position" not in response.text
+    assert "relevant_experience" not in response.text
+    assert "messages" not in response.text
