@@ -835,6 +835,13 @@
 - **替代方案**: Agent 自动把最高分评论写进主桌、让 LLM 自由读取所有评论并输出不可审计判断、按长度/点赞排序，或继续完全人工翻阅；这些方案分别扩大错误放大与作者权责风险、缺少稳定回归边界、把热度误当认知价值，或没有兑现 Agent 的外围递进职责。
 - **代价**: V1 使用确定性中文双字词项和窄问句/案例词表，无法理解隐喻、反讽或跨语言深层相关性；候选质量必须通过真实评论流内测验证。候选预览只减少成员筛选成本，不改变外围作者仍由促成人承担主桌 turn 责任的既有来源契约。
 
+### ADR-118: 主动需求通过本人可见的短期会话逐轮澄清
+
+- **决策**: 在既有无状态 `POST /intents/preview` 之外，增加本人作用域的 `POST/GET/DELETE /participants/{id}/intent-sessions` 和 `POST /participants/{id}/intent-sessions/{session_id}/turns`。会话 ID 由服务端生成并绑定 participant；创建、读取、续聊和取消都要求 `viewer_id` 与 participant 相同，生产模式再由注入的身份解析器交叉验证。每个会话最多接收 6 轮、每轮最多 1000 字，默认 15 分钟过期，进程内最多保留 256 个；成功续聊才刷新过期时间，读取不续期。服务端只保存当前有效的有界文本上下文与总轮次，逐轮重新读取当前公开空席桌并复用 `ActiveIntentPreview`，返回 `clarifying / ready / exhausted` 状态、当前有效消息、剩余轮次和同一份可解释路由。续聊可带 `replace_context=true` 显式清空旧语义后纠正目标，但仍累计总轮次以维持资源上限。会话不写 JSON 仓储、个人 source、行为账本或桌状态，不广播；`ready` 也不自动申请、邀请、入席或建桌，后续仍走已有的人类确认契约。
+- **理由**: 产品文档的第二入口明确要求用户与 Agent “聊几轮说明目标”，但 D101 只有一次请求，既不能记住上一轮澄清，也不能在理解错误时原地纠正。[Microsoft Research 的人机交互指南](https://www.microsoft.com/en-us/research/blog/guidelines-for-human-ai-interaction-design/)要求目标不确定时做消歧、支持高效纠正并保留近期交互；[Google PAIR 的反馈与控制指南](https://pair.withgoogle.com/guidebook-v2/chapter/feedback-controls/)进一步建议让用户查看、调整或重置已经表达的偏好。[ACL 的混合主动对话研究](https://aclanthology.org/2022.dialdoc-1.7/)也把“系统提出澄清问题、用户补充回答”视为处理欠明确需求的核心交互。本切片因此只加入可审计的短期上下文，不把聊天误写成长期画像或自主执行授权。
+- **替代方案**: 前端自行拼接所有消息后反复调用单轮接口、把会话永久写入账号画像、让 LLM 自由保存无限历史，或一旦判断 `ready` 就自动入桌/建桌；这些方案分别造成客户端语义漂移和身份边界缺失、扩大隐私与删除负担、失去容量/回归上限，或越过用户最终选择。
+- **代价**: V1 仍使用确定性归一化和词项匹配，短期上下文会优先保留较新的表达但不能声称理解复杂隐含偏好；进程重启会自然丢弃未完成会话，多实例部署前需把同一 owner/TTL/容量语义迁移到共享短期存储。`new_table` 只是路由预览，候选 source 搜索与建桌仍由后续显式步骤完成。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1312,6 +1319,7 @@ master
 | D138 explainable personalized table discovery | complete | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | 463 tests + compileall + diff check | `a3aba9c` + `9ebeeee` |
 | D139 private saved-table library | complete | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | 470 tests + compileall + diff check | `a49ad58` + `3f64c9c` |
 | D140 evidence-backed peripheral comment candidates | complete | Help the Agent surface safe, relevant questions or experience from peripheral comments while keeping final promotion human-confirmed and atomically rechecked | 474 tests + compileall + diff check | `22c4faa` + `14a4124` |
+| D141 bounded multi-turn active intent | in progress | Preserve a user's short-term clarification context across bounded self-scoped turns, support explicit correction, and keep every final route non-mutating | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
