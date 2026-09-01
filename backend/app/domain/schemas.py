@@ -728,6 +728,20 @@ class QuestionFootprintEntry(ContractModel):
     what_changed: list[EvidenceStatement] = Field(default_factory=list, max_length=8)
 
 
+class ActionEchoEntry(ContractModel):
+    """One self-scoped follow-up that can be revisited after a table closes."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    core_question: str = Field(min_length=1, max_length=120)
+    follow_up_index: int = Field(ge=0)
+    item_type: Literal["suggestion", "commitment"]
+    text: str = Field(min_length=1)
+    evidence_turns: TurnEvidence
+    status: Literal["completed", "in_progress", "blocked", "dismissed"] | None = None
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+
+
 class PeripheralComment(ContractModel):
     """A public comment that never enters the core conversation turn stream."""
 

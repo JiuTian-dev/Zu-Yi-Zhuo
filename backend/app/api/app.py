@@ -12,14 +12,14 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
 
-from .repository import MAX_QUESTION_FOOTPRINT_ITEMS, MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
+from .repository import MAX_ACTION_ECHO_ITEMS, MAX_QUESTION_FOOTPRINT_ITEMS, MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
 from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
@@ -590,6 +590,22 @@ def create_app(
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
         return repo.question_footprint(participant_id, limit=limit)
+
+    @api.get(
+        "/participants/{participant_id}/action-echoes",
+        response_model=list[ActionEchoEntry],
+    )
+    def get_action_echoes(
+        participant_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+        limit: int = Query(default=20, ge=1, le=MAX_ACTION_ECHO_ITEMS),
+    ) -> list[ActionEchoEntry]:
+        """Return this member's bounded follow-up outcomes across closed tables."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        return repo.action_echoes(participant_id, limit=limit)
 
     @api.post(
         "/tables/{table_id}/relationships/{related_participant_id}/save",

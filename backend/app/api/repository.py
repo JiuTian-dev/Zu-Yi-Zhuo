@@ -9,14 +9,15 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, ActionEchoEntry, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
-from app.orchestrator import build_initial_state, build_personal_card, observe_turn
+from app.orchestrator import build_initial_state, build_personal_card, build_shared_baseline, observe_turn
 
 MAX_TABLE_PARTICIPANTS = 5
 MAX_PUBLIC_SOURCE_SIGNALS = 20
 MAX_TABLE_LINEAGE_DEPTH = 10
 MAX_QUESTION_FOOTPRINT_ITEMS = 50
+MAX_ACTION_ECHO_ITEMS = 50
 
 
 def _index_public_source_signals(
@@ -761,6 +762,51 @@ class InMemoryTableRepository:
             ))
             if len(entries) >= limit:
                 break
+        return [entry.model_copy(deep=True) for entry in entries]
+
+    @_synchronized
+    def action_echoes(self, participant_id: str, *, limit: int = 20) -> list[ActionEchoEntry]:
+        """Derive a bounded history of this member's own follow-up actions."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        if limit < 1 or limit > MAX_ACTION_ECHO_ITEMS:
+            raise ValueError(
+                f"action echoes limit must be between 1 and {MAX_ACTION_ECHO_ITEMS}"
+            )
+        entries: list[ActionEchoEntry] = []
+        for table_id in sorted(self._states):
+            state = self._states[table_id][-1]
+            if not state.conversation.closed or participant_id not in state.participants:
+                continue
+            try:
+                items = build_shared_baseline(state, turns=self._turns[table_id]).collective_next_steps
+            except ValueError:
+                continue
+            outcomes = self._follow_up_outcomes[table_id]
+            for index, item in enumerate(items):
+                outcome = outcomes.get(index)
+                owned_commitment = item.is_commitment and item.owner_participant_id == participant_id
+                reported_suggestion = (
+                    not item.is_commitment
+                    and outcome is not None
+                    and outcome.participant_id == participant_id
+                )
+                if not owned_commitment and not reported_suggestion:
+                    continue
+                own_outcome = outcome if outcome is not None and outcome.participant_id == participant_id else None
+                entries.append(ActionEchoEntry(
+                    table_id=table_id,
+                    state_version=state.version,
+                    core_question=state.core_question,
+                    follow_up_index=index,
+                    item_type=item.item_type,
+                    text=item.text,
+                    evidence_turns=list(item.evidence_turns),
+                    status=own_outcome.status if own_outcome is not None else None,
+                    note=own_outcome.note if own_outcome is not None else None,
+                ))
+                if len(entries) >= limit:
+                    return [entry.model_copy(deep=True) for entry in entries]
         return [entry.model_copy(deep=True) for entry in entries]
 
     @_synchronized
