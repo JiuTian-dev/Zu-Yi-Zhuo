@@ -751,6 +751,13 @@
 - **替代方案**: 只让前端倒计时、增加常驻 scheduler、或提供手动结束同步接口；这些方案分别不可信、增加单进程后台状态、或无法保证用户离线后再次访问仍然过期。
 - **代价**: 时间到期会产生一个公开状态版本，部署时可通过 `create_app(sync_window_seconds=...)` 调整窗口；跨实例部署仍需把到期迁移放进共享数据库/事务。30 分钟是比赛版默认值，不代表未来所有桌型的固定产品配置。
 
+### ADR-105: Lobby 卡透传同步截止时间
+
+- **决策**: `LobbyPreview` 增加可选公开字段 `sync_expires_at`，由当前 `TableState.conversation.sync_expires_at` 直接投影；异步桌、已到期桌和旧快照省略该字段。`GET /tables/{id}/lobby` 与 `GET /tables/discovery` 继续只返回已有 Lobby 公共字段，不为倒计时复制独立状态。
+- **理由**: D127 已把限时同步截止时间写入服务端状态，但入席前 Lobby/首页发现卡只有 `mode=sync`，前端必须再请求完整状态才能知道何时结束。把同一可信时间字段带进既有公开投影，能让前端直接渲染“正在同步/剩余时间”，且不暴露消息、成员私有资料或 source payload。
+- **替代方案**: 前端自行猜测固定 30 分钟、让 Lobby 额外调用 `/state`、或在 Lobby 维护自己的计时器；这些方案分别会与部署配置/服务端到期迁移漂移、增加 N+1 请求、或形成第二份易失状态。
+- **代价**: Lobby JSON 增加一个向后兼容的可选字段；截止时间仍由服务端时钟和仓储决定，跨实例部署需沿用 D127 的共享事务语义。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -1042,7 +1049,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D124 invitation journey demo
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D125 content source grounding handoff
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ←── D126 grounded card replay ledger
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ←── D127 timed sync window
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D127 timed sync window
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D128 Lobby sync deadline projection
 ```
 
 ## Progress Ledger
