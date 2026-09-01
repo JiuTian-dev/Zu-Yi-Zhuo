@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ActionEchoEntry, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, ActionEchoEntry, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, QuestionFootprintNextTable, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, build_shared_baseline, observe_turn
 
@@ -17,6 +17,7 @@ MAX_TABLE_PARTICIPANTS = 5
 MAX_PUBLIC_SOURCE_SIGNALS = 20
 MAX_TABLE_LINEAGE_DEPTH = 10
 MAX_QUESTION_FOOTPRINT_ITEMS = 50
+MAX_QUESTION_FOOTPRINT_NEXT_TABLES = 3
 MAX_ACTION_ECHO_ITEMS = 50
 
 
@@ -753,12 +754,27 @@ class InMemoryTableRepository:
             if not state.conversation.closed or participant_id not in state.participants:
                 continue
             card = build_personal_card(state, participant_id)
+            next_tables: list[QuestionFootprintNextTable] = []
+            for child_id in sorted(self._states):
+                child = self._states[child_id][-1]
+                if child.origin_table_id != table_id:
+                    continue
+                next_tables.append(QuestionFootprintNextTable(
+                    table_id=child.table_id,
+                    state_version=child.version,
+                    core_question=child.core_question,
+                    phase=child.phase,
+                    closed=child.conversation.closed,
+                ))
+                if len(next_tables) >= MAX_QUESTION_FOOTPRINT_NEXT_TABLES:
+                    break
             entries.append(QuestionFootprintEntry(
                 table_id=table_id,
                 state_version=state.version,
                 core_question=state.core_question,
                 your_contribution=list(card.your_contribution),
                 what_changed=list(card.what_changed),
+                next_tables=next_tables,
             ))
             if len(entries) >= limit:
                 break

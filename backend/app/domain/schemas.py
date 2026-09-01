@@ -738,6 +738,16 @@ class TableEvaluation(ContractModel):
         return self
 
 
+class QuestionFootprintNextTable(ContractModel):
+    """Public metadata for one direct child table in the question lineage."""
+
+    table_id: str = Field(min_length=1)
+    state_version: int = Field(ge=0)
+    core_question: str = Field(min_length=1, max_length=120)
+    phase: Phase
+    closed: bool = False
+
+
 class QuestionFootprintEntry(ContractModel):
     """One member's evidence-backed contribution to a closed table."""
 
@@ -746,6 +756,7 @@ class QuestionFootprintEntry(ContractModel):
     core_question: str = Field(min_length=1, max_length=120)
     your_contribution: list[EvidenceStatement] = Field(default_factory=list, max_length=5)
     what_changed: list[EvidenceStatement] = Field(default_factory=list, max_length=8)
+    next_tables: list[QuestionFootprintNextTable] = Field(default_factory=list, max_length=3)
 
 
 class ActionEchoEntry(ContractModel):
