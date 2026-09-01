@@ -1096,7 +1096,7 @@ master
 | D115 bounded Lobby discovery collection | complete | Provide a bounded batch of public Lobby cards for homepage table discovery without exposing full TableState | 395 tests + compileall + diff check | `c235285` + `ef6fca7` |
 | D116 idempotent demo seed CLI | complete | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | 398 tests + compileall + diff check | `f1824f7` + `92cde69` + `012b10a` |
 | D117 read-only public opportunity demo CLI | complete | Demonstrate public-signal opportunity discovery and explainable candidate output without network, persistence, or private-context access | 400 tests + compileall + diff check | `1b15f1b` + `12a6600` |
-| D118 isolated full journey demo CLI | in progress | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | pending | — |
+| D118 isolated full journey demo CLI | complete | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | 402 tests + compileall + diff check | `0463be6` |
 
 ## 已知坑位（Running Gotchas）
 

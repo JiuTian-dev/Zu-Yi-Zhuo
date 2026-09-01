@@ -26,6 +26,14 @@ python -m app.cli.opportunity_demo
 
 该命令只输出标准 JSON，不写入仓储、不联网，内置信号明确标记为 `public`。
 
+验证一条真正穿过 REST、WebSocket、收桌产物、评估和回放的完整后端旅程时，可运行隔离的内存演示：
+
+```powershell
+python -m app.cli.journey_demo
+```
+
+该命令每次从空内存仓储开始，输出建桌、Lobby、真人消息、Agent 动作、收桌卡片、评估指标和回放摘要；不会读取或写入 `TABLE_REPOSITORY_PATH`，也不会访问网络。
+
 启动后可用：
 
 - `GET /healthz`：进程存活探针。
