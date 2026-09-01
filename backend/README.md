@@ -26,6 +26,8 @@ python -m uvicorn app.main:app --reload
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。
 - `POST /tables/{table_id}/invitations/{invitation_id}/respond?participant_id=...`：候选人接受或拒绝；接受才新增席位。
+- `POST /tables/{table_id}/join-requests?participant_id=...`：候选人向已有桌表达加入意愿；请求会保留私有候选种子，但响应只返回展示名、角色和申请状态，不会直接新增席位。
+- `GET /tables/{table_id}/join-requests?participant_id=...`：桌内成员查看脱敏申请队列，候选人只能查看自己的申请；`POST .../{request_id}/approve?participant_id=...` 由成员审核并生成现有邀请，候选人仍需通过邀请响应接口接受；`POST .../{request_id}/decline?participant_id=...` 拒绝申请。
 - `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id=...`：本人更新当前桌席位的圆桌邀请偏好（`many`、`few`、`none`）；重复提交幂等，关闭/软过期桌拒绝写入。
 - `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
