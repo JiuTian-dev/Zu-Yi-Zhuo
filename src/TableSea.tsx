@@ -1,13 +1,17 @@
 import { UseCanvas } from '@14islands/r3f-scroll-rig'
+import { useGLTF } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { useFrame, useThree } from '@react-three/fiber'
 import gsap from 'gsap'
-import { useEffect, useMemo, useRef, useLayoutEffect, useState, type CSSProperties } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useLayoutEffect, useState, type CSSProperties } from 'react'
 import * as THREE from 'three'
 import { galleryTables, worldLabel, type AppPhase, type TableSummary } from './domain'
+import { GltfFit, SEA_MODEL_PATHS } from './sea/models'
 import './gallery.css'
 
 export interface GalleryMediaRect { left: number; top: number; width: number; height: number }
+
+for (const path of SEA_MODEL_PATHS) useGLTF.preload(path)
 
 interface TableSeaProps {
   onEnter(table: TableSummary, rect: GalleryMediaRect): void
@@ -348,15 +352,65 @@ function MiniWorld({ def, theme, focused }: { def: ThemeDef; theme: ThemeId; foc
       <group scale={1.22}>
       <MiniTable />
       <MiniPeople count={def.feature === 'fire' ? 5 : def.feature === 'house' || def.feature === 'shelf' ? 5 : 4} />
-      {def.feature === 'fire' && <MiniFire color={def.lamp} />}
-      {def.feature === 'house' && <MiniHouse roof={theme === 'snow' ? '#dde6f2' : undefined} glow={def.lamp} />}
-      {def.feature === 'camping' && <MiniFire color={def.lamp} />}
-      {def.feature === 'shelf' && <MiniHouse roof="#5a4534" glow={def.lamp} />}
-      {def.feature === 'lamps' && <MiniLamps color={def.lamp} />}
-      {def.feature === 'canoe' && <MiniCanoe />}
+      {theme === 'campfire' && (<>
+        <GltfFit src="/assets/sea/campfire.glb" height={0.18} position={[0.1, 0.02, 0.15]} tint="#ff8a2a" />
+        <GltfFit src="/assets/sea/kenney/campfire_logs.glb" height={0.1} position={[-0.05, 0.02, 0.1]} tint="#ffb37a" />
+      </>)}
+      {theme === 'valley' && (<>
+        <GltfFit src="/assets/sea/cabin.glb" height={0.52} position={[-0.42, 0.02, -0.42]} rotation={[0, 0.6, 0]} tint="#ffcf8a" />
+        <GltfFit src="/assets/sea/pine.glb" height={0.44} position={[0.55, 0.02, 0.6]} rotation={[0, 2.1, 0]} />
+      </>)}
+      {theme === 'workshop' && (<>
+        <GltfFit src="/assets/sea/cabin.glb" height={0.5} position={[-0.48, 0.02, -0.35]} rotation={[0, 1.2, 0]} tint="#ffd28d" />
+        <GltfFit src="/assets/sea/lamp.glb" height={0.32} position={[0.5, 0.02, 0.52]} tint="#ffd28d" />
+      </>)}
+      {theme === 'rooftop' && (<>
+        <GltfFit src="/assets/sea/skyline.glb" height={0.58} position={[-0.15, 0.02, -0.3]} rotation={[0, -0.5, 0]} tint="#b9c4ff" />
+        <GltfFit src="/assets/sea/umbrella.glb" height={0.34} position={[0.52, 0.02, 0.5]} rotation={[0, 1.4, 0]} tint="#b9c4ff" />
+      </>)}
+      {theme === 'bookstore' && (<>
+        <GltfFit src="/assets/sea/bookshelf.glb" height={0.55} position={[-0.55, 0.02, 0.1]} rotation={[0, 1.57, 0]} tint="#ffd7b0" />
+        <GltfFit src="/assets/sea/lamp.glb" height={0.3} position={[0.55, 0.02, 0.2]} tint="#ffc9a0" />
+      </>)}
+      {theme === 'pier' && (<>
+        <GltfFit src="/assets/sea/pier.glb" height={0.16} position={[0, 0.02, -0.3]} rotation={[0, 1.5, 0]} tint="#8fd4e8" />
+        <GltfFit src="/assets/sea/canoe.glb" height={0.12} position={[0.2, 0.02, 0.4]} rotation={[0, -0.8, 0]} tint="#8fd4e8" />
+      </>)}
+      {theme === 'snow' && (<>
+        <GltfFit src="/assets/sea/cabin.glb" height={0.5} position={[-0.35, 0.02, -0.45]} rotation={[0, 0.4, 0]} tint="#bcd6ff" />
+        <GltfFit src="/assets/sea/pine.glb" height={0.42} position={[0.6, 0.02, 0.5]} rotation={[0, 3.4, 0]} tint="#cfe6ff" />
+      </>)}
+      {theme === 'forest' && (<>
+        <GltfFit src="/assets/sea/fire.glb" height={0.16} position={[0.05, 0.02, 0.1]} tint="#ff8a2a" />
+        <GltfFit src="/assets/sea/pine.glb" height={0.46} position={[0.55, 0.02, 0.62]} rotation={[0, 1.1, 0]} />
+        <GltfFit src="/assets/sea/pine.glb" height={0.34} position={[-0.62, 0.02, -0.4]} rotation={[0, 4.2, 0]} />
+      </>)}
+      {theme === 'cafe' && (<>
+        <GltfFit src="/assets/sea/cafe.glb" height={0.5} position={[-0.45, 0.02, -0.4]} rotation={[0, 1.1, 0]} tint="#ffd9a8" />
+        <GltfFit src="/assets/sea/umbrella.glb" height={0.3} position={[0.55, 0.02, 0.48]} rotation={[0, 2.6, 0]} tint="#e8c9a0" />
+      </>)}
+      {theme === 'rain' && (<>
+        <GltfFit src="/assets/sea/lamp.glb" height={0.34} position={[0.42, 0.02, 0.5]} tint="#9fb8e0" />
+        <GltfFit src="/assets/sea/lantern.glb" height={0.12} position={[-0.42, 0.02, 0.56]} tint="#a8c0e8" />
+      </>)}
+      {theme === 'autumn' && (<>
+        <GltfFit src="/assets/sea/autumn-tree.glb" height={0.52} position={[0.3, 0.02, 0.2]} rotation={[0, 1.8, 0]} tint="#ffc98a" />
+        <GltfFit src="/assets/sea/kenney/log_stack.glb" height={0.1} position={[-0.55, 0.02, -0.42]} tint="#ffb37a" />
+      </>)}
+      {theme === 'desert' && (<>
+        <GltfFit src="/assets/sea/tent.glb" height={0.4} position={[-0.35, 0.02, -0.3]} rotation={[0, 0.7, 0]} tint="#e8b06a" />
+        <GltfFit src="/assets/sea/kenney/rock_smallA.glb" height={0.1} position={[0.6, 0.02, 0.42]} />
+      </>)}
+      {theme === 'lake' && (<>
+        <GltfFit src="/assets/sea/canoe.glb" height={0.13} position={[0.3, 0.02, 0.3]} rotation={[0, -1.2, 0]} tint="#9ac6b8" />
+        <GltfFit src="/assets/sea/fishing-rod.glb" height={0.05} position={[0.15, 0.04, 0.42]} rotation={[0, 3.6, 0]} tint="#9ac6b8" />
+        <GltfFit src="/assets/sea/lantern.glb" height={0.11} position={[-0.62, 0.02, 0.2]} tint="#9ac6b8" />
+      </>)}
+      {(['campfire', 'valley', 'snow', 'forest', 'desert', 'lake'] as ThemeId[]).includes(theme) && (<>
+        <GltfFit src="/assets/sea/kenney/grass.glb" height={0.06} position={[0.72, 0.02, -0.42]} />
+        <GltfFit src="/assets/sea/kenney/rock_smallB.glb" height={0.07} position={[-0.72, 0.02, -0.2]} />
+      </>)}
       </group>
-      <MiniTree position={[0.52, 0, 0.44]} color={theme === 'autumn' ? '#8a5a30' : theme === 'snow' ? '#42586e' : '#3f5d46'} />
-      <MiniTree position={[-0.6, 0, -0.28]} color="#37503f" />
       <sprite ref={glow} position={[0, 0.3, 0]} scale={[2.4, 2.4, 1]}>
         <spriteMaterial map={getRadialGlow()} color={def.lamp} transparent opacity={0.34} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </sprite>
@@ -425,11 +479,13 @@ function SeaWorld() {
       <hemisphereLight color="#4a5d9e" groundColor="#0d1220" intensity={0.5} />
       <directionalLight color="#a8bee8" intensity={0.22} position={[5, 9, 3]} />
       <ambientLight intensity={0.1} />
-      {entries.map((entry) => (
-        <group key={entry.index} position={[entry.pos.x, entry.pos.y, entry.pos.z]}>
-          <MiniWorld def={THEMES[entry.theme]} theme={entry.theme} focused={entry.index === seaState.index} />
-        </group>
-      ))}
+      <Suspense fallback={null}>
+        {entries.map((entry) => (
+          <group key={entry.index} position={[entry.pos.x, entry.pos.y, entry.pos.z]}>
+            <MiniWorld def={THEMES[entry.theme]} theme={entry.theme} focused={entry.index === seaState.index} />
+          </group>
+        ))}
+      </Suspense>
       <SeaCamera />
       <EffectComposer multisampling={0}>
         <Bloom mipmapBlur intensity={1.15} luminanceThreshold={0.82} luminanceSmoothing={0.24} radius={0.55} />
