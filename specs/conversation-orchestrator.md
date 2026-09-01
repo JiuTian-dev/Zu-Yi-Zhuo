@@ -723,6 +723,13 @@
 - **替代方案**: 把完整候选种子放回预览响应、让前端拼装邀请请求、或为确认重新检索 source；这些方案分别扩大私有资料暴露面、允许客户端篡改候选资料、或造成候选变化和重复上游调用。
 - **代价**: 推荐票据与 D122 一样只在当前进程内存有效，默认 TTL 5 分钟且有界；多实例部署需替换为共享短期票据存储。票据是 bearer capability，生产必须使用 HTTPS 且禁止日志记录。
 
+### ADR-101: 黑盒旅程 Demo 必须穿过邀请与入席
+
+- **决策**: 扩展 `python -m app.cli.journey_demo` 的隔离旅程：先用公开机会和匹配确认建立 4 人桌，再通过注入的确定性候选 source 调用 `candidate-preview`，使用 D123 票据创建邀请，并让第五席通过既有邀请响应接口接受后再进入 Lobby、WebSocket、收桌和回响。报告增加动态补位预览、邀请创建和候选入席步骤，但不输出私有候选种子。
+- **理由**: 产品对外主线明确是“发现一桌 → 邀请 → 入席 → 主持 → 问题推进 → 收桌 → 回响”。现有 Demo 虽覆盖后半段，却直接用四位候选确认建桌，无法证明动态第五席和邀请边界在真实 REST 契约上联通。让 Demo 穿过 D123 能把最重要的社区行为变化变成可重复、可评审的黑盒证据。
+- **替代方案**: 继续直接以四人 `matches/confirm` 作为完整旅程、在 CLI 内部直接调用 repository，或新增仅供演示的批量入席接口；这些方案分别跳过邀请产品机制、绕过 API 边界、或扩大线上写权限。
+- **代价**: Demo 使用一个本地确定性第五候选，不代表真实 source 召回质量；线上 source、授权和候选画像仍由部署方适配器负责。
+
 ## 接口契约
 
 ### 本地验收命令
@@ -1009,7 +1016,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D120 post-close action echo journey
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D121 monotonic realtime state broadcast
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D122 source match confirmation handoff
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D123 candidate invitation handoff
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ←── D123 candidate invitation handoff
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D124 invitation journey demo
 ```
 
 ## Progress Ledger
