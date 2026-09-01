@@ -91,6 +91,20 @@ class ReplayResponse(BaseModel):
     )
 
 
+class CapabilitiesResponse(BaseModel):
+    """Public runtime capabilities without deployment secrets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository: str = Field(min_length=1)
+    conversation_provider: Literal["deterministic", "custom"]
+    candidate_source_configured: bool
+    content_source_configured: bool
+    personal_context_source_configured: bool
+    websocket_available: bool = True
+    max_table_participants: int = Field(ge=1, le=5)
+
+
 class TableLineageItem(BaseModel):
     """Public, privacy-safe summary of one table in a question lineage."""
 
@@ -506,6 +520,19 @@ def create_app(
     @api.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @api.get("/capabilities", response_model=CapabilitiesResponse)
+    def capabilities() -> CapabilitiesResponse:
+        """Describe configured product paths without exposing secrets or identities."""
+        return CapabilitiesResponse(
+            repository=type(repo).__name__,
+            conversation_provider="deterministic" if provider is None else "custom",
+            candidate_source_configured=candidate_source is not None,
+            content_source_configured=content_source is not None,
+            personal_context_source_configured=personal_context_source is not None,
+            websocket_available=True,
+            max_table_participants=MAX_TABLE_PARTICIPANTS,
+        )
 
     @api.get("/readyz")
     def readyz() -> dict[str, str]:

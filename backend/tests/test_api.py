@@ -740,6 +740,44 @@ def test_health_and_readiness_probes_are_available() -> None:
     }
 
 
+def test_capabilities_describe_runtime_paths_without_secrets() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/capabilities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "repository": "InMemoryTableRepository",
+        "conversation_provider": "deterministic",
+        "candidate_source_configured": False,
+        "content_source_configured": False,
+        "personal_context_source_configured": False,
+        "websocket_available": True,
+        "max_table_participants": 5,
+    }
+    assert "token" not in response.text
+    assert "command" not in response.text
+
+
+def test_capabilities_reflect_injected_provider_sources() -> None:
+    client = TestClient(create_app(
+        provider=object(),
+        candidate_source=object(),
+        content_source=object(),
+        personal_context_source=object(),
+    ))
+
+    assert client.get("/capabilities").json() == {
+        "repository": "InMemoryTableRepository",
+        "conversation_provider": "custom",
+        "candidate_source_configured": True,
+        "content_source_configured": True,
+        "personal_context_source_configured": True,
+        "websocket_available": True,
+        "max_table_participants": 5,
+    }
+
+
 def test_default_cors_allows_vite_dev_origin() -> None:
     client = TestClient(create_app())
 
