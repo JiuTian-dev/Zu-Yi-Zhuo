@@ -667,6 +667,13 @@
 - **替代方案**: 继续让前端读取完整 `TableState`、逐桌调用 `/tables/{id}/lobby`、或复制一套首页卡片字段；这些方案分别扩大内部状态暴露、增加请求竞态、或导致字段口径漂移。
 - **代价**: V1 只支持按桌 ID 的稳定排序，不提供热度/时间排序和分页游标；后续若需要个性化排序，应新增 viewer-scoped 预览而不污染公开集合契约。
 
+### ADR-93: 用幂等 CLI 种子支撑后端旗舰 Demo
+
+- **决策**: 增加 `python -m app.cli.seed_demo --path {json_path}`，向指定 `JsonTableRepository` 写入三张确定性开放桌（旗舰 AI Agent 题、休息题和一个待补位问题），每张桌使用公开角色结构和 2–4 名真人席位；已有同 ID 桌直接跳过，不覆盖实时状态。命令只用于本地/评委演示，不新增线上 bootstrap API，也不连接知乎或伪造外部 source。
+- **理由**: 产品沉淀文档要求用 2–3 张桌验证“发现问题 → Lobby → 匹配/补位 → 对话”的完整体验；当前 replay 场景只有单桌，评委无法直接验证 D115 的批量发现和软过期/空席边界。幂等 CLI 让演示数据可重复恢复，又不把危险的批量写入口暴露给生产客户端。
+- **替代方案**: 让评委手写多组 `POST /tables`、把种子做成可访问的 API、或提交一份不可重放的静态 JSON；这些方案分别增加操作误差、扩大线上写权限、或无法在 JSON 重启后验证。
+- **代价**: 种子题目与角色是演示固定资产，领域字段演进时需要同步更新；命令不会替代正式知乎授权 source 或真实用户数据。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -934,7 +941,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D112 Lobby public read model
                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D113 Lobby personalized fit preview
                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D114 active-intent Lobby projection
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D115 bounded Lobby discovery collection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ←── D115 bounded Lobby discovery collection
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ←── D116 idempotent demo seed CLI
 ```
 
 ## Progress Ledger
@@ -1060,6 +1068,7 @@ master
 | D113 Lobby personalized fit preview | complete | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | 393 tests + compileall + diff check | `f6ec282` + `6e79869` + `caa4e7d` |
 | D114 active-intent Lobby projection | complete | Carry the bounded public Lobby view inside matching active-demand candidates so one preview can render the recommendation card | 394 tests + compileall + diff check | `24354a5` + `c26e25f` |
 | D115 bounded Lobby discovery collection | complete | Provide a bounded batch of public Lobby cards for homepage table discovery without exposing full TableState | 395 tests + compileall + diff check | `c235285` + `ef6fca7` |
+| D116 idempotent demo seed CLI | in_progress | Seed three deterministic open tables into a JSON repository for repeatable evaluator/demo journeys without adding a production bootstrap endpoint | pending | |
 
 ## 已知坑位（Running Gotchas）
 
