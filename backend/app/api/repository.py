@@ -22,6 +22,7 @@ MAX_QUESTION_FOOTPRINT_NEXT_TABLES = 3
 MAX_ACTION_ECHO_ITEMS = 50
 MAX_JOIN_REQUESTS_PER_TABLE = 50
 MAX_SAFETY_STRIKES_PER_PARTICIPANT = 2
+MAX_SAVED_TABLES_PER_PARTICIPANT = 100
 
 
 def _index_public_source_signals(
@@ -142,6 +143,7 @@ class InMemoryTableRepository:
         self._comment_promotions: dict[str, list[CommentPromotion]] = {}
         self._no_match: dict[str, set[str]] = {}
         self._account_invitation_preferences: dict[str, InvitationPreference] = {}
+        self._saved_tables: dict[str, list[str]] = {}
         self._safety_reports: dict[str, list[SafetyReport]] = {}
         self._safety_report_audits: dict[str, list[SafetyReportStatusAudit]] = {}
         self._safety_resolutions: dict[str, list[SafetyResolution]] = {}
@@ -491,6 +493,50 @@ class InMemoryTableRepository:
         if preference is None or preference is seed.roundtable_invite_preference:
             return seed.model_copy(deep=True)
         return seed.model_copy(update={"roundtable_invite_preference": preference}, deep=True)
+
+    @_synchronized
+    def save_table(self, participant_id: str, table_id: str) -> bool:
+        """Save one existing table privately; repeated saves are idempotent."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        self.get(table_id)
+        existing = self._saved_tables.get(participant_id, [])
+        if table_id in existing:
+            return False
+        if len(existing) >= MAX_SAVED_TABLES_PER_PARTICIPANT:
+            raise ValueError(
+                f"saved tables cannot exceed {MAX_SAVED_TABLES_PER_PARTICIPANT}"
+            )
+        self._saved_tables = {
+            **self._saved_tables,
+            participant_id: [*existing, table_id],
+        }
+        return True
+
+    @_synchronized
+    def unsave_table(self, participant_id: str, table_id: str) -> bool:
+        """Remove one private saved table; repeated removals are idempotent."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        self.get(table_id)
+        existing = self._saved_tables.get(participant_id, [])
+        if table_id not in existing:
+            return False
+        remaining = [item for item in existing if item != table_id]
+        rows = {**self._saved_tables}
+        if remaining:
+            rows[participant_id] = remaining
+        else:
+            rows.pop(participant_id)
+        self._saved_tables = rows
+        return True
+
+    @_synchronized
+    def saved_table_ids(self, participant_id: str) -> list[str]:
+        """Return private saved table IDs in most-recently-saved-first order."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        return list(reversed(self._saved_tables.get(participant_id, [])))
 
     @_synchronized
     def record_safety_report(self, report: SafetyReport) -> tuple[SafetyReport, bool]:
@@ -1526,6 +1572,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._safety_strikes,
                 self._personal_context_consents,
                 self._behavior_events,
+                self._saved_tables,
                 self._public_source_signals,
             ) = self._load()
 
@@ -1830,6 +1877,42 @@ class JsonTableRepository(InMemoryTableRepository):
             account_invitation_preferences=rows,
         )
         return preference
+
+    @_synchronized
+    def save_table(self, participant_id: str, table_id: str) -> bool:
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        self.get(table_id)
+        existing = self._saved_tables.get(participant_id, [])
+        if table_id in existing:
+            return False
+        if len(existing) >= MAX_SAVED_TABLES_PER_PARTICIPANT:
+            raise ValueError(
+                f"saved tables cannot exceed {MAX_SAVED_TABLES_PER_PARTICIPANT}"
+            )
+        rows = {
+            **self._saved_tables,
+            participant_id: [*existing, table_id],
+        }
+        self._commit(self._states, self._turns, saved_tables=rows)
+        return True
+
+    @_synchronized
+    def unsave_table(self, participant_id: str, table_id: str) -> bool:
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        self.get(table_id)
+        existing = self._saved_tables.get(participant_id, [])
+        if table_id not in existing:
+            return False
+        remaining = [item for item in existing if item != table_id]
+        rows = {**self._saved_tables}
+        if remaining:
+            rows[participant_id] = remaining
+        else:
+            rows.pop(participant_id)
+        self._commit(self._states, self._turns, saved_tables=rows)
+        return True
 
     @_synchronized
     def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
@@ -2508,6 +2591,7 @@ class JsonTableRepository(InMemoryTableRepository):
         join_requests: dict[str, list[JoinRequest]] | None = None,
         safety_strikes: dict[str, dict[str, int]] | None = None,
         account_invitation_preferences: dict[str, InvitationPreference] | None = None,
+        saved_tables: dict[str, list[str]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -2561,6 +2645,11 @@ class JsonTableRepository(InMemoryTableRepository):
             account_invitation_preferences
             if account_invitation_preferences is not None
             else self._account_invitation_preferences
+        )
+        saved_table_rows = (
+            saved_tables
+            if saved_tables is not None
+            else self._saved_tables
         )
         payload = {
             "tables": {
@@ -2625,6 +2714,10 @@ class JsonTableRepository(InMemoryTableRepository):
             "behavior_events": {
                 participant_id: [item.model_dump(mode="json") for item in rows]
                 for participant_id, rows in behavior_rows.items()
+            },
+            "saved_tables": {
+                participant_id: list(table_ids)
+                for participant_id, table_ids in saved_table_rows.items()
             },
             "public_source_signals": {
                 table_id: [item.model_dump(mode="json") for item in rows.values()]
@@ -2696,6 +2789,10 @@ class JsonTableRepository(InMemoryTableRepository):
             participant_id: [item.model_copy(deep=True) for item in rows]
             for participant_id, rows in behavior_rows.items()
         }
+        self._saved_tables = {
+            participant_id: list(table_ids)
+            for participant_id, table_ids in saved_table_rows.items()
+        }
         self._safety_resolutions = {
             table_id: [item.model_copy(deep=True) for item in rows]
             for table_id, rows in resolution_rows.items()
@@ -2730,6 +2827,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, dict[str, int]],
         dict[str, PersonalContextConsent],
         dict[str, list[BehaviorEvent]],
+        dict[str, list[str]],
         dict[str, dict[str, ContentSignal]],
     ]:
         try:
@@ -2741,6 +2839,7 @@ class JsonTableRepository(InMemoryTableRepository):
                     "tables", "trusted_grounding_cards", "no_match",
                     "invitation_preferences",
                     "personal_context_consents", "behavior_events",
+                    "saved_tables",
                     "public_source_signals", "safety_strikes",
                 })
                 or not isinstance(payload["tables"], dict)):
@@ -3059,6 +3158,26 @@ class JsonTableRepository(InMemoryTableRepository):
             if len(set(event_ids)) != len(event_ids):
                 raise ValueError("invalid persistence file: duplicate behavior event")
             behavior_events[participant_id] = events
+        raw_saved_tables = payload.get("saved_tables", {})
+        if not isinstance(raw_saved_tables, dict):
+            raise ValueError("invalid persistence file: malformed saved_tables")
+        saved_tables: dict[str, list[str]] = {}
+        for participant_id, raw_table_ids in raw_saved_tables.items():
+            if (
+                not isinstance(participant_id, str)
+                or not participant_id
+                or not isinstance(raw_table_ids, list)
+                or len(raw_table_ids) > MAX_SAVED_TABLES_PER_PARTICIPANT
+                or any(
+                    not isinstance(table_id, str)
+                    or not table_id
+                    or table_id not in states
+                    for table_id in raw_table_ids
+                )
+                or len(raw_table_ids) != len(set(raw_table_ids))
+            ):
+                raise ValueError("invalid persistence file: invalid saved tables")
+            saved_tables[participant_id] = list(raw_table_ids)
         raw_public_sources = payload.get("public_source_signals", {})
         if not isinstance(raw_public_sources, dict):
             raise ValueError("invalid persistence file: malformed public_source_signals")
@@ -3130,5 +3249,6 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_strikes,
             consents,
             behavior_events,
+            saved_tables,
             public_source_signals,
         )

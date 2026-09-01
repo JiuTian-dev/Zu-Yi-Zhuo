@@ -13,14 +13,14 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
 from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
 
-from .repository import MAX_ACTION_ECHO_ITEMS, MAX_QUESTION_FOOTPRINT_ITEMS, MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
+from .repository import MAX_ACTION_ECHO_ITEMS, MAX_QUESTION_FOOTPRINT_ITEMS, MAX_SAVED_TABLES_PER_PARTICIPANT, MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
 from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
@@ -965,6 +965,84 @@ def create_app(
             return repo.behavior_events(participant_id)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.put(
+        "/participants/{participant_id}/saved-tables/{table_id}",
+        response_model=SavedTableItem,
+    )
+    def save_table_for_later(
+        participant_id: str,
+        table_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> SavedTableItem:
+        """Privately save one existing table without changing the table itself."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        refresh_sync_windows()
+        state = table_or_404(table_id)
+        try:
+            repo.save_table(participant_id, table_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return SavedTableItem(table_id=table_id, lobby=build_lobby_preview(state))
+
+    @api.delete(
+        "/participants/{participant_id}/saved-tables/{table_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def remove_saved_table(
+        participant_id: str,
+        table_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+    ) -> None:
+        """Remove one private save without changing the underlying table."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        table_or_404(table_id)
+        try:
+            repo.unsave_table(participant_id, table_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return None
+
+    @api.get(
+        "/participants/{participant_id}/saved-tables",
+        response_model=ParticipantSavedTables,
+    )
+    def get_saved_tables(
+        participant_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=30, ge=1, le=MAX_SAVED_TABLES_PER_PARTICIPANT),
+    ) -> ParticipantSavedTables:
+        """Return the caller's private saved tables, newest save first."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        refresh_sync_windows()
+        try:
+            table_ids = repo.saved_table_ids(participant_id)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        page_ids = table_ids[offset:offset + limit]
+        return ParticipantSavedTables(
+            participant_id=participant_id,
+            total=len(table_ids),
+            offset=offset,
+            limit=limit,
+            items=[
+                SavedTableItem(
+                    table_id=table_id,
+                    lobby=build_lobby_preview(repo.get(table_id)),
+                )
+                for table_id in page_ids
+            ],
+        )
 
     @api.get(
         "/participants/{participant_id}/table-recommendations",

@@ -1071,6 +1071,38 @@ class ParticipantTableRecommendations(ContractModel):
         return self
 
 
+class SavedTableItem(ContractModel):
+    """One private saved-table entry using only the current public lobby view."""
+
+    table_id: str = Field(min_length=1)
+    lobby: LobbyPreview
+
+    @model_validator(mode="after")
+    def table_matches_lobby(self) -> "SavedTableItem":
+        if self.table_id != self.lobby.table_id:
+            raise ValueError("saved table_id must match lobby table_id")
+        return self
+
+
+class ParticipantSavedTables(ContractModel):
+    """Bounded, self-scoped saved-table collection."""
+
+    participant_id: str = Field(min_length=1)
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    items: list[SavedTableItem] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def page_is_consistent(self) -> "ParticipantSavedTables":
+        if len(self.items) > self.limit:
+            raise ValueError("saved table page cannot exceed limit")
+        ids = [item.table_id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("saved table page must contain unique table IDs")
+        return self
+
+
 class ReflectionResult(ContractModel):
     """Effect log for an intervention after enough human turns have passed."""
 
