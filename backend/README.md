@@ -51,6 +51,7 @@ python -m app.cli.grounding_demo
 - `GET /tables/discovery?limit=...`：首页批量桌卡；默认最多 20 张仍开放且未软过期桌，复用有界公开 Lobby 投影（同步桌包含 `sync_expires_at`），不返回完整 `TableState`、消息或私有资料。
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
 - `POST /intents/preview`：接收用户主动提出的一段自然语言需求，返回 `clarify`、`join_existing` 或 `new_table` 路由和最多 5 个有空席的公开桌候选（含 `available_seats`、可选 `origin_signal_ids` 与内嵌的 Lobby 公开投影）；不读取个人 source、不自动建桌或入席。
+- `POST /participants/{participant_id}/intent-sessions`、`GET/DELETE .../{session_id}`、`POST .../{session_id}/turns`：让用户在本人作用域内与 Agent 进行最多 6 轮、默认 15 分钟的主动需求澄清；响应带当前消息上下文、剩余轮次和同一份路由预览，支持 `replace_context=true` 原地纠正。会话只存在进程内，不写桌状态、行为账本或 JSON，不自动申请、邀请、入席或建桌。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
 - `POST /tables/{table_id}/grounding?participant_id=...`：桌内成员从已授权公开内容 source 请求一条资料卡；服务端暂存为下一次 evidence-backed `GROUND` 的 trusted card，响应只返回公开标题、摘要、来源和稳定的 `signal_id`，不修改 Table State。无结果返回 404，source 故障统一 fail-closed。
 - Observer 只会在两位成员围绕同一窄范围事实主题给出带明确相反极性（如“需要/不需要”）的真人断言时创建 `FACT_CONFLICT`；现有 Router 随后进入 `GROUND`，无 trusted card 时 Host 回退 `PROBE`，不接受客户端提交的 disagreement 或来源。
