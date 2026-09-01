@@ -807,6 +807,13 @@
 - **替代方案**: 前端先拉全量桌再逐桌查询邀请、返回所有邀请后由前端按 candidate 过滤、或新建第二份收件箱持久表；这些方案分别产生 N+1 与竞态、构成对象级越权/过度暴露，或制造会与真实邀请状态漂移的重复账本。
 - **代价**: 邀请当前没有创建时间，因此 V1 使用确定性状态/ID 排序而非声称“最新优先”；未来增加服务端时间戳时可扩展游标但不能改变本人作用域和脱敏形状。收件箱是只读聚合，不替代通知投递系统。
 
+### ADR-114: 动态补局判断必须有真人讨论证据且只给建议
+
+- **决策**: 新增成员作用域的 `GET /tables/{id}/recruitment?participant_id={member_id}`，返回 `TableRecruitmentDecision(should_recruit, trigger, open_seats, role_gaps, reason, evidence_turns, suggested_query?)`；现有 `POST /tables/{id}/candidate-preview` 同时携带同一判断。少于 4 位真人时以 `below_minimum` 建议补足开桌基线；正好 4 人时，只有桌状态存在 high-priority open loop、其证据至少来自两条真人 turn 且覆盖两位不同发言者、并仍有通用信息角色缺口时，才给出 `live_role_gap`；否则分别返回等待真实讨论或现有结构足够。满 5 席、关闭、软过期或 critical 安全暂停时明确不建议补人。判断只返回有界公开角色、理由、turn ID 和最多 120 字的 source 查询提示，不返回消息正文、成员身份或个人画像。
+- **理由**: 产品文档要求“候补不是机械替补，开桌后由 Agent 根据真实讨论判断现在最缺谁”。近期小组主持研究强调探问、参与平衡、话题流和心理安全需要分开判断；[真实群体实验](https://deepmind.google/research/publications/224297/)也显示参与者主观感到更包容，并不等于真实参与不平等改善，且 AI 可能产生方向性引导。因此不能用一个黑箱分数自动加人，而应把角色缺口和真人 turn 证据显式返回。[协作式 AI-in-the-loop 讨论研究](https://arxiv.org/abs/2603.29285)进一步支持在公开介入前保留人工复核，本实现据此继续要求桌内成员显式调用候选 source、选择候选并发出邀请。
+- **替代方案**: 席位一空就自动补人、让 LLM 自由判断并直接邀请、或只显示静态 role gaps；这些方案分别把“5 人最佳”误写成硬指标、扩大不可审计的 steering/隐私风险，或没有满足“根据真实讨论”的产品要求。
+- **代价**: V1 的信息角色词表仍是有界启发式，未覆盖所有专业角色；判断是解释性建议而非召回质量保证。成员即使在 `should_recruit=false` 时仍可主动请求候选预览，但服务端会同时返回不建议补人的依据，不会伪装成 Agent 自动决策。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -845,6 +852,7 @@ POST /tables/{id}/lobby-fit?participant_id={candidate_id}
 POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
+GET  /tables/{id}/recruitment?participant_id={participant_id}
 POST /tables/{id}/invitations/from-preview?inviter_id={member_id}
 POST /tables/{id}/nudge?participant_id={participant_id}
 PUT  /tables/{id}/participants/{participant_id}/invitation-preference?viewer_id={participant_id}
@@ -1117,7 +1125,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D133 grounding black-box demo
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D134 evaluation rhythm metrics
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ←── D135 account invitation preference
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ←── D136 participant invitation inbox
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ←── D136 participant invitation inbox
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ←── D137 evidence-backed recruitment decision
 ```
 
 ## Progress Ledger
@@ -1264,6 +1273,7 @@ master
 | D134 evaluation rhythm metrics | complete | Derive member-scoped intervention/effect rates and bounded phase distribution from existing turn, snapshot, and intervention ledgers; persist a backward-compatible effective-reflection flag | 440 tests + compileall + diff check | `1acaf88` + `fdc7062` |
 | D135 account invitation preference | complete | Persist self-scoped many/few/none across tables; override stale request/source seeds for matching, source handoff, dynamic recommendations and new invitations; recheck post-preview opt-outs while preserving Lobby fit and explicit join intent | 446 tests + compileall + diff check | `3401545` + `7a661ed` |
 | D136 participant invitation inbox | complete | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with stable status ordering/filter/pagination, redacted invitation data, public Lobby context and server-derived actionability; reuse the existing durable invitation ledger | 451 tests + compileall + diff check | `cef8efb` + `656672f` |
+| D137 evidence-backed recruitment decision | in progress | Derive a member-visible, privacy-safe decision about whether the table should recruit now from seat count, live role gaps and multi-speaker high-priority turn evidence; keep candidate search and invitation human-confirmed | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
