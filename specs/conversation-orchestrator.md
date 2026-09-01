@@ -1039,7 +1039,7 @@ master
 | D110 active-intent public signal attribution | complete | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | 380 tests + compileall + diff check | `cabd773` + `2c3c67e` |
 | D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 386 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` + `be700fd` |
 | D112 Lobby public read model | complete | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | 390 tests + compileall + diff check | `b12a235` + `df0b1ce` + `507eed7` |
-| D113 Lobby personalized fit preview | in_progress | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | pending | |
+| D113 Lobby personalized fit preview | complete | Give a candidate a role-gap-level “why you” explanation without persistence, invitation, or private-profile leakage | 393 tests + compileall + diff check | `f6ec282` + `6e79869` + `caa4e7d` |
 
 ## 已知坑位（Running Gotchas）
 
