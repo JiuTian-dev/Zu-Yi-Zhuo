@@ -875,7 +875,7 @@ master
 | D96 persisted public source lineage | complete | Persist bounded origin signal IDs on table creation/match confirmation with candidate-source validation and JSON/replay recovery | 360 tests + compileall + diff check | `a5d75a0` |
 | D97 public opportunity evidence projection | complete | Return bounded public source signals in opportunity previews for immediate explanation without copying them into table state | 360 tests + compileall + diff check | `2ca1ad6` |
 | D98 dynamic candidate evidence attribution | complete | Carry bounded public source IDs into dynamic fifth-seat recommendations without leaking candidate profile fields | 360 tests + compileall + diff check | `0536645` |
-| D99 public source snapshot ledger | complete | Persist bounded public `ContentSignal` snapshots outside `TableState`, expose them in replay, and recover them after JSON restart without accepting private fields | 362 tests + compileall + diff check | `de04494` |
+| D99 public source snapshot ledger | complete | Persist bounded public `ContentSignal` snapshots outside `TableState`, expose them in replay, and recover them after JSON restart without accepting private fields | 362 tests + compileall + diff check | `de04494` + `f9de581` |
 
 ## 已知坑位（Running Gotchas）
 
