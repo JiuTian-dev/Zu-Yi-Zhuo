@@ -48,7 +48,7 @@
 | 重启后仍可恢复桌面与公开来源 | 原子 JSON snapshot repository，旧快照兼容 | `backend/app/api/repository.py`、`backend/app/main.py`；`tests/test_persistence.py` |
 | 外部 source 失败时 fail-closed | 无 shell 命令桥、全链路超时、输出上限和通用错误 | `backend/app/sources/`；`tests/test_source.py`、`tests/test_content_source.py` |
 | 前端可判断运行能力，不探测业务接口 | `GET /capabilities`、`/healthz`、`/readyz` | `backend/app/api/app.py`；`tests/test_api.py`、`tests/test_main.py` |
-| REST/WS 写入可控，避免重复和资源滥用 | message 幂等、WS 帧/事件限额、REST mutation rate limit | `backend/app/api/rate_limit.py`、`websocket.py`；`tests/test_rate_limit.py`、`tests/test_websocket.py` |
+| REST/WS 写入可控，避免重复和资源滥用 | message 幂等、WS 帧/事件限额、REST mutation rate limit、状态广播版本单调 | `backend/app/api/rate_limit.py`、`websocket.py`；`tests/test_rate_limit.py`、`tests/test_websocket.py` |
 
 ## 当前验证基线
 
@@ -60,7 +60,7 @@ python -m compileall -q app tests
 git diff --check
 ```
 
-当前基线为 **402 passed**。最近一个后端功能切片是 D120（收桌后的行动回响旅程 Demo）；对应实现提交为 `7d68c18`，账本闭合提交为 `ee812c8`。
+当前基线为 **403 passed**。最近一个后端功能切片是 D121（状态广播版本单调保护）；对应实现提交为 `bc71c3c`，设计与账本同步随本次提交完成。
 
 ## 不把以下事项误报为已完成
 

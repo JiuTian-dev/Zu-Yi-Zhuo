@@ -1123,6 +1123,7 @@ master
 | D118 isolated full journey demo CLI | complete | Exercise the real REST/WebSocket journey from table creation through close artifacts, evaluation, and replay without persistent writes | 402 tests + compileall + diff check | `0463be6` + `ca5755d` |
 | D119 opportunity-to-match journey demo | complete | Start the isolated journey from public opportunity preview and match confirmation before entering Lobby and conversation | 402 tests + compileall + diff check | `d980873` |
 | D120 post-close action echo journey | complete | Continue the isolated journey through follow-up outcome, value feedback, action echoes, and behavior-event summary | 402 tests + compileall + diff check | `7d68c18` |
+| D121 monotonic realtime state broadcast | complete | Serialize per-table state fanout and suppress stale REST/WS projections so clients never roll back to an older `TableState.version` | 403 tests + compileall + diff check | `bc71c3c` |
 
 ## 已知坑位（Running Gotchas）
 

@@ -102,6 +102,7 @@ REST 的 `POST`、`PUT`、`PATCH`、`DELETE` 写请求默认按客户端地址�
 
 通过 REST 完成补位、邀请接受、加入申请创建/审核/拒绝、同步升级、同意变更、邀请偏好更新、离桌、软过期、收桌或外围评论写入时，后端也会复用同一桌级 broadcaster：先发送对应语义事件（如 `participant_added`、`invitation_updated`、`join_request_created`、`join_request_approved`、`join_request_declined`、`participant_invitation_preference_changed`、`table_closed`）；只有桌状态真的迁移时，才会继续发送按 viewer 隐私投影的 `table_state_changed`。加入申请本身不改变桌状态，因此不会发送状态迁移。没有在线 WebSocket 时不影响 REST 成功；重复的幂等写入不会重复产生状态迁移事件。
 REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
+同一桌的状态投影广播会在服务端串行发送，并丢弃低于最近已发送版本的过期投影；因此 REST/WS 并发写入不会让客户端回退到旧版 `TableState`。这只约束状态事件顺序，不改变仓储快照或消息事件契约。
 
 默认开发态继续使用显式 `viewer_id`/`participant_id` 自证，方便本地 Demo。生产部署可在 `create_app(..., identity_resolver=...)` 注入同步身份解析器：解析器接收 FastAPI `Request` 或 WebSocket，返回已认证的内部主体 ID；所有自作用域 REST 写入/读取和参与者 WebSocket 握手都会校验主体一致性，缺失身份返回 401，不一致返回 403。解析器负责 JWT、会话、反向代理或 OAuth 校验，后端不保存知乎 token。
 
