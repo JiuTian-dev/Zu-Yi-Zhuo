@@ -772,6 +772,13 @@
 - **替代方案**: 所有风险一律 `CRITICAL`、让前端自行计数、或把违规文本写进公共 turn；这些方案分别过度打断正常交流、在重连/多客户端下不可信、或扩大隐私和伤害暴露面。
 - **代价**: V1 使用窄词表，不能替代平台级内容审核；私下提醒通过 WebSocket 发送，REST 评论促成遇到首次边界风险时返回安全冲突并累计 strike；跨实例部署需将 strike 计数迁移到共享事务/审核服务。
 
+### ADR-109: Observer 只在相同事实主题出现明确相反断言时创建 FACT_CONFLICT
+
+- **决策**: 在 `observe_turn` 中增加有界、可解释的事实冲突检测：仅当最新发言与另一位已发言成员共享一个显式事实主题，并分别命中一组相反断言词（例如“需要/不需要”“可以/不能”）时，创建 `DisagreementType.FACT_CONFLICT`；证据只引用两条真人 turn，参与者只记录这两位成员。每个主题最多保留一条最新事实冲突，普通观点差异、缺少极性词或不同主题不生成冲突。Router 沿用现有 `GROUND` 路径；没有 trusted `GroundingCard` 时 Host 继续安全回退为 `PROBE`，不编造来源。
+- **理由**: 当前 GROUND 只可由注入的测试/模型状态触发，真实 WebSocket 消息无法自然进入“先核对事实再继续”的产品主链。把检测限制在窄主题词与显式极性词，能让证据链可回放、避免把正常分歧升级成事实冲突，并复用 D125–D130 已有的 source grounding、原子消费和干预回放契约。
+- **替代方案**: 让 LLM 自由标记事实冲突、把所有不同立场都视为事实冲突、或让客户端提交 `Disagreement`；这些方案分别不可重复、过度触发或允许伪造证据。
+- **代价**: V1 词表不能覆盖隐含语义和跨语言表达，后续可替换 Observer provider 但必须保留 turn evidence 与无来源回退；新增的确定性规则需要随领域词表维护。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1074,7 +1081,8 @@ master
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D128 Lobby sync deadline projection
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D129 grounded source signal link
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D130 atomic grounded intervention commit
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D131 safety escalation ladder
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D131 safety escalation ladder
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ←── D132 observer fact conflict detection
 ```
 
 ## Progress Ledger
@@ -1216,6 +1224,7 @@ master
 | D129 grounded source signal link | complete | Preserve the validated public `ContentSignal.signal_id` in trusted GROUND cards, realtime events, intervention replay, and JSON persistence while keeping manual/legacy cards compatible | 424 tests + compileall + diff check | `8dd07d3` |
 | D130 atomic grounded intervention commit | complete | Consume the staged GROUND card in the same in-memory/JSON commit as the next `TableState` and `InterventionRecord`, preserving the card when persistence fails | 425 tests + compileall + diff check | `b025edf` |
 | D131 safety escalation ladder | complete | Keep normal disagreement allowed, add generic atmosphere soft intervention, privately remind the first boundary violation, and escalate the same actor's repeat violation to critical with bounded private JSON-persisted strikes | 432 tests + compileall + diff check | `2578f70` + `0d832be` |
+| D132 observer fact conflict detection | in progress | Detect explicit opposite assertions on the same bounded fact topic from real human turns so the existing GROUND/source-card path can trigger without client-supplied disagreements | design committed; implementation pending | — |
 
 ## 已知坑位（Running Gotchas）
 
