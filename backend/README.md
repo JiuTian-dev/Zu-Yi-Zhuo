@@ -97,6 +97,7 @@ python -m app.cli.grounding_demo
 - `POST /tables/{table_id}/select?participant_id=...`：显式记录一次 open 桌选择；服务端生成稳定行为事件，不会自动入席或改变桌状态。
 - `POST /tables/{table_id}/relationships/{related_participant_id}/save?participant_id=...`：收桌后由成员本人保存一段关系；服务端校验双方同桌身份并生成稳定事件，不复制个人卡或好友图。
 - `POST/GET /participants/{participant_id}/behavior-events?viewer_id=...`：本人记录或读取受限的产品行为事件（选桌、收桌、关系保存、行动回响、价值反馈）；真人发言、收桌和首次价值反馈由后端自动沉淀，事件不广播给同桌。
+- `GET /participants/{participant_id}/table-recommendations?viewer_id=...&limit=...`：本人拉取可解释的后续选桌建议；只使用最近最多 100 条可清除行为中的选桌、真人发言和正向行动回响，按桌/类型限制弱信号影响，并过滤关闭、软过期、满席、本人已入席和命中 no-match 的桌。响应只解释历史公开问题与角色缺口，不返回消息正文、事件编号或黑箱分数，也不会自动邀请或入席。
 - `DELETE /participants/{participant_id}/behavior-events?viewer_id=...`：本人清除自己的行为账本；不删除消息、桌状态、收桌产物或安全审计。
 
 生产注入 `identity_resolver` 后，`POST /tables/{table_id}/participants?inviter_id=...`、`POST /tables/{table_id}/close?participant_id=...` 和 `GET /tables/{table_id}/interventions?participant_id=...` 也必须通过当前桌成员身份校验；未注入时保留本地 Demo 的无 query 调用。

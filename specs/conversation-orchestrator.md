@@ -1288,7 +1288,7 @@ master
 | D135 account invitation preference | complete | Persist self-scoped many/few/none across tables; override stale request/source seeds for matching, source handoff, dynamic recommendations and new invitations; recheck post-preview opt-outs while preserving Lobby fit and explicit join intent | 446 tests + compileall + diff check | `3401545` + `7a661ed` |
 | D136 participant invitation inbox | complete | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with stable status ordering/filter/pagination, redacted invitation data, public Lobby context and server-derived actionability; reuse the existing durable invitation ledger | 451 tests + compileall + diff check | `cef8efb` + `656672f` |
 | D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
-| D138 explainable personalized table discovery | in progress | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | pending | design recorded; implementation next |
+| D138 explainable personalized table discovery | complete | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | 463 tests + compileall + diff check | `a3aba9c` + `9ebeeee` |
 
 ## 已知坑位（Running Gotchas）
 
