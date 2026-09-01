@@ -40,7 +40,7 @@ python -m app.cli.journey_demo
 - `GET /capabilities`：公开当前运行能力开关（仓储、确定性/自定义 provider、三类 source 是否注入、WebSocket 和 5 席上限）；不返回命令、模型名、token 或身份配置。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
-- `GET /tables/discovery?limit=...`：首页批量桌卡；默认最多 20 张仍开放且未软过期桌，复用有界公开 Lobby 投影，不返回完整 `TableState`、消息或私有资料。
+- `GET /tables/discovery?limit=...`：首页批量桌卡；默认最多 20 张仍开放且未软过期桌，复用有界公开 Lobby 投影（同步桌包含 `sync_expires_at`），不返回完整 `TableState`、消息或私有资料。
 - `POST /opportunities/preview`：从已获授权的公开问题/回答/文章信号中提取核心问题、未完成性证据、角色缺口和候选种子；候选种子保留有界的公开 `public_signal_ids`，响应同时带最多 20 条 `source_signals` 公开证据，不创建桌。
 - `POST /intents/preview`：接收用户主动提出的一段自然语言需求，返回 `clarify`、`join_existing` 或 `new_table` 路由和最多 5 个有空席的公开桌候选（含 `available_seats`、可选 `origin_signal_ids` 与内嵌的 Lobby 公开投影）；不读取个人 source、不自动建桌或入席。
 - `POST /opportunities/source-preview`：调用服务端注入的公开内容 source 获取信号，再运行机会预览；不创建桌或邀请。
@@ -49,7 +49,7 @@ python -m app.cli.journey_demo
 - `PUT/GET/DELETE /participants/{participant_id}/personal-context/consent?viewer_id=...`：本人授予、查看或撤回个人层 scope（`profile`、`follows`、`favorites`、`public_content`）。
 - `POST /matches/preview` → `POST /matches/confirm`：先预览公开席位和理由；来自机会预览的理由会附带 `evidence_signal_ids`，确认时可把公开 `signal_ids` 作为 `origin_signal_ids` 写入桌状态。
 - `POST /matches/source-preview` → `POST /matches/source-confirm`：调用服务端注入的候选 source（知乎 CLI/MCP/OAuth 适配器）后复用同一匹配预览契约；预览只返回短期不透明 `preview_token`，确认由服务端复用已授权候选建桌，不把私有候选字段交给浏览器，也不会二次调用 source。票据默认 5 分钟、单次消费；过期、重复使用或无效票据返回 409。
-- `GET /tables/{table_id}/lobby`：入席前的公开 Lobby 读模型，集中返回谁在里面、当前聊到哪、空席/角色缺口和公共来源 ID；不返回消息、私有资料、邀请队列或个人卡。
+- `GET /tables/{table_id}/lobby`：入席前的公开 Lobby 读模型，集中返回谁在里面、当前聊到哪、空席/角色缺口和公共来源 ID；同步围炉时还会带 `sync_expires_at` 供首页倒计时，不返回消息、私有资料、邀请队列或个人卡。
 - `POST /tables/{table_id}/lobby-fit?participant_id=...`：候选人用自己的 `ParticipantSeed` 获取角色缺口级别的“为什么想到你”解释；这是只读预览，不保存资料、不创建申请或邀请，免邀请、no-match、满桌和已结束桌返回 `eligible=false`。
 - `POST /tables/{table_id}/invitations?inviter_id=...`：由桌内成员邀请候选人；候选资料的私有字段不会出现在响应。
 - `GET /tables/{table_id}/invitations?participant_id=...`：候选人查看自己的邀请。

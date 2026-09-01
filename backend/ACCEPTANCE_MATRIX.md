@@ -10,7 +10,7 @@
 | 一键验证公开机会发现首入口 | `python -m app.cli.opportunity_demo` | `backend/app/demo/public_signals.py`、`backend/app/cli/opportunity_demo.py`；`tests/test_opportunity_demo.py`；只读、确定性、无网络 |
 | 一条命令验证公开机会到收桌后回响 | `python -m app.cli.journey_demo` | `backend/app/demo/journey.py`、`backend/app/cli/journey_demo.py`；`tests/test_journey_demo.py`；公开机会→4 人匹配→动态第 5 席邀请/入席→REST/WS→行动回报/反馈→确定性 JSON |
 | 用户主动说出“我想围绕什么聊” | `POST /intents/preview` | `backend/app/intake.py`；`tests/test_intake.py`；支持 `clarify`、`join_existing`、`new_table` |
-| 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
+| 首页一次加载公开桌卡 | `GET /tables/discovery?limit=...`；同步桌透传 `sync_expires_at` | `backend/app/lobby.py`、`backend/app/api/app.py`；`tests/test_lobby.py`；默认最多 20 张开放桌 |
 | 评委/联调可重复验证三桌主链路 | `python -m app.cli.seed_demo --path ...` | `backend/app/demo/bootstrap.py`、`backend/app/cli/seed_demo.py`；`tests/test_demo_seed.py`；幂等且不覆盖已有实时状态 |
 | 先解释为什么匹配，再确认建桌 | `POST /matches/preview` → `POST /matches/confirm`；授权 source 使用 `POST /matches/source-preview` → `POST /matches/source-confirm` 短期票据闭环 | `backend/app/matching/`、`backend/app/api/match_tickets.py`；`tests/test_matching.py`、`tests/test_candidate_preview.py`、`tests/test_source.py`；票据单次消费、过期与冲突重试，不重复调用 source |
 | 4 人可开桌、5 席硬上限、邀请先于入席 | `/tables/{id}/invitations`、`/tables/{id}/join-requests` 及接受接口 | `backend/app/api/repository.py`、`backend/app/api/app.py`；`tests/test_join_requests.py`、`tests/test_api.py` |

@@ -1188,6 +1188,7 @@ master
 | D125 content source grounding handoff | complete | Add member-scoped `POST /tables/{id}/grounding` to validate one public content signal into a trusted card; the next real `GROUND` action consumes and broadcasts it without accepting client-supplied evidence | 416 tests + compileall + diff check | `8c66c51` |
 | D126 grounded card replay ledger | complete | Persist the consumed public `GroundingCard` inside the matching `InterventionRecord`, so REST/WS replay and JSON restart recover the exact source used by GROUND while legacy records remain compatible | 416 tests + compileall + diff check | `735b398` |
 | D127 timed sync window | complete | Add a server-owned 30-minute `sync_expires_at`, lazily migrate expired sync tables back to async across REST/list/WebSocket access, broadcast the transition, and persist/recover the deadline in JSON snapshots | 423 tests + compileall + diff check | `6bb5aae` |
+| D128 Lobby sync deadline projection | complete | Propagate the server-owned `sync_expires_at` into public `LobbyPreview` cards for `/tables/{id}/lobby` and discovery, omitting it for async/legacy tables | 424 tests + compileall + diff check | `e30fc16` |
 
 ## 已知坑位（Running Gotchas）
 
