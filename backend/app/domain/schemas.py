@@ -168,6 +168,47 @@ class ActiveIntentPreview(ContractModel):
         return self
 
 
+class LobbyMemberView(ContractModel):
+    """Public member summary shown before entering a table."""
+
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+
+
+class LobbyPreview(ContractModel):
+    """Bounded, redacted pre-entry view of one conversation table."""
+
+    table_id: str = Field(min_length=1)
+    core_question: str = Field(min_length=1)
+    current_subquestion: str | None = None
+    phase: Phase
+    mode: ConversationMode
+    status: Literal["open", "soft_expired", "closed"]
+    state_version: int = Field(ge=0)
+    participant_count: int = Field(ge=0, le=5)
+    available_seats: int = Field(ge=0, le=5)
+    members: list[LobbyMemberView] = Field(default_factory=list, max_length=5)
+    role_gaps: list[str] = Field(default_factory=list, max_length=5)
+    missing_perspective: str = Field(min_length=1, max_length=240)
+    origin_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+
+    @model_validator(mode="after")
+    def member_counts_are_consistent(self) -> "LobbyPreview":
+        member_ids = [member.participant_id for member in self.members]
+        if len(member_ids) != len(set(member_ids)):
+            raise ValueError("lobby member participant_id values must be unique")
+        if len(self.members) != self.participant_count:
+            raise ValueError("lobby member count must match participant_count")
+        if self.available_seats != 5 - self.participant_count:
+            raise ValueError("lobby available_seats must match the five-seat cap")
+        return self
+
+
 class SourceEvidence(ContractModel):
     """Evidence that points back to source signals rather than chat turns."""
 
