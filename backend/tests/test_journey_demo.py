@@ -10,16 +10,19 @@ def test_journey_demo_report_covers_real_api_boundaries() -> None:
 
     assert report["core_question"] == JOURNEY_CORE_QUESTION
     assert all(report["steps"].values())
+    assert report["opportunity"]["signal_ids"]
+    assert report["opportunity"]["candidate_ids"]
+    assert len(report["match"]["selected"]) == 4
     assert report["turn"]["agent_action"]["action"] == "PASS"
-    assert report["turn"]["agent_action"]["target_participant_id"] == "buyer"
-    assert report["close_artifacts"]["personal_card"]["participant_id"] == "architect"
+    assert report["turn"]["agent_action"]["target_participant_id"] == "public-buyer"
+    assert report["close_artifacts"]["personal_card"]["participant_id"] == "public-architect"
     assert report["evaluation"]["human_turn_count"] == 1
     assert report["evaluation"]["intervention_count"] == 1
     assert report["replay_summary"] == {
         "message_count": 1,
         "snapshot_count": 4,
         "intervention_count": 1,
-        "source_signal_count": 0,
+        "source_signal_count": 4,
         "closed": True,
     }
     # The report only contains the actor's own reflection card; no other

@@ -7,11 +7,11 @@ from fastapi.testclient import TestClient
 from app.api.app import create_app
 from app.api.repository import InMemoryTableRepository
 
-from .scenarios import flagship_participants
+from .public_signals import flagship_public_signals
 
 JOURNEY_TABLE_ID = "journey-demo"
 JOURNEY_CORE_QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
-JOURNEY_ACTOR_ID = "architect"
+JOURNEY_ACTOR_ID = "public-architect"
 JOURNEY_MESSAGE_ID = "journey-demo-message-1"
 JOURNEY_TEXT = "我亲历过企业采购，试点预算和责任归属仍是上线瓶颈。"
 
@@ -38,21 +38,33 @@ def run_journey_demo() -> dict[str, Any]:
     """
     repository = InMemoryTableRepository()
     client = TestClient(create_app(repository))
-    participant_payload = [
-        participant.model_dump(mode="json") for participant in flagship_participants[:4]
-    ]
-    created = _expect(
+    opportunity = _expect(
         client.post(
-            "/tables",
+            "/opportunities/preview",
+            json={
+                "query": JOURNEY_CORE_QUESTION,
+                "signals": [signal.model_dump(mode="json") for signal in flagship_public_signals],
+            },
+        ),
+        200,
+        "preview opportunity",
+    )
+    matched = _expect(
+        client.post(
+            "/matches/confirm",
             json={
                 "table_id": JOURNEY_TABLE_ID,
-                "core_question": JOURNEY_CORE_QUESTION,
-                "participants": participant_payload,
+                "core_question": opportunity["core_question"],
+                "candidates": opportunity["candidates"],
+                "table_size": 4,
+                "origin_signal_ids": opportunity["signal_ids"],
+                "origin_signals": opportunity["source_signals"],
             },
         ),
         201,
-        "create table",
+        "confirm match",
     )
+    created = matched["state"]
     lobby = _expect(
         client.get(f"/tables/{JOURNEY_TABLE_ID}/lobby"), 200, "load lobby"
     )
@@ -123,12 +135,26 @@ def run_journey_demo() -> dict[str, Any]:
         "table_id": JOURNEY_TABLE_ID,
         "core_question": JOURNEY_CORE_QUESTION,
         "steps": {
+            "opportunity_previewed": opportunity["core_question"] == JOURNEY_CORE_QUESTION,
+            "match_confirmed": matched["plan"]["core_question"] == JOURNEY_CORE_QUESTION,
             "table_created": created["table_id"] == JOURNEY_TABLE_ID,
             "lobby_loaded": lobby["table_id"] == JOURNEY_TABLE_ID,
             "human_turn_committed": message["type"] == "message_committed",
             "close_started": close_started["type"] == "close_started",
             "close_artifact_ready": close_artifact["type"] == "close_artifact_ready",
             "table_closed": closed_state["state"]["conversation"]["closed"] is True,
+        },
+        "opportunity": {
+            "core_question": opportunity["core_question"],
+            "signal_ids": opportunity["signal_ids"],
+            "unfinishedness": opportunity["unfinishedness"],
+            "role_gaps": opportunity["role_gaps"],
+            "candidate_ids": [item["participant_id"] for item in opportunity["candidates"]],
+        },
+        "match": {
+            "selected": matched["plan"]["selected"],
+            "reasons": matched["plan"]["reasons"],
+            "unmatched_participant_ids": matched["plan"]["unmatched_participant_ids"],
         },
         "lobby": lobby,
         "turn": {
