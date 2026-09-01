@@ -639,6 +639,13 @@
 - **替代方案**: 申请直接写入 `TableState.participants`、前端本地保存申请、或批准后自动入席；这些方案分别绕过邀请/隐私边界、重启丢失事实、或让成员无法在入席前做最后确认。
 - **代价**: V1 没有通知调度和申请过期时间；桌内成员需要主动读取申请列表，批准后仍需候选人再确认。申请账本独立于 Table State，不改变对话版本。
 
+### ADR-89: 入席前 Lobby 使用独立的公开读模型
+
+- **决策**: 增加只读 `GET /tables/{id}/lobby`，为入席前页面提供“谁在里面 / 聊到哪 / 为什么缺这个视角”的稳定契约。响应只包含桌题、当前子问题、阶段/模式、版本、真人席位数与空席数、公开成员摘要（ID/展示名/角色）、确定性角色缺口、公开来源 ID 和一条缺口说明；不返回真人消息、私有立场/经历、邀请队列、个人卡或安全审计。该入口不需要候选人身份，也不改变桌状态；关闭或软过期桌仍可读取，以便回看入口保持一致。
+- **理由**: 已确认的前端终态要求在旁听/入席前先展示三问，但直接复用完整 `TableState` 会把内部黑板、证据和按 viewer 投影的权限带进 Lobby，导致前端重复拼装且容易泄露。独立读模型能让公开预览和实时桌内状态保持字段边界分离，同时复用服务端的角色缺口判断。
+- **替代方案**: 让前端直接读取 `/tables/{id}/state` 后自行过滤、为候选人提前创建临时参与者、或只返回静态 mock 文案；这些方案分别扩大隐私面、污染席位状态、或无法反映真实桌面进展。
+- **代价**: V1 的“为什么缺我”表达为桌级角色缺口而非个人画像匹配理由；候选人个性化申请仍通过 D111 的 JoinRequest 流程表达，未来可在不改变 Lobby 公开契约的前提下增加单独的 fit-preview。
+
 ## 接口契约
 
 ### REST / WebSocket
@@ -653,6 +660,7 @@ POST /intents/preview
 POST /opportunities/source-preview
 GET  /tables?participant_id={viewer_id}&include_closed={bool}
 GET  /tables/{id}
+GET  /tables/{id}/lobby
 POST /tables/{id}/participants?inviter_id={member_id}
 POST /tables/{id}/participants/{participant_id}/leave?viewer_id={participant_id}
 POST /tables/{id}/candidate-preview?participant_id={participant_id}
@@ -787,6 +795,11 @@ JoinRequest(request_id, table_id, candidate, message?, status,
             invitation_id?)
 JoinRequestView(request_id, table_id, participant_id, display_name, role,
                 message?, status, invitation_id?)
+LobbyMemberView(participant_id, display_name, role)
+LobbyPreview(table_id, core_question, current_subquestion?, phase, mode,
+             state_version, participant_count, available_seats,
+             members<=5, role_gaps<=5, missing_perspective,
+             origin_signal_ids?<=20)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -885,8 +898,15 @@ master
                                                                                                                                                                                                                                                                                                                                                                                             ←── D100 bounded public table lineage view
                                                                                                                                                                                                                                                                                                                                                                                                  ←── D101 active intent routing preview
                                                                                                                                                                                                                                                                                                                                                                                                       ←── D103 single-table evaluation projection
-                                                                                                                                                                                                                                                                                                                                                                                                             ←── D104 question footprint projection
-                                                                                                                                                                                                                                                                                                                                                                                                                     ←── D105 action echoes projection
+                                                                                                                                                                                                                                                                                                                                                                                                            ←── D104 question footprint projection
+                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D105 action echoes projection
+                                                                                                                                                                                                                                                                                                                                                                                                                          ←── D106 evaluation funnel and attention metrics
+                                                                                                                                                                                                                                                                                                                                                                                                                               ←── D107 production replay identity gate
+                                                                                                                                                                                                                                                                                                                                                                                                                                    ←── D108 question footprint next-table links
+                                                                                                                                                                                                                                                                                                                                                                                                                                         ←── D109 capabilities introspection
+                                                                                                                                                                                                                                                                                                                                                                                                                                              ←── D110 active-intent public signal attribution
+                                                                                                                                                                                                                                                                                                                                                                                                                                                   ←── D111 candidate-initiated join request
+                                                                                                                                                                                                                                                                                                                                                                                                                                                        ←── D112 Lobby public read model
 ```
 
 ## Progress Ledger
@@ -1008,6 +1028,7 @@ master
 | D109 capabilities introspection | complete | Expose a no-secret runtime capability projection so the frontend can choose configured source and provider paths without probing business endpoints | 379 tests + compileall + diff check | `aa59e80` + `6e273ea` |
 | D110 active-intent public signal attribution | complete | Carry bounded persisted public origin signal IDs into existing-table active-demand candidates without leaking source payloads or private context | 380 tests + compileall + diff check | `cabd773` + `2c3c67e` |
 | D111 candidate-initiated join request | complete | Let a routed candidate express interest in an existing table; member approval creates an invitation, and only candidate acceptance adds the seat | 386 tests + compileall + diff check | `5a531f8` + `a0106ef` + `1720296` + `be700fd` |
+| D112 Lobby public read model | in_progress | Expose a bounded, redacted pre-entry view of who is inside, where the conversation is, and which role perspectives are missing | pending | |
 
 ## 已知坑位（Running Gotchas）
 
