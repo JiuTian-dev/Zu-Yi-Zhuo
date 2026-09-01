@@ -19,7 +19,7 @@ from app.orchestrator import build_personal_card, build_shared_baseline, enforce
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
 
-from .repository import MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
+from .repository import MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
 from .websocket import DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE, DEFAULT_MAX_WEBSOCKET_FRAME_BYTES, register_websocket_routes
 from .rate_limit import DEFAULT_MAX_MUTATIONS_PER_MINUTE, MutationRateLimiter
@@ -87,6 +87,39 @@ class ReplayResponse(BaseModel):
         default_factory=list,
         max_length=20,
         exclude_if=lambda value: not value,
+    )
+
+
+class TableLineageItem(BaseModel):
+    """Public, privacy-safe summary of one table in a question lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_id: str = Field(min_length=1)
+    origin_table_id: str | None = Field(default=None, min_length=1)
+    version: int = Field(ge=0)
+    core_question: str = Field(min_length=1)
+    origin_signal_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+    source_signals: list[ContentSignal] = Field(
+        default_factory=list,
+        max_length=20,
+        exclude_if=lambda value: not value,
+    )
+
+
+class TableLineageResponse(BaseModel):
+    """Oldest-to-current public question evolution chain."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_id: str = Field(min_length=1)
+    items: list[TableLineageItem] = Field(
+        min_length=1,
+        max_length=MAX_TABLE_LINEAGE_DEPTH,
     )
 
 
@@ -1589,6 +1622,29 @@ def create_app(
                 comments=repo.comments(table_id),
                 comment_promotions=repo.comment_promotions(table_id),
                 source_signals=repo.public_source_signals(table_id),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @api.get("/tables/{table_id}/lineage", response_model=TableLineageResponse)
+    def get_lineage(table_id: str) -> TableLineageResponse:
+        """Return the bounded public question lineage for one table."""
+        table_or_404(table_id)
+        try:
+            items = repo.lineage(table_id)
+            return TableLineageResponse(
+                table_id=table_id,
+                items=[
+                    TableLineageItem(
+                        table_id=item.table_id,
+                        origin_table_id=item.origin_table_id,
+                        version=item.version,
+                        core_question=item.core_question,
+                        origin_signal_ids=item.origin_signal_ids,
+                        source_signals=repo.public_source_signals(item.table_id),
+                    )
+                    for item in items
+                ],
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

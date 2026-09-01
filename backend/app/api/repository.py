@@ -15,6 +15,7 @@ from app.orchestrator import build_initial_state, build_personal_card, observe_t
 
 MAX_TABLE_PARTICIPANTS = 5
 MAX_PUBLIC_SOURCE_SIGNALS = 20
+MAX_TABLE_LINEAGE_DEPTH = 10
 
 
 def _index_public_source_signals(
@@ -1068,6 +1069,34 @@ class InMemoryTableRepository:
                 raise ValueError(f"unknown state version: {from_version}")
             snapshots = [state for state in snapshots if state.version >= from_version]
         return [state.model_copy(deep=True) for state in snapshots]
+
+    @_synchronized
+    def lineage(
+        self,
+        table_id: str,
+        *,
+        max_depth: int = MAX_TABLE_LINEAGE_DEPTH,
+    ) -> list[TableState]:
+        """Return the bounded public table chain from oldest ancestor to current."""
+        if max_depth < 1:
+            raise ValueError("lineage max_depth must be positive")
+        seen: set[str] = set()
+        snapshots: list[TableState] = []
+        current_id: str | None = table_id
+        while current_id is not None:
+            if current_id in seen:
+                raise ValueError("table lineage contains a cycle")
+            if len(snapshots) >= max_depth:
+                raise ValueError("table lineage exceeds the maximum depth")
+            seen.add(current_id)
+            try:
+                current = self.get(current_id)
+            except KeyError as error:
+                raise ValueError(f"unknown lineage table: {current_id}") from error
+            snapshots.append(current)
+            current_id = current.origin_table_id
+        snapshots.reverse()
+        return snapshots
 
     @_synchronized
     def turns(self, table_id: str) -> list[HumanTurn]:
