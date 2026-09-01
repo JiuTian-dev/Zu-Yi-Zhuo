@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, evaluate_safety, evaluate_sync_upgrade
@@ -155,6 +155,27 @@ class CreateInvitationRequest(BaseModel):
 
     candidate: ParticipantSeed
     reason: str = Field(min_length=1, max_length=240)
+
+
+class JoinRequestCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(min_length=1)
+    candidate: ParticipantSeed
+    message: str | None = Field(default=None, min_length=1, max_length=240)
+
+
+class JoinRequestApproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class JoinRequestApprovalResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: JoinRequestView
+    invitation: InvitationView
 
 
 class RespondInvitationRequest(BaseModel):
@@ -1476,6 +1497,142 @@ def create_app(
             reason=invitation.reason,
             status=invitation.status,
         )
+
+    def join_request_view(join_request: JoinRequest) -> JoinRequestView:
+        """Project a request without exposing the candidate's private profile."""
+        candidate = join_request.candidate
+        return JoinRequestView(
+            request_id=join_request.request_id,
+            table_id=join_request.table_id,
+            participant_id=candidate.participant_id,
+            display_name=candidate.display_name,
+            role=candidate.role,
+            message=join_request.message,
+            status=join_request.status,
+            invitation_id=join_request.invitation_id,
+        )
+
+    @api.post(
+        "/tables/{table_id}/join-requests",
+        response_model=JoinRequestView,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_join_request(
+        table_id: str,
+        payload: JoinRequestCreateRequest,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> JoinRequestView:
+        """Let a routed candidate ask to be considered without granting a seat."""
+        require_request_identity(identity_resolver, request, participant_id)
+        if payload.candidate.participant_id != participant_id:
+            raise HTTPException(status_code=403, detail="candidate does not match participant_id")
+        state = table_or_404(table_id)
+        try:
+            join_request, created = repo.create_join_request(
+                JoinRequest(
+                    request_id=payload.request_id,
+                    table_id=table_id,
+                    candidate=payload.candidate,
+                    message=payload.message,
+                )
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        view = join_request_view(join_request)
+        if created:
+            await broadcast_table_event(table_id, {
+                "type": "join_request_created",
+                "request": view.model_dump(mode="json"),
+                "state_version": state.version,
+            })
+        return view
+
+    @api.get(
+        "/tables/{table_id}/join-requests",
+        response_model=list[JoinRequestView],
+    )
+    def get_join_requests(
+        table_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> list[JoinRequestView]:
+        """Members see the redacted queue; candidates see only their own request."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        rows = repo.join_requests(table_id)
+        if participant_id not in state.participants:
+            rows = [
+                item for item in rows
+                if item.candidate.participant_id == participant_id
+            ]
+        return [join_request_view(item) for item in rows]
+
+    @api.post(
+        "/tables/{table_id}/join-requests/{request_id}/approve",
+        response_model=JoinRequestApprovalResponse,
+    )
+    async def approve_join_request(
+        table_id: str,
+        request_id: str,
+        payload: JoinRequestApproveRequest,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> JoinRequestApprovalResponse:
+        """Turn member approval into an invitation; acceptance remains separate."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        try:
+            join_request, invitation = repo.approve_join_request(
+                table_id, request_id, participant_id, payload.reason
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        request_view = join_request_view(join_request)
+        invitation_preview = invitation_view(invitation)
+        await broadcast_table_event(table_id, {
+            "type": "join_request_approved",
+            "request": request_view.model_dump(mode="json"),
+            "invitation": invitation_preview.model_dump(mode="json"),
+            "state_version": state.version,
+        })
+        return JoinRequestApprovalResponse(
+            request=request_view,
+            invitation=invitation_preview,
+        )
+
+    @api.post(
+        "/tables/{table_id}/join-requests/{request_id}/decline",
+        response_model=JoinRequestView,
+    )
+    async def decline_join_request(
+        table_id: str,
+        request_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> JoinRequestView:
+        """Decline a request while retaining a bounded audit trail."""
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        try:
+            join_request = repo.decline_join_request(table_id, request_id, participant_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        view = join_request_view(join_request)
+        await broadcast_table_event(table_id, {
+            "type": "join_request_declined",
+            "request": view.model_dump(mode="json"),
+            "state_version": state.version,
+        })
+        return view
 
     @api.post("/tables/{table_id}/invitations", response_model=InvitationView, status_code=status.HTTP_201_CREATED)
     async def create_invitation(
