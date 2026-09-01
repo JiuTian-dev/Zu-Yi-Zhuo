@@ -821,6 +821,13 @@
 - **替代方案**: 建立长期可编辑画像表、让 LLM 读取完整历史消息自由推荐、把一次点击当成强偏好、或按黑箱分数自动入席；这些方案分别制造重复真相与删除难题、扩大隐私面、过度解释偶然行为，或绕过人的最终选择。
 - **代价**: V1 使用确定性中文双字词项和公开角色缺口，不能声称理解了稳定人格；行为事件没有时间戳，因此“最近”按持久账本顺序定义。重置只清除行为个性化信号，不删除依法/产品必须保留的桌消息、状态与安全审计；推荐质量需要在真实内测中继续验证。
 
+### ADR-116: 静默旁听收藏是私有回访资源，不自动等同推荐偏好
+
+- **决策**: 新增本人作用域的 `PUT/DELETE /participants/{id}/saved-tables/{table_id}?viewer_id={id}` 与有界分页 `GET /participants/{id}/saved-tables?viewer_id={id}&offset={n}&limit={n}`。每人最多保存 100 张已存在的桌，保存顺序持久化，列表按最近保存优先返回；重复保存和重复取消保持幂等。响应只通过当前 `LobbyPreview` 投影桌的公开摘要，关闭、软过期或满席的桌仍保留在回访列表中。收藏只在账号级私有账本保存桌 ID，不复制桌状态、成员资料或消息，不广播、不改桌版本、不创建申请/邀请，也不公开收藏人数。JSON 仓储原子持久化，旧快照缺少该字段时按空列表恢复。
+- **理由**: 产品文档把“静默旁听、吸收、收藏”列为不强迫互动的参与层级，但现有后端只有只读旁听，用户无法稍后回到感兴趣的桌。[Mastodon 官方书签接口](https://docs.joinmastodon.org/methods/bookmarks/)使用本人令牌读取收藏列表，[GitHub 官方 starring API](https://docs.github.com/en/rest/activity/starring)采用认证用户作用域的幂等 `PUT/DELETE`；两者共同支持把保存状态建模为用户资源而不是一次消息动作。同时 [Google PAIR 的反馈与控制指南](https://pair.withgoogle.com/guidebook-v2/chapter/feedback-controls/)提醒产品不要把含义可能多义的行为直接当成强推荐意图。因此本切片先兑现“稍后回来”，不把收藏自动写入 `BehaviorEvent` 或 D138 推荐信号；若内测证明用户理解一致，再以独立、可说明和可关闭的契约接入个性化。
+- **替代方案**: 只在浏览器本地保存、把收藏公开成点赞数、复用 `table_selected` 事件临时拼列表、或收藏后自动申请入席；这些方案分别无法跨设备/重启恢复、改变低压力互动的社会含义、把行为日志误当当前资源，或绕过人的加入决定。
+- **代价**: V1 没有收藏时间戳、分组和提醒，最近顺序只按持久列表位置定义；最多 100 张且只支持 offset/limit。收藏不会直接改善 D138 推荐排序，这是刻意的意图隔离，而非最终推荐质量结论。
+
 ### ADR-107: GROUND 卡消费与干预审计原子提交
 
 - **决策**: 仓储增加只读的 trusted-card peek，以及带显式消费标记的 `append_intervention_bundle`。WebSocket 在生成 Host 文案前只读取 staged card；提交新状态和 `InterventionRecord` 时，由同一次内存/JSON 仓储事务校验并移除同一张卡。若提交失败，staged card 保留；若卡片已被替换或缺失，则拒绝该 bundle，不把客户端提供的卡片当作事实。
@@ -1289,6 +1296,7 @@ master
 | D136 participant invitation inbox | complete | Aggregate a candidate's cross-table invitations into a bounded self-scoped inbox with stable status ordering/filter/pagination, redacted invitation data, public Lobby context and server-derived actionability; reuse the existing durable invitation ledger | 451 tests + compileall + diff check | `cef8efb` + `656672f` |
 | D137 evidence-backed recruitment decision | complete | Derive a member-visible, privacy-safe decision from seat count, live role gaps and multi-speaker high-priority turn evidence; expose it directly and inside candidate preview, use its bounded query hint for explicit source search, and keep candidate selection/invitation human-confirmed | 457 tests + compileall + diff check | `c12e338` + `78328da` |
 | D138 explainable personalized table discovery | complete | Rank eligible public tables from bounded, resettable self-scoped behavior signals; explain each recommendation without storing a second profile or automating entry | 463 tests + compileall + diff check | `a3aba9c` + `9ebeeee` |
+| D139 private saved-table library | in progress | Let silent observers privately save, revisit and remove tables through a bounded self-scoped resource without broadcasting or treating saves as automatic recommendation consent | pending | design recorded; implementation next |
 
 ## 已知坑位（Running Gotchas）
 
