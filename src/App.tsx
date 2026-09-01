@@ -300,10 +300,10 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
         </div>
         <button className="seat-marker" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{joined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
-        <div className="conversation-dock" key={liveActive ? liveMessages.length : activeSpeaker}>
+        <div className="conversation-dock">
           {liveActive && lastLive ? (
             liveMessages.slice(-2).map((message, index, list) => (
-              <p key={`${message.participantId}-${index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
+              <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
                 <b className={message.fromHost ? 'host-name' : ''}>
                   {speakerName(message.participantId)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
                 </b>
@@ -311,7 +311,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
               </p>
             ))
           ) : (
-            <p>“{currentTurn.quote}”</p>
+            <p key={activeSpeaker}>“{currentTurn.quote}”</p>
           )}
           <div>
             <span><b>{lastLive ? speakerName(lastLive.participantId) : currentTurn.displayName}</b> · {lastLive ? speakerRole(lastLive.participantId) : currentTurn.role}</span>

@@ -133,3 +133,11 @@ html.hallway-mode,body.hallway-mode{height:100%;overflow:hidden;background:#eef0
   .lobby{padding:24px 20px 22px}
   .lobby-actions{flex-direction:column}
 }
+@media (max-width:1280px) and (min-width:761px){
+  .hallway-beacon{width:54px;padding:12px 10px}
+  .hallway-beacon span{display:none}
+  .hallway-featured{width:min(900px,72vw)}
+}
+@media (min-width:1281px){
+  .hallway-featured{width:min(880px,calc(100vw - 620px))}
+}
