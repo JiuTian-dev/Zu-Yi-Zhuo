@@ -2,8 +2,9 @@
 
 import asyncio
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from itertools import islice
+import time
 from typing import Literal
 from uuid import uuid4
 
@@ -459,6 +460,8 @@ def create_app(
     websocket_max_events_per_minute: int | None = None,
     rest_max_mutations_per_minute: int | None = None,
     source_match_preview_ttl_seconds: float = 300.0,
+    sync_window_seconds: float = 1800.0,
+    clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -469,6 +472,8 @@ def create_app(
         raise ValueError("personal_context_source_timeout_seconds must be positive")
     if source_match_preview_ttl_seconds <= 0:
         raise ValueError("source_match_preview_ttl_seconds must be positive")
+    if sync_window_seconds <= 0:
+        raise ValueError("sync_window_seconds must be positive")
     raw_websocket_origins = (
         os.getenv("WS_ALLOWED_ORIGINS", "")
         if websocket_allowed_origins is None
@@ -533,6 +538,7 @@ def create_app(
     api.state.candidate_invitation_tickets = candidate_invitation_tickets
     api.state.identity_resolver = identity_resolver
     api.state.moderator_resolver = moderator_resolver
+    api.state.sync_window_seconds = sync_window_seconds
     rest_rate_limiter = MutationRateLimiter(max_rest_mutations_per_minute)
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
@@ -568,6 +574,7 @@ def create_app(
         allowed_websocket_origins or None,
         max_websocket_frame_bytes,
         max_websocket_events_per_minute,
+        clock,
     )
 
     @api.get("/healthz")
@@ -593,9 +600,14 @@ def create_app(
 
     def table_or_404(table_id: str) -> TableState:
         try:
-            return repo.get(table_id)
+            state, _expired = repo.expire_sync_if_due(table_id, now=clock())
+            return state
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    def refresh_sync_windows() -> None:
+        for state in repo.list_tables(include_closed=True):
+            repo.expire_sync_if_due(state.table_id, now=clock())
 
     def projected(state: TableState, participant_id: str | None = None) -> TableState:
         if participant_id is not None and participant_id not in state.participants:
@@ -638,6 +650,7 @@ def create_app(
     ) -> list[TableState]:
         if participant_id is not None:
             require_request_identity(identity_resolver, request, participant_id)
+        refresh_sync_windows()
         return [
             project_state_for_viewer(state, participant_id)
             for state in repo.list_tables(include_closed=include_closed)
@@ -648,6 +661,7 @@ def create_app(
         limit: int = Query(default=20, ge=1, le=20),
     ) -> list[LobbyPreview]:
         """Return bounded public Lobby cards for homepage table discovery."""
+        refresh_sync_windows()
         return build_lobby_discovery(repo.list_tables(), limit=limit)
 
     @api.get("/tables/{table_id}/lobby", response_model=LobbyPreview)
@@ -1968,7 +1982,10 @@ def create_app(
         if not decision.eligible:
             raise HTTPException(status_code=409, detail=decision.model_dump(mode="json"))
         try:
-            state = repo.upgrade_to_sync(table_id)
+            state = repo.upgrade_to_sync(
+                table_id,
+                sync_expires_at=clock() + sync_window_seconds,
+            )
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         if state.version != previous_state.version:

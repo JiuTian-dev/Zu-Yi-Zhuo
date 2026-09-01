@@ -531,6 +531,42 @@ def test_sync_mode_defaults_async_and_upgrades_only_after_two_hard_conditions() 
     ).status_code == 403
 
 
+def test_sync_upgrade_sets_a_deadline_and_lazily_returns_to_async() -> None:
+    now = [1000.0]
+    repository = InMemoryTableRepository()
+    client = TestClient(create_app(
+        repository,
+        sync_window_seconds=30,
+        clock=lambda: now[0],
+    ))
+    client.post("/tables", json={
+        "table_id": "sync-window",
+        "core_question": "Q",
+        "participants": [participant("p1"), participant("p2")],
+    })
+    repository.append_turn(
+        "sync-window", HumanTurn(turn_id=1, participant_id="p1", text="我亲历过一次试点。")
+    )
+    repository.append_turn(
+        "sync-window", HumanTurn(turn_id=2, participant_id="p2", text="我也补充一条现场经验。")
+    )
+
+    upgraded = client.post(
+        "/tables/sync-window/sync/upgrade?participant_id=p1",
+        json={"wants_continue": True, "sync_extra_value": True},
+    )
+    assert upgraded.status_code == 200
+    assert upgraded.json()["state"]["conversation"]["sync_expires_at"] == 1030.0
+
+    now[0] = 1030.0
+    expired = client.get("/tables/sync-window/state")
+    assert expired.status_code == 200
+    assert expired.json()["version"] == 4
+    assert expired.json()["conversation"]["mode"] == "async"
+    assert "sync_expires_at" not in expired.json()["conversation"]
+    assert repository.get("sync-window").version == 4
+
+
 def test_repository_rejects_unknown_participants_and_invalid_turn_order() -> None:
     repository = InMemoryTableRepository()
     repository.create("turns", "Q", [])

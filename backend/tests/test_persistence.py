@@ -75,6 +75,27 @@ def test_json_repository_persists_soft_expiry_and_keeps_close_available(tmp_path
     assert JsonTableRepository(path).get("stale").conversation.closed is True
 
 
+def test_json_repository_persists_and_expires_sync_window_after_restart(tmp_path) -> None:
+    path = tmp_path / "sync-window.json"
+    repository = JsonTableRepository(path)
+    repository.create("sync-window", "Q", flagship_participants[:2])
+    repository.append_turn(
+        "sync-window", HumanTurn(turn_id=1, participant_id="architect", text="我亲历过一次试点。")
+    )
+    repository.append_turn(
+        "sync-window", HumanTurn(turn_id=2, participant_id="product", text="我也补充一条现场经验。")
+    )
+    repository.upgrade_to_sync("sync-window", sync_expires_at=110.0)
+
+    restored = JsonTableRepository(path)
+    state, changed = restored.expire_sync_if_due("sync-window", now=110.0)
+    assert changed is True
+    assert state.version == 4
+    assert state.conversation.mode.value == "async"
+    assert state.conversation.sync_expires_at is None
+    assert JsonTableRepository(path).get("sync-window").conversation.mode.value == "async"
+
+
 def test_json_repository_enforces_five_seat_capacity(tmp_path) -> None:
     repository = JsonTableRepository(tmp_path / "capacity.json")
     repository.create("capacity", "Q", flagship_participants)

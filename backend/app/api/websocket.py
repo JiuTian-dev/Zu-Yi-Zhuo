@@ -234,6 +234,7 @@ def register_websocket_routes(
     websocket_allowed_origins: Sequence[str] | None = None,
     max_frame_bytes: int = DEFAULT_MAX_WEBSOCKET_FRAME_BYTES,
     max_events_per_minute: int = DEFAULT_MAX_WEBSOCKET_EVENTS_PER_MINUTE,
+    clock: Callable[[], float] = time.time,
 ) -> None:
     """Register routes on a specific app instance so tests can inject a repository."""
     if max_frame_bytes <= 0:
@@ -321,7 +322,7 @@ def register_websocket_routes(
             await websocket.close(code=1008)
             return
         try:
-            state = repository.get(table_id)
+            state, _expired = repository.expire_sync_if_due(table_id, now=clock())
         except KeyError:
             await _send_error(websocket, "unknown_table", f"unknown table: {table_id}")
             await websocket.close(code=1008)
@@ -363,6 +364,18 @@ def register_websocket_routes(
                 if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
                     await _send_error(websocket, "invalid_event", "event must include a string type")
                     continue
+
+                state, sync_expired = repository.expire_sync_if_due(
+                    table_id, now=clock()
+                )
+                if sync_expired:
+                    await broadcast(table_id, {
+                        "type": "table_mode_changed",
+                        "mode": state.conversation.mode.value,
+                        "reason": "sync_window_expired",
+                        "state_version": state.version,
+                    })
+                    await broadcast_state(table_id, state)
 
                 mutates_table = (
                     viewer_mode == "participant" and payload["type"] in {

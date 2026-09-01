@@ -511,6 +511,11 @@ class ConversationState(ContractModel):
     risk_flags: list[EvidenceStatement] = Field(default_factory=list)
     safety_level: SafetyLevel
     mode: ConversationMode = ConversationMode.ASYNC
+    sync_expires_at: float | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     closed: bool = False
     soft_expired: bool = False
     soft_expiry_reason: str | None = Field(default=None, min_length=1, max_length=240)

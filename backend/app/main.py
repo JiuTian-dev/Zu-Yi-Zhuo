@@ -89,6 +89,17 @@ def _build_source_match_preview_ttl() -> float:
     return value
 
 
+def _build_sync_window() -> float:
+    raw = os.environ.get("SYNC_WINDOW_SECONDS", "1800").strip()
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise RuntimeError("SYNC_WINDOW_SECONDS must be a positive number") from error
+    if value <= 0:
+        raise RuntimeError("SYNC_WINDOW_SECONDS must be a positive number")
+    return value
+
+
 def _build_app():
     path = os.environ.get("TABLE_REPOSITORY_PATH", "").strip()
     repository = JsonTableRepository(path) if path else None
@@ -99,6 +110,7 @@ def _build_app():
         content_source=_build_content_source(),
         personal_context_source=_build_personal_context_source(),
         source_match_preview_ttl_seconds=_build_source_match_preview_ttl(),
+        sync_window_seconds=_build_sync_window(),
     )
 
 

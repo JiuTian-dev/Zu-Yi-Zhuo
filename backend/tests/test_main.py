@@ -1,6 +1,6 @@
 import pytest
 
-from app.main import _build_provider, _build_source_match_preview_ttl
+from app.main import _build_provider, _build_source_match_preview_ttl, _build_sync_window
 
 
 def test_runtime_provider_defaults_to_deterministic(monkeypatch) -> None:
@@ -31,3 +31,15 @@ def test_runtime_source_match_preview_ttl_rejects_non_positive_or_invalid_values
     monkeypatch.setenv("SOURCE_MATCH_PREVIEW_TTL_SECONDS", raw)
     with pytest.raises(RuntimeError, match="positive number"):
         _build_source_match_preview_ttl()
+
+
+def test_runtime_sync_window_defaults_to_thirty_minutes(monkeypatch) -> None:
+    monkeypatch.delenv("SYNC_WINDOW_SECONDS", raising=False)
+    assert _build_sync_window() == 1800.0
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "not-a-number"])
+def test_runtime_sync_window_rejects_non_positive_or_invalid_values(monkeypatch, raw) -> None:
+    monkeypatch.setenv("SYNC_WINDOW_SECONDS", raw)
+    with pytest.raises(RuntimeError, match="positive number"):
+        _build_sync_window()

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 from threading import RLock
 from typing import Any
 
@@ -1075,7 +1076,9 @@ class InMemoryTableRepository:
         return self._append(table_id, updated)
 
     @_synchronized
-    def upgrade_to_sync(self, table_id: str) -> TableState:
+    def upgrade_to_sync(
+        self, table_id: str, *, sync_expires_at: float | None = None
+    ) -> TableState:
         """Atomically switch an eligible table from async to sync mode."""
         state = self.get(table_id)
         if state.conversation.mode is ConversationMode.SYNC:
@@ -1086,11 +1089,35 @@ class InMemoryTableRepository:
             raise ValueError("table is soft-expired")
         if state.conversation.safety_level is SafetyLevel.CRITICAL:
             raise ValueError("table is paused for safety review")
+        if sync_expires_at is not None and sync_expires_at <= 0:
+            raise ValueError("sync_expires_at must be positive")
         updated = state.model_copy(deep=True)
         updated.version += 1
         updated.conversation.mode = ConversationMode.SYNC
         updated.conversation.state = "sync_active"
+        updated.conversation.sync_expires_at = sync_expires_at
         return self._append(table_id, updated)
+
+    @_synchronized
+    def expire_sync_if_due(
+        self, table_id: str, *, now: float | None = None
+    ) -> tuple[TableState, bool]:
+        """Lazily close an expired sync window and preserve its state snapshot."""
+        state = self.get(table_id)
+        expires_at = state.conversation.sync_expires_at
+        if (
+            state.conversation.mode is not ConversationMode.SYNC
+            or expires_at is None
+            or expires_at > (time.time() if now is None else now)
+        ):
+            return state, False
+        updated = state.model_copy(deep=True)
+        updated.version += 1
+        updated.conversation.mode = ConversationMode.ASYNC
+        updated.conversation.sync_expires_at = None
+        if updated.conversation.safety_level is not SafetyLevel.CRITICAL:
+            updated.conversation.state = "active"
+        return self._append(table_id, updated), True
 
     @_synchronized
     def append_turn(self, table_id: str, turn: HumanTurn) -> TableState:

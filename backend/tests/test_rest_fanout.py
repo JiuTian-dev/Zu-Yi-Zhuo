@@ -301,6 +301,46 @@ def test_rest_sync_upgrade_broadcasts_mode_transition() -> None:
     assert changed["state"]["version"] == mode_event["state_version"]
 
 
+def test_expired_sync_window_broadcasts_async_transition_before_next_event() -> None:
+    now = [100.0]
+    repository = InMemoryTableRepository()
+    repository.create("sync-expiry", "Q", [
+        ParticipantSeed.model_validate(_participant("p1")),
+        ParticipantSeed.model_validate(_participant("p2")),
+    ])
+    repository.append_message_once("sync-expiry", "p1", "先说一条现场约束。", "sync-expiry-1")
+    repository.append_message_once("sync-expiry", "p2", "我也愿意继续深挖。", "sync-expiry-2")
+    client = TestClient(create_app(
+        repository,
+        sync_window_seconds=10,
+        clock=lambda: now[0],
+    ))
+
+    with client.websocket_connect("/ws/tables/sync-expiry?participant_id=p1") as websocket:
+        upgraded = client.post(
+            "/tables/sync-expiry/sync/upgrade?participant_id=p1",
+            json={"wants_continue": True, "sync_extra_value": True},
+        )
+        assert upgraded.status_code == 200
+        assert websocket.receive_json()["mode"] == "sync"
+        assert websocket.receive_json()["state"]["conversation"]["mode"] == "sync"
+
+        now[0] = 110.0
+        websocket.send_json({"type": "request_debug_state"})
+        expired_event = websocket.receive_json()
+        expired_state = websocket.receive_json()
+        debug_state = websocket.receive_json()
+
+    assert expired_event == {
+        "type": "table_mode_changed",
+        "mode": "async",
+        "reason": "sync_window_expired",
+        "state_version": 4,
+    }
+    assert expired_state["state"]["conversation"]["mode"] == "async"
+    assert debug_state["state"]["version"] == 4
+
+
 def test_late_joiner_can_replay_early_snapshots_without_privacy_leak() -> None:
     client, _ = _client_with_table()
     joined = client.post("/tables/table-rest/participants", json=_participant("p2", "研究"))
