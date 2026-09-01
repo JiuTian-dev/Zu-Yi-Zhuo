@@ -35,6 +35,7 @@ def build_lobby_preview(state: TableState) -> LobbyPreview:
         current_subquestion=state.current_subquestion,
         phase=state.phase,
         mode=state.conversation.mode,
+        sync_expires_at=state.conversation.sync_expires_at,
         status=table_status,
         state_version=state.version,
         participant_count=participant_count,

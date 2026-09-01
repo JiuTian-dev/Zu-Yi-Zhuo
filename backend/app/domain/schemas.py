@@ -135,6 +135,11 @@ class LobbyPreview(ContractModel):
     current_subquestion: str | None = None
     phase: Phase
     mode: ConversationMode
+    sync_expires_at: float | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
     status: Literal["open", "soft_expired", "closed"]
     state_version: int = Field(ge=0)
     participant_count: int = Field(ge=0, le=5)

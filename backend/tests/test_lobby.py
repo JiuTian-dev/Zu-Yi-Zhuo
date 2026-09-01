@@ -70,6 +70,21 @@ def test_lobby_preview_reflects_progress_and_soft_expiry_without_writing() -> No
     assert repository.get("lobby").version == 2
 
 
+def test_lobby_preview_exposes_server_owned_sync_deadline() -> None:
+    repository = InMemoryTableRepository()
+    repository.create("sync-lobby", "Q", [
+        _seed("p1", "产品"), _seed("p2", "研究"),
+    ])
+    repository.upgrade_to_sync("sync-lobby", sync_expires_at=1234.5)
+    client = TestClient(create_app(repository, clock=lambda: 1000.0))
+
+    response = client.get("/tables/sync-lobby/lobby")
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "sync"
+    assert response.json()["sync_expires_at"] == 1234.5
+
+
 def test_lobby_preview_uses_capacity_message_when_a_balanced_table_is_full() -> None:
     repository = InMemoryTableRepository()
     repository.create(
