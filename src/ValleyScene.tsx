@@ -1,225 +1,66 @@
-import { Sparkles, useAnimations, useGLTF, useTexture } from '@react-three/drei'
+import { Sparkles } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Suspense, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
-import { humanActors, type ActorId, type AgentAction, type SeatActor } from './actors'
+import DioramaScene, { type DioramaProps } from './Diorama'
 
-export type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
+export type ExperiencePhase = DioramaProps['phase']
+export type ValleySceneProps = DioramaProps
 
-export interface ValleySceneProps {
-  phase: ExperiencePhase
-  activeActorId: ActorId
-  hoveredActorId: ActorId | null
-  reducedMotion: boolean
-}
-
-const TABLE_FOCUS = new THREE.Vector3(2.55, -1.22, 0.18)
-const PLATE_WIDTH = 16.72
-const PLATE_HEIGHT = 9.41
-const PLATE_ASPECT = PLATE_WIDTH / PLATE_HEIGHT
-const PLATE_OVERSCAN = 1.1
-
-function usePlateScale(): [number, number, number] {
-  const { size } = useThree()
-  const aspectScale = Math.max(PLATE_OVERSCAN, (size.width / Math.max(size.height, 1) / PLATE_ASPECT) * PLATE_OVERSCAN)
-  return [aspectScale, aspectScale, 1]
-}
-
-type DepthStratum = 'far' | 'middle' | 'near'
-
-const DEPTH_STRATA: Array<{ id: DepthStratum; renderOrder: number }> = [
-  { id: 'far', renderOrder: 0 },
-  { id: 'middle', renderOrder: 1 },
-  { id: 'near', renderOrder: 2 },
-]
-
-/** Shared light state so the relighting key light follows the pointer once per frame. */
-const sharedLight = { value: new THREE.Vector2(0.3, 0.35) }
-const sharedTime = { value: 0 }
-
-const DEPTH_VERTEX_SHADER = `
-  uniform sampler2D depthMap;
-  uniform float depthScale;
-  uniform float depthBias;
-  varying vec2 vUv;
-  varying float vDepth;
-  void main() {
-    vUv = uv;
-    vDepth = texture2D(depthMap, uv).r;
-    float edgeDistance = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-    float edgeLock = smoothstep(0.0, 0.1, edgeDistance);
-    vec3 displaced = position;
-    displaced.z += (vDepth * depthScale + depthBias) * edgeLock;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
-  }
-`
-
-const DEPTH_FRAGMENT_SHADER = `
-  uniform sampler2D colorMap;
-  uniform sampler2D depthMap;
-  uniform float stratum;
-  uniform vec2 texel;
-  uniform vec2 uLight;
-  uniform float uTime;
-  varying vec2 vUv;
-  varying float vDepth;
-  void main() {
-    // Two separated feather ranges keep the three weights complementary:
-    // far = 1-a, middle = a*(1-b), near = b. Because a reaches 1.0
-    // before b starts, the visible contribution remains exactly one.
-    float a = smoothstep(0.30, 0.46, vDepth);
-    float b = smoothstep(0.62, 0.78, vDepth);
-    float farWeight = 1.0 - a;
-    float middleWeight = a * (1.0 - b);
-    float nearWeight = b;
-    float weight = stratum < 0.5
-      ? farWeight
-      : stratum < 1.5 ? middleWeight : nearWeight;
-    vec4 color = texture2D(colorMap, vUv);
-    // Depth relighting: a cheap normal from the depth gradient lets a slow
-    // pointer-following key light add volume while staying subtle.
-    float dL = texture2D(depthMap, vUv - vec2(texel.x, 0.0)).r;
-    float dR = texture2D(depthMap, vUv + vec2(texel.x, 0.0)).r;
-    float dD = texture2D(depthMap, vUv - vec2(0.0, texel.y)).r;
-    float dU = texture2D(depthMap, vUv + vec2(0.0, texel.y)).r;
-    vec3 normal = normalize(vec3((dL - dR) * 2.4, (dD - dU) * 2.4, 1.0));
-    vec3 lightDir = normalize(vec3(uLight.x * 0.8 + 0.4, uLight.y * 0.5 + 0.7, 0.55));
-    float diffuse = clamp(dot(normal, lightDir), 0.0, 1.0);
-    color.rgb *= 0.93 + diffuse * 0.16;
-    gl_FragColor = vec4(color.rgb, 1.0);
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
-    // Additive compositing happens in output color space. Premultiply each
-    // stratum after conversion so complementary weights reconstruct one plate.
-    gl_FragColor = vec4(gl_FragColor.rgb * weight, weight);
-  }
-`
-
-function DepthStratumPlate({
-  colorMap,
-  depthMap,
-  stratum,
-  renderOrder,
-}: {
-  colorMap: THREE.Texture
-  depthMap: THREE.Texture
-  stratum: DepthStratum
-  renderOrder: number
-}) {
-  const uniforms = useMemo(() => ({
-    colorMap: { value: colorMap },
-    depthMap: { value: depthMap },
-    depthScale: { value: 0.82 },
-    depthBias: { value: -0.34 },
-    stratum: { value: stratum === 'far' ? 0 : stratum === 'middle' ? 1 : 2 },
-    texel: { value: new THREE.Vector2(1 / 1672, 1 / 941) },
-    uLight: sharedLight,
-    uTime: sharedTime,
-  }), [colorMap, depthMap, stratum])
-
-  return (
-    <mesh renderOrder={renderOrder}>
-      <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
-      <shaderMaterial
-        uniforms={uniforms}
-        vertexShader={DEPTH_VERTEX_SHADER}
-        fragmentShader={DEPTH_FRAGMENT_SHADER}
-        transparent
-        blending={THREE.CustomBlending}
-        blendEquation={THREE.AddEquation}
-        blendSrc={THREE.OneFactor}
-        blendDst={THREE.OneFactor}
-        blendEquationAlpha={THREE.AddEquation}
-        blendSrcAlpha={THREE.OneFactor}
-        blendDstAlpha={THREE.OneFactor}
-        depthTest={false}
-        depthWrite={false}
-      />
-    </mesh>
-  )
-}
-
-function DepthPlate({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
-  const group = useRef<THREE.Group>(null)
-  const plateScale = usePlateScale()
-  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
-  colorMap.colorSpace = THREE.SRGBColorSpace
-  colorMap.anisotropy = 8
-  depthMap.colorSpace = THREE.NoColorSpace
-  useFrame(({ clock, pointer }) => {
-    sharedTime.value = clock.elapsedTime
-    if (!reducedMotion) sharedLight.value.set(pointer.x, pointer.y)
-    if (!group.current || reducedMotion) return
-    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.22) * 0.006 * (phase === 'discovering' ? 1 : 0.35)
-  })
-
-  return (
-    <group ref={group} scale={plateScale}>
-      {DEPTH_STRATA.map((layer) => (
-        <DepthStratumPlate
-          key={layer.id}
-          colorMap={colorMap}
-          depthMap={depthMap}
-          stratum={layer.id}
-          renderOrder={layer.renderOrder}
-        />
-      ))}
-    </group>
-  )
+const CAMERA_TARGETS: Record<ExperiencePhase, { pos: [number, number, number]; look: [number, number, number] }> = {
+  discovering: { pos: [8.8, 4.8, 14.6], look: [3.2, 0.7, 0.6] },
+  approaching: { pos: [6.3, 2.5, 8.8], look: [4.2, 0.85, 2.2] },
+  seated: { pos: [5.05, 1.55, 6.35], look: [4.05, 0.85, 2.0] },
 }
 
 function CameraRig({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
-  const { camera, pointer, size } = useThree()
+  const { camera } = useThree()
   const lookAt = useRef(new THREE.Vector3())
+  const target = useMemo(() => new THREE.Vector3(), [])
   const position = useMemo(() => new THREE.Vector3(), [])
-  const targetLook = useMemo(() => new THREE.Vector3(), [])
 
-  useFrame(({ clock }, delta) => {
-    const mobile = size.width < 760
-    const close = phase !== 'discovering'
-    const drift = reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.18) * 0.025
-    if (close) {
-      position.set(mobile ? 2.2 : 2.82, mobile ? -0.9 : -1.18, mobile ? 8.15 : 6.35)
-      targetLook.copy(TABLE_FOCUS)
-    } else {
-      position.set(0, 0, 12.22)
-      targetLook.set(0, 0, 0)
-    }
+  useFrame(({ clock, pointer }, delta) => {
+    const stage = CAMERA_TARGETS[phase]
+    const drift = reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.18) * 0.05
+    position.set(...stage.pos)
+    target.set(...stage.look)
     if (!reducedMotion) {
-      position.x += pointer.x * (close ? 0.1 : 0.18) + drift
-      position.y += pointer.y * (close ? 0.045 : 0.09)
-      targetLook.x += pointer.x * (close ? 0.045 : 0.08)
-      targetLook.y += pointer.y * (close ? 0.025 : 0.045)
+      const parallax = phase === 'discovering' ? 1 : 0.55
+      position.x += pointer.x * 0.4 * parallax + drift
+      position.y += pointer.y * 0.2 * parallax
+      target.x += pointer.x * 0.16 * parallax
+      target.y += pointer.y * 0.1 * parallax
     }
-    const speed = reducedMotion ? 18 : phase === 'approaching' ? 1.25 : close ? 2.8 : 3.2
+    const speed = reducedMotion ? 18 : phase === 'approaching' ? 1.15 : phase === 'seated' ? 2.6 : 3.1
     camera.position.x = THREE.MathUtils.damp(camera.position.x, position.x, speed, delta)
     camera.position.y = THREE.MathUtils.damp(camera.position.y, position.y, speed, delta)
     camera.position.z = THREE.MathUtils.damp(camera.position.z, position.z, speed, delta)
-    lookAt.current.lerp(targetLook, 1 - Math.exp(-speed * delta))
+    lookAt.current.lerp(target, 1 - Math.exp(-speed * delta))
     camera.lookAt(lookAt.current)
   })
   return null
 }
 
-function FloatingPetals({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
+function FloatingPetals({ reducedMotion }: Pick<ValleySceneProps, 'reducedMotion'>) {
   const group = useRef<THREE.Group>(null)
-  const petals = useMemo(() => Array.from({ length: 20 }, (_, index) => ({
-    x: -7 + ((index * 43) % 100) / 100 * 14,
-    y: -4 + ((index * 29) % 100) / 100 * 8,
-    z: 0.35 + ((index * 17) % 100) / 100 * 1.25,
-    speed: 0.05 + (index % 4) * 0.018,
-    size: 0.018 + (index % 3) * 0.008,
-  })), [])
+  const petals = useRef(
+    Array.from({ length: 18 }, (_, index) => ({
+      x: -6 + ((index * 43) % 100) / 100 * 12,
+      y: 0.4 + ((index * 29) % 100) / 100 * 3.4,
+      z: 2 + ((index * 17) % 100) / 100 * 6,
+      speed: 0.12 + (index % 4) * 0.05,
+      size: 0.03 + (index % 3) * 0.012,
+    })),
+  ).current
 
   useFrame((_, delta) => {
     if (!group.current || reducedMotion) return
     group.current.children.forEach((child, index) => {
       child.position.x -= petals[index].speed * delta
-      child.position.y -= petals[index].speed * 0.22 * delta
-      child.rotation.z += delta * 0.22
-      if (child.position.x < -7.4) child.position.x = 7.4
-      if (child.position.y < -4.4) child.position.y = 4.4
+      child.position.y -= petals[index].speed * 0.18 * delta
+      child.rotation.z += delta * 0.3
+      if (child.position.x < -7) child.position.x = 6.2
+      if (child.position.y < -0.4) child.position.y = 4
     })
   })
 
@@ -228,329 +69,28 @@ function FloatingPetals({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase'
       {petals.map((petal, index) => (
         <mesh key={index} position={[petal.x, petal.y, petal.z]} rotation={[0, 0, index]}>
           <circleGeometry args={[petal.size, 5]} />
-          <meshBasicMaterial color={index % 3 === 0 ? '#ffd28f' : '#ff8f91'} transparent opacity={phase === 'seated' ? 0.55 : 0.32} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial color={index % 3 === 0 ? '#ffd28f' : '#ff8f91'} transparent opacity={0.5} depthWrite={false} toneMapped={false} />
         </mesh>
       ))}
     </group>
   )
 }
 
-const SHAFT_VERTEX = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`
-const SHAFT_FRAGMENT = `
-  uniform float uIntensity;
-  varying vec2 vUv;
-  void main(){
-    float edge = pow(max(0.0, 1.0 - abs(vUv.x - 0.5) * 2.0), 2.6);
-    float taper = smoothstep(0.0, 0.18, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
-    float amount = uIntensity * edge * taper;
-    gl_FragColor = vec4(vec3(1.0, 0.93, 0.78) * amount, amount);
-  }
-`
-
-function LightShaft({ reducedMotion }: Pick<ValleySceneProps, 'reducedMotion'>) {
-  const material = useRef<THREE.ShaderMaterial>(null)
-  const shaft = useRef<THREE.Mesh>(null)
-  const uniforms = useMemo(() => ({ uIntensity: { value: 0.055 } }), [])
-
-  useFrame(({ clock }) => {
-    if (!material.current || !shaft.current) return
-    material.current.uniforms.uIntensity.value = reducedMotion ? 0.04 : 0.055 + Math.sin(clock.elapsedTime * 0.24) * 0.02
-    if (!reducedMotion) shaft.current.rotation.z = -0.42 + Math.sin(clock.elapsedTime * 0.07) * 0.02
-  })
-
-  return (
-    <mesh ref={shaft} position={[1.35, 1.4, 0.35]} rotation={[0, 0, -0.42]} renderOrder={3}>
-      <planeGeometry args={[2.6, 10.5]} />
-      <shaderMaterial ref={material} uniforms={uniforms} vertexShader={SHAFT_VERTEX} fragmentShader={SHAFT_FRAGMENT} transparent depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} />
-    </mesh>
-  )
-}
-
-function HumanMatte({ actor, active, hovered }: { actor: SeatActor; active: boolean; hovered: boolean }) {
-  const material = useRef<THREE.ShaderMaterial>(null)
-  const plateScale = usePlateScale()
-  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
-  colorMap.colorSpace = THREE.SRGBColorSpace
-  depthMap.colorSpace = THREE.NoColorSpace
-  const uniforms = useMemo(() => ({
-    colorMap: { value: colorMap }, depthMap: { value: depthMap },
-    center: { value: new THREE.Vector2(...actor.plateCenter) },
-    radius: { value: new THREE.Vector2(...actor.plateRadius) },
-    accent: { value: new THREE.Color(actor.accent) }, strength: { value: 0 },
-  }), [actor, colorMap, depthMap])
-
-  useFrame((_, delta) => {
-    if (!material.current) return
-    material.current.uniforms.strength.value = THREE.MathUtils.damp(
-      material.current.uniforms.strength.value,
-      hovered ? 0.34 : active ? 0.2 : 0,
-      7,
-      delta,
-    )
-  })
-
-  return (
-    <mesh position={[0, 0, 0.012]} scale={plateScale} renderOrder={2}>
-      <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
-      <shaderMaterial
-        ref={material}
-        uniforms={uniforms}
-        transparent
-        depthWrite={false}
-        vertexShader={`
-          uniform sampler2D depthMap;
-          varying vec2 vUv;
-          void main(){
-            vUv=uv;
-            vec3 p=position;
-            p.z += texture2D(depthMap,uv).r*.82-.34;
-            gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
-          }
-        `}
-        fragmentShader={`
-          uniform sampler2D colorMap;
-          uniform vec2 center;
-          uniform vec2 radius;
-          uniform vec3 accent;
-          uniform float strength;
-          varying vec2 vUv;
-          void main(){
-            vec2 d=(vUv-center)/radius;
-            float matte=1.0-smoothstep(.72,1.0,dot(d,d));
-            vec4 base=texture2D(colorMap,vUv);
-            vec3 lit=mix(base.rgb,accent,.22);
-            gl_FragColor=vec4(lit,matte*strength);
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }
-        `}
-      />
-    </mesh>
-  )
-}
-
-function HumanMattes({ activeActorId, hoveredActorId, phase }: Pick<ValleySceneProps, 'activeActorId' | 'hoveredActorId' | 'phase'>) {
-  if (phase !== 'seated') return null
-  return <>{humanActors.map((actor) => <HumanMatte key={actor.id} actor={actor} active={activeActorId === actor.id} hovered={hoveredActorId === actor.id} />)}</>
-}
-
-const HOST_MODEL_URL = '/assets/actors/table-host.glb'
-const HOST_CLIP_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.17)
-
-class HostModelBoundary extends Component<{ children: ReactNode; resetKey: string; onError(): void }, { failed: boolean }> {
-  state = { failed: false }
-  static getDerivedStateFromError() { return { failed: true } }
-  componentDidCatch() { this.props.onError() }
-  componentDidUpdate(previous: Readonly<{ resetKey: string }>) {
-    if (this.state.failed && previous.resetKey !== this.props.resetKey) this.setState({ failed: false })
-  }
-  render() { return this.state.failed ? null : this.props.children }
-}
-
-function HostModel({ phase, action, onReady }: {
-  phase: ExperiencePhase
-  action: AgentAction
-  onReady(): void
-}) {
-  const source = useGLTF(HOST_MODEL_URL, false, true)
-  const { gl } = useThree()
-  const root = useRef<THREE.Group>(null)
-  const model = useMemo(() => clone(source.scene), [source.scene])
-  const materials = useMemo(() => {
-    const owned: THREE.Material[] = []
-    model.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return
-      object.frustumCulled = false
-      object.renderOrder = 6
-      object.castShadow = false
-      object.receiveShadow = false
-      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material]
-      const local = sourceMaterials.map((material) => {
-        const copy = material.clone()
-        copy.transparent = true
-        copy.opacity = 0
-        copy.depthTest = true
-        copy.depthWrite = false
-        copy.clippingPlanes = [HOST_CLIP_PLANE]
-        owned.push(copy)
-        return copy
-      })
-      object.material = Array.isArray(object.material) ? local : local[0]
-    })
-    return owned
-  }, [model])
-  const { actions } = useAnimations(source.animations, root)
-  const opacity = useRef(0)
-
-  useEffect(() => {
-    const previous = gl.localClippingEnabled
-    gl.localClippingEnabled = true
-    return () => { gl.localClippingEnabled = previous }
-  }, [gl])
-  useEffect(() => {
-    const idle = actions.Armature ?? Object.values(actions)[0]
-    idle?.reset().fadeIn(.18).play()
-    onReady()
-    return () => { idle?.fadeOut(.12); materials.forEach((material) => material.dispose()) }
-  }, [actions, materials, onReady])
-
-  useFrame((_, delta) => {
-    if (!root.current) return
-    const present = phase === 'seated' ? 1 : phase === 'approaching' ? .42 : 0
-    opacity.current = THREE.MathUtils.damp(opacity.current, present, 4.8, delta)
-    materials.forEach((material) => { material.opacity = opacity.current })
-    const passing = action === 'PASS' ? 1 : 0
-    root.current.rotation.y = THREE.MathUtils.damp(root.current.rotation.y, Math.PI + passing * .1, 4.2, delta)
-    root.current.rotation.z = THREE.MathUtils.damp(root.current.rotation.z, passing * -.035, 4.2, delta)
-    root.current.position.x = THREE.MathUtils.damp(root.current.position.x, passing * .025, 4.2, delta)
-    root.current.position.z = THREE.MathUtils.damp(root.current.position.z, passing * .035, 4.2, delta)
-    const scale = .42 * (1 + passing * .025)
-    root.current.scale.setScalar(THREE.MathUtils.damp(root.current.scale.x, scale, 4.2, delta))
-  })
-
-  return (
-    <group ref={root} name="TableHostGLB" position={[0, -.08, .006]} scale={.42}>
-      <primitive object={model} />
-    </group>
-  )
-}
-
-function TableHost({ phase, action, hovered, reducedMotion }: {
-  phase: ExperiencePhase
-  action: AgentAction
-  hovered: boolean
-  reducedMotion: boolean
-}) {
-  const group = useRef<THREE.Group>(null)
-  const silenceMaterial = useRef<THREE.SpriteMaterial>(null)
-  const passMaterial = useRef<THREE.SpriteMaterial>(null)
-  const haloMaterial = useRef<THREE.MeshBasicMaterial>(null)
-  const coreMaterial = useRef<THREE.MeshBasicMaterial>(null)
-  const orbMaterial = useRef<THREE.MeshBasicMaterial>(null)
-  const orbLight = useRef<THREE.PointLight>(null)
-  const orb = useRef<THREE.Mesh>(null)
-  const visibility = useRef(0)
-  const spriteVisibility = useRef(1)
-  const [modelReady, setModelReady] = useState(false)
-  const [silenceMap, passMap] = useTexture([
-    '/assets/actors/table-host-silence.png',
-    '/assets/actors/table-host-pass.png',
-  ])
-  silenceMap.colorSpace = THREE.SRGBColorSpace
-  passMap.colorSpace = THREE.SRGBColorSpace
-  const orbHome = useMemo(() => new THREE.Vector3(0.28, -0.18, 0.08), [])
-  const orbTarget = useMemo(() => new THREE.Vector3(1.25, -0.08, 0.16), [])
-  const modelLoaded = useCallback(() => setModelReady(true), [])
-  const modelFailed = useCallback(() => {
-    useGLTF.clear(HOST_MODEL_URL)
-    setModelReady(false)
-  }, [])
-
-  useEffect(() => { if (reducedMotion) setModelReady(false) }, [reducedMotion])
-
-  useFrame(({ clock }, delta) => {
-    if (!group.current || !silenceMaterial.current || !passMaterial.current || !haloMaterial.current || !coreMaterial.current || !orbMaterial.current || !orbLight.current || !orb.current) return
-    const present = phase === 'seated' ? 1 : phase === 'approaching' ? 0.42 : 0
-    visibility.current = THREE.MathUtils.damp(visibility.current, present, 4.8, delta)
-    spriteVisibility.current = THREE.MathUtils.damp(spriteVisibility.current, modelReady ? 0 : 1, 5.5, delta)
-    const passing = action === 'PASS' ? 1 : 0
-    silenceMaterial.current.opacity = visibility.current * (1 - passing) * spriteVisibility.current
-    passMaterial.current.opacity = visibility.current * passing * spriteVisibility.current
-    const pulse = reducedMotion ? 1 : 1 + Math.sin(clock.elapsedTime * 1.35) * 0.035
-    group.current.position.y = -1.04 + (reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.72) * 0.008)
-    group.current.scale.setScalar(0.96 + passing * 0.035)
-    haloMaterial.current.opacity = visibility.current * (hovered ? 0.98 : passing ? 0.92 : 0.66)
-    coreMaterial.current.opacity = visibility.current * (passing ? 1 : 0.72)
-    orbMaterial.current.opacity = visibility.current * (passing ? 0.96 : 0.34)
-    orbLight.current.intensity = visibility.current * (passing ? 1.1 : 0.2)
-    orb.current.scale.setScalar(pulse * (passing ? 1 : 0.62))
-    orb.current.position.lerp(passing ? orbTarget : orbHome, 1 - Math.exp(-3.8 * delta))
-  })
-
-  return (
-    <group ref={group} position={[2.14, -1.04, 0.28]} renderOrder={5}>
-      {!reducedMotion && <HostModelBoundary resetKey={phase} onError={modelFailed}>
-        <Suspense fallback={null}><HostModel phase={phase} action={action} onReady={modelLoaded} /></Suspense>
-      </HostModelBoundary>}
-      <hemisphereLight color="#fff0d0" groundColor="#4b6259" intensity={1.15} />
-      <directionalLight color="#ffe8c0" intensity={1.3} position={[-2, 3, 4]} />
-      <mesh position={[0, 0.26, -0.008]} rotation={[0, 0, -0.28]}>
-        <ringGeometry args={[0.255, 0.278, 72, 1, 0.2, Math.PI * 1.72]} />
-        <meshBasicMaterial ref={haloMaterial} color="#ffd782" transparent opacity={0} depthWrite={false} toneMapped={false} />
-      </mesh>
-      <sprite position={[0, -0.08, 0]} scale={[0.72, 0.84, 1]}>
-        <spriteMaterial ref={silenceMaterial} map={silenceMap} transparent opacity={0} depthWrite={false} alphaTest={0.06} toneMapped={false} />
-      </sprite>
-      <sprite position={[0.05, -0.08, 0.002]} scale={[0.78, 0.84, 1]}>
-        <spriteMaterial ref={passMaterial} map={passMap} transparent opacity={0} depthWrite={false} alphaTest={0.06} toneMapped={false} />
-      </sprite>
-      <mesh position={[0, -0.17, 0.012]}>
-        <ringGeometry args={[0.048, 0.063, 48]} />
-        <meshBasicMaterial ref={coreMaterial} color="#ffe09a" transparent opacity={0} depthWrite={false} toneMapped={false} />
-      </mesh>
-      <mesh ref={orb} position={orbHome} renderOrder={7}>
-        <sphereGeometry args={[0.035, 20, 16]} />
-        <meshBasicMaterial ref={orbMaterial} color="#fff0bd" transparent opacity={0} depthWrite={false} toneMapped={false} />
-        <pointLight ref={orbLight} color="#ffd176" intensity={0} distance={1.4} decay={2} />
-      </mesh>
-    </group>
-  )
-}
-
-function HostForegroundMatte() {
-  const plateScale = usePlateScale()
-  const [colorMap, depthMap] = useTexture(['/assets/valley-world-clean.png', '/assets/valley-world-depth.png'])
-  colorMap.colorSpace = THREE.SRGBColorSpace
-  depthMap.colorSpace = THREE.NoColorSpace
-
-  return (
-    <mesh position={[0, 0, 0.018]} scale={plateScale} renderOrder={8}>
-      <planeGeometry args={[PLATE_WIDTH, PLATE_HEIGHT, 200, 112]} />
-      <shaderMaterial
-        uniforms={{ colorMap: { value: colorMap }, depthMap: { value: depthMap } }}
-        transparent
-        depthTest={false}
-        depthWrite={false}
-        vertexShader={`
-          uniform sampler2D depthMap;
-          varying vec2 vUv;
-          void main(){
-            vUv=uv;
-            vec3 p=position;
-            p.z += texture2D(depthMap,uv).r*.82-.34;
-            gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
-          }
-        `}
-        fragmentShader={`
-          uniform sampler2D colorMap;
-          varying vec2 vUv;
-          void main(){
-            vec2 d=(vUv-vec2(.628,.372))/vec2(.145,.09);
-            float rim=1.0-smoothstep(.72,1.0,dot(d,d));
-            float lower=1.0-smoothstep(.382,.412,vUv.y);
-            vec4 color=texture2D(colorMap,vUv);
-            gl_FragColor=vec4(color.rgb,color.a*rim*lower);
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }
-        `}
-      />
-    </mesh>
-  )
-}
-
 export function ValleySceneContent(props: ValleySceneProps) {
-  const hostAction: AgentAction = props.activeActorId === 'table-host' ? 'PASS' : 'SILENCE'
   return (
     <>
       <CameraRig phase={props.phase} reducedMotion={props.reducedMotion} />
-      <DepthPlate phase={props.phase} reducedMotion={props.reducedMotion} />
-      <LightShaft reducedMotion={props.reducedMotion} />
-      <HumanMattes activeActorId={props.activeActorId} hoveredActorId={props.hoveredActorId} phase={props.phase} />
-      <TableHost phase={props.phase} action={hostAction} hovered={props.hoveredActorId === 'table-host'} reducedMotion={props.reducedMotion} />
-      {props.phase === 'seated' && <HostForegroundMatte />}
-      <FloatingPetals phase={props.phase} reducedMotion={props.reducedMotion} />
-      <Sparkles count={props.reducedMotion ? 8 : props.phase === 'seated' ? 34 : 18} position={[2.6, -1.15, 1.15]} scale={[4.4, 2.5, 1.5]} size={1.4} speed={props.reducedMotion ? 0 : 0.12} color="#ffe3a4" opacity={props.phase === 'seated' ? 0.34 : 0.12} />
+      <DioramaScene {...props} />
+      <FloatingPetals reducedMotion={props.reducedMotion} />
+      <Sparkles
+        count={props.reducedMotion ? 10 : props.phase === 'seated' ? 40 : 22}
+        position={[3.4, 1.4, 3.4]}
+        scale={[5, 2.4, 4]}
+        size={1.6}
+        speed={props.reducedMotion ? 0 : 0.14}
+        color="#ffe3a4"
+        opacity={props.phase === 'seated' ? 0.4 : 0.16}
+      />
     </>
   )
 }
@@ -559,9 +99,10 @@ export default function ValleyScene(props: ValleySceneProps) {
   return (
     <Canvas
       className="valley-canvas"
-      camera={{ position: [0, 0, 12.22], fov: 42, near: 0.1, far: 40 }}
+      camera={{ position: [8.8, 4.8, 14.6], fov: 42, near: 0.1, far: 90 }}
       dpr={[1, 1.65]}
-      gl={{ antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance' }}
+      shadows
+      gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
     >
       <Suspense fallback={null}><ValleySceneContent {...props} /></Suspense>

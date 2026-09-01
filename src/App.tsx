@@ -11,6 +11,7 @@ import { useLive } from './live/store'
 import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from './live/backend'
 import ClosingCard from './live/ClosingCard'
 import { setAmbient, stopAmbient } from './audio/ambient'
+import { actorAnchors } from './Diorama'
 
 const turns = [...humanActors, tableHost]
 
@@ -67,12 +68,12 @@ interface ValleyCanvasPortalProps extends ValleySceneProps {
 
 function ValleyCanvasPortal({ track, ...sceneProps }: ValleyCanvasPortalProps) {
   return (
-    <ViewportScrollScene
-      track={track}
-      visible
-      hideOffscreen={false}
-      camera={{ position: [0, 0, 12.22], fov: 42, near: .1, far: 40 }}
-    >
+      <ViewportScrollScene
+        track={track}
+        visible
+        hideOffscreen={false}
+        camera={{ position: [8.8, 4.8, 14.6], fov: 42, near: .1, far: 90 }}
+      >
       {() => <Suspense fallback={null}><ValleySceneContent {...sceneProps} /></Suspense>}
     </ViewportScrollScene>
   )
@@ -110,6 +111,25 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   useEffect(() => {
     void startLive()
     return () => stopLive()
+  }, [])
+
+  useEffect(() => {
+    let raf = 0
+    const apply = () => {
+      raf = requestAnimationFrame(apply)
+      const root = experienceRef.current
+      if (!root) return
+      root.querySelectorAll<HTMLElement>('[data-anchor]').forEach((el) => {
+        const id = (el.dataset.anchor || '') as ActorId | 'viewer'
+        const anchor = actorAnchors[id]
+        if (!anchor) return
+        el.style.left = `${anchor.x}%`
+        el.style.top = `${anchor.y}%`
+        el.style.transform = 'translate(-50%, -50%)'
+      })
+    }
+    raf = requestAnimationFrame(apply)
+    return () => cancelAnimationFrame(raf)
   }, [])
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
@@ -251,7 +271,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
         <button className="approach-button" type="button" onClick={approachTable}><span>靠近这桌</span><span aria-hidden="true">↗</span></button>
       </section>
 
-      <button className="seat-hotspot" type="button" aria-label="靠近湖边的空席" onClick={approachTable} disabled={phase !== 'discovering'}>
+      <button className="seat-hotspot" type="button" data-anchor="viewer" aria-label="靠近湖边的空席" onClick={approachTable} disabled={phase !== 'discovering'}>
         <span className="seat-pulse" /><span className="seat-label"><b>第五席</b>等一个真正停下来过的人</span>
       </button>
 
@@ -269,6 +289,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
               key={actor.id}
               className={`actor-hotspot ${actor.hotspotClass}`}
               type="button"
+              data-anchor={actor.id}
               data-active={currentTurn.id === actor.id}
               aria-label={`查看${actor.displayName}，${actor.role}`}
               onMouseEnter={() => setHoveredActorId(actor.id)}
@@ -283,6 +304,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           <button
             className="actor-hotspot actor-host"
             type="button"
+            data-anchor="table-host"
             data-active={currentTurn.id === tableHost.id}
             aria-label="查看圆桌主持"
             onMouseEnter={() => setHoveredActorId(tableHost.id)}
@@ -298,7 +320,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
           <small>{liveActive && liveSubQuestion ? '问题 · 推进中' : '此刻的问题'}</small>
           <p>{liveActive && liveSubQuestion ? liveSubQuestion : <>我们需要的是休息，<br />还是允许自己停下？</>}</p>
         </div>
-        <button className="seat-marker" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{joined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
+        <button className="seat-marker" type="button" data-anchor="viewer" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{joined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
         <div className="conversation-dock">
           {liveActive && lastLive ? (
