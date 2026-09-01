@@ -968,7 +968,7 @@ master
 | D105 action echoes projection | complete | Add self-scoped bounded action outcome history derived from closed follow-up ledgers | 374 tests + compileall + diff check | `8554116` |
 | D106 evaluation funnel and attention metrics | complete | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | 375 tests + compileall + diff check | `c6a93d4` |
 | D107 production replay identity gate | complete | Require authenticated current-table membership for raw replay reads when an identity resolver is configured | 376 tests + compileall + diff check | `0797f56` |
-| D108 question footprint next-table links | in_progress | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | pending |
+| D108 question footprint next-table links | complete | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | 377 tests + compileall + diff check | `1703bfa` + `9e39151` |
 
 ## 已知坑位（Running Gotchas）
 
