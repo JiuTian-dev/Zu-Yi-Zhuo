@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, InvitationPreference, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSeed, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableState, ValueFeedback
 from app.matching import build_match_plan, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
@@ -206,6 +206,34 @@ class InvitationResponse(BaseModel):
 
     invitation: InvitationView
     state: TableState | None = None
+
+
+class InvitationInboxItem(BaseModel):
+    """Candidate-only invitation summary with public table context."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    invitation: InvitationView
+    table: LobbyPreview
+    can_respond: bool
+    unavailable_reason: Literal[
+        "invitation_processed",
+        "table_closed",
+        "table_soft_expired",
+        "table_full",
+        "candidate_already_joined",
+        "matching_disabled",
+    ] | None = None
+
+
+class InvitationInboxResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    participant_id: str = Field(min_length=1)
+    items: list[InvitationInboxItem] = Field(default_factory=list, max_length=100)
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
 
 
 class SyncUpgradeResponse(BaseModel):
@@ -1806,6 +1834,32 @@ def create_app(
             status=invitation.status,
         )
 
+    def invitation_inbox_item(invitation: Invitation) -> InvitationInboxItem:
+        """Combine a private candidate-owned invite with a public Lobby card."""
+        state = repo.get(invitation.table_id)
+        reason = None
+        if invitation.status is not InvitationStatus.PENDING:
+            reason = "invitation_processed"
+        elif state.conversation.closed:
+            reason = "table_closed"
+        elif state.conversation.soft_expired:
+            reason = "table_soft_expired"
+        elif invitation.candidate.participant_id in state.participants:
+            reason = "candidate_already_joined"
+        elif len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            reason = "table_full"
+        elif any(
+            repo.is_no_match(member_id, invitation.candidate.participant_id)
+            for member_id in state.participants
+        ):
+            reason = "matching_disabled"
+        return InvitationInboxItem(
+            invitation=invitation_view(invitation),
+            table=build_lobby_preview(state),
+            can_respond=reason is None,
+            unavailable_reason=reason,
+        )
+
     def join_request_view(join_request: JoinRequest) -> JoinRequestView:
         """Project a request without exposing the candidate's private profile."""
         candidate = join_request.candidate
@@ -2033,6 +2087,35 @@ def create_app(
             for invitation in repo.invitations(table_id)
             if invitation.candidate.participant_id == participant_id
         ]
+
+    @api.get(
+        "/participants/{participant_id}/invitations",
+        response_model=InvitationInboxResponse,
+    )
+    def get_participant_invitation_inbox(
+        participant_id: str,
+        request: Request,
+        viewer_id: str = Query(..., min_length=1),
+        invitation_status: InvitationStatus | None = Query(default=None, alias="status"),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=30, ge=1, le=100),
+    ) -> InvitationInboxResponse:
+        """List only the authenticated candidate's invitations across all tables."""
+        require_request_identity(identity_resolver, request, viewer_id)
+        if viewer_id != participant_id:
+            raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        refresh_sync_windows()
+        try:
+            rows = repo.participant_invitations(participant_id, invitation_status)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return InvitationInboxResponse(
+            participant_id=participant_id,
+            items=[invitation_inbox_item(item) for item in rows[offset:offset + limit]],
+            total=len(rows),
+            offset=offset,
+            limit=limit,
+        )
 
     @api.post(
         "/tables/{table_id}/invitations/{invitation_id}/respond",

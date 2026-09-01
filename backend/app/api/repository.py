@@ -702,6 +702,34 @@ class InMemoryTableRepository:
         return [item.model_copy(deep=True) for item in self._invitations[table_id]]
 
     @_synchronized
+    def participant_invitations(
+        self,
+        participant_id: str,
+        status: InvitationStatus | None = None,
+    ) -> list[Invitation]:
+        """Return one candidate's invitations across tables in stable inbox order."""
+        if not participant_id.strip():
+            raise ValueError("participant_id must be non-empty")
+        status_order = {
+            InvitationStatus.PENDING: 0,
+            InvitationStatus.ACCEPTED: 1,
+            InvitationStatus.DECLINED: 2,
+        }
+        rows = [
+            invitation
+            for invitations in self._invitations.values()
+            for invitation in invitations
+            if invitation.candidate.participant_id == participant_id
+            and (status is None or invitation.status is status)
+        ]
+        rows.sort(key=lambda item: (
+            status_order[item.status],
+            item.table_id,
+            item.invitation_id,
+        ))
+        return [item.model_copy(deep=True) for item in rows]
+
+    @_synchronized
     def record_follow_up_outcome(self, outcome: FollowUpOutcome) -> FollowUpOutcome:
         """Upsert one participant-reported result after a table closes."""
         state = self.get(outcome.table_id)
