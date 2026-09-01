@@ -618,12 +618,20 @@
 - **替代方案**: 让前端调用每个桌的 lineage 再自行匹配、返回完整 `TableState`、或为问题演化建立可写图账本；这些方案分别容易产生竞态/重复逻辑、泄露成员和过程数据、或引入第二事实源与复杂删除边界。
 - **代价**: 只覆盖当前桌的直接子桌，最多 3 条且无分页；多父问题图、跨代聚合和提醒仍需后续独立契约。下一桌的公开问题和生命周期不代表该成员已被邀请或已经入席。
 
+### ADR-86: 运行能力通过无秘密投影发现
+
+- **决策**: 增加只读 `GET /capabilities`，返回当前仓储类型、对话 provider 是否为确定性演示、候选/公开内容/个人上下文 source 是否已配置、WebSocket 是否可用和真人席位上限。响应不返回 source 命令、模型名称、token、身份解析器或审核器配置，也不写入行为事件或桌状态。
+- **理由**: 前端联调和比赛部署需要先知道“哪些入口能用”，否则只能逐个请求并把预期的 503（未配置 source）误判成服务故障。一个稳定、无秘密的能力投影能让 UI 选择正确的发现/主动需求路径，也能让启动自检与文档保持一致。
+- **替代方案**: 让前端硬编码环境差异、把 `/readyz` 扩成包含敏感运行细节、或通过触发真实 source 请求探测；这些方案分别容易漂移、扩大配置泄露面、或产生不必要的外部调用与限流消耗。
+- **代价**: 能力开关只表示适配器已注入，不代表上游凭据有效或每次调用成功；source 的实时健康仍由对应请求的 502/503 语义表达。新增响应是公开元数据，不替代认证和权限检查。
+
 ## 接口契约
 
 ### REST / WebSocket
 
 ```text
 POST /tables
+GET  /capabilities
 POST /matches/preview
 POST /matches/source-preview
 POST /matches/confirm
@@ -751,6 +759,11 @@ ActiveIntentPreview(normalized_question, route=clarify|join_existing|new_table,
                     clarifying_question?, candidates<=5)
 ActiveIntentTableCandidate(table_id, core_question, current_subquestion?,
                            mode, participant_count, available_seats, reason)
+CapabilitiesResponse(repository, conversation_provider,
+                     candidate_source_configured,
+                     content_source_configured,
+                     personal_context_source_configured,
+                     websocket_available, max_table_participants)
 SafetyReportStatusAudit(event_id, table_id, report_id, moderator_id,
                         from_status, to_status, reason?)
 ```
@@ -969,6 +982,7 @@ master
 | D106 evaluation funnel and attention metrics | complete | Add invitation acceptance and peripheral-attention aggregates to the member-scoped TableEvaluation projection | 375 tests + compileall + diff check | `c6a93d4` |
 | D107 production replay identity gate | complete | Require authenticated current-table membership for raw replay reads when an identity resolver is configured | 376 tests + compileall + diff check | `0797f56` |
 | D108 question footprint next-table links | complete | Add bounded public direct-child links so a member can follow how a closed-table question grows into later tables without leaking membership or messages | 377 tests + compileall + diff check | `1703bfa` + `9e39151` |
+| D109 capabilities introspection | in_progress | Expose a no-secret runtime capability projection so the frontend can choose configured source and provider paths without probing business endpoints | pending |
 
 ## 已知坑位（Running Gotchas）
 
