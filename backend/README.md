@@ -77,7 +77,7 @@ python -m app.cli.grounding_demo
 - `POST /tables/{table_id}/follow-ups/{index}/outcome?participant_id=...`：回报行动结果；承诺只能由 owner 回报，结果会写入 JSON 快照，并原子沉淀一条本人可见的 `follow_up_outcome` 行为事件（只记录状态摘要）。
 - `POST /tables/{table_id}/feedback?participant_id=...`：收桌后提交或更新认知、关系、行动、情绪四类 1–5 分价值反馈。
 - `GET /tables/{table_id}/feedback?participant_id=...`：桌内成员查看匿名价值聚合；不返回他人的评分明细或备注。
-- `GET /tables/{table_id}/evaluation?participant_id=...`：桌内成员查看当前单桌的隐私安全评估指标（真人轮次、主持介入/反思、邀请接受率、外围评论/促成、行动回响和匿名价值反馈完成度）；只读派生，不返回个人评分、备注或行为事件明细。
+- `GET /tables/{table_id}/evaluation?participant_id=...`：桌内成员查看当前单桌的隐私安全评估指标（真人轮次、主持介入/反思、每真人轮次介入率、有效介入率、按 opening/explore/tension/deepen/close 的介入分布、邀请接受率、外围评论/促成、行动回响和匿名价值反馈完成度）；只读派生，不返回个人评分、备注或行为事件明细。有效介入结果由服务端在反思账本中保留布尔标记，旧记录没有标记时仍可回放但不会冒充有效。
 - `POST /tables/{table_id}/comments?author_id=...` / `GET /tables/{table_id}/comments`：外围评论独立账本；评论不占席位、不进入核心 turn。
 - `POST /tables/{table_id}/comments/{comment_id}/promote?participant_id=...`：核心成员显式促成一条评论；服务端重新做安全检查，成功后以促成人身份写入主桌 turn，并保留 `source_comment_id` 和可回放的 `CommentPromotion`。
 - `POST /participants/{participant_id}/no-match/{blocked_participant_id}?viewer_id=...`、`DELETE ...`、`GET /participants/{participant_id}/no-match?viewer_id=...`：本人管理“不再匹配”偏好；关系双向约束邀请和动态候选预览。
