@@ -843,7 +843,7 @@ Server events: `message_committed`, `agent_action`, `table_state_changed`, `grou
 消息幂等：`human_message.message_id` 在单桌内唯一；重复同内容提交返回 `duplicate_message`，不产生新 turn/state/action/audit。
 资料边界：状态投影默认隐藏其他参与者的 `declared_position` 和 `unused_relevant_experience`；只有本人显式同意后才公开。
 邀请边界：邀请预览只返回候选人的公开姓名/角色/理由/状态；只有候选人自己能响应邀请，接受后才写入 `TableState.participants`。
-模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步。
+模式边界：新桌默认异步；升级预览返回两项硬条件和三类加分信号，只有桌内成员提交两项硬条件为真且至少两位成员已有持续参与证据时才可切换同步；升级写入 `sync_expires_at`，到期后服务端惰性生成新的异步快照并广播 `sync_window_expired`，不依赖客户端倒计时。
 邀请偏好：候选人 `roundtable_invite_preference=none` 时不会被匹配或收到邀请；未提供时按 `few` 处理。
 席位偏好更新：REST 与参与者 WebSocket 只允许本人修改当前桌席位的 `many/few/none`；真实变更递增状态版本并广播投影状态，重复值幂等，关闭/软过期桌拒绝写入，不会移除现有席位或撤回已发邀请。
 发现边界：桌列表默认只返回未关闭桌，并按 viewer 投影状态；未提供 viewer 或未同意时，个人立场和经历保持隐藏。
@@ -1179,6 +1179,7 @@ master
 | D124 invitation journey demo | complete | Extend the isolated black-box journey through dynamic fifth-seat preview, ticket-backed invitation, candidate acceptance, then continue the real Lobby/WS/close/post-close path without leaking the private seed | 413 tests + compileall + diff check | `2231bf9` |
 | D125 content source grounding handoff | complete | Add member-scoped `POST /tables/{id}/grounding` to validate one public content signal into a trusted card; the next real `GROUND` action consumes and broadcasts it without accepting client-supplied evidence | 416 tests + compileall + diff check | `8c66c51` |
 | D126 grounded card replay ledger | complete | Persist the consumed public `GroundingCard` inside the matching `InterventionRecord`, so REST/WS replay and JSON restart recover the exact source used by GROUND while legacy records remain compatible | 416 tests + compileall + diff check | `735b398` |
+| D127 timed sync window | complete | Add a server-owned 30-minute `sync_expires_at`, lazily migrate expired sync tables back to async across REST/list/WebSocket access, broadcast the transition, and persist/recover the deadline in JSON snapshots | 423 tests + compileall + diff check | `6bb5aae` |
 
 ## 已知坑位（Running Gotchas）
 

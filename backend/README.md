@@ -57,7 +57,7 @@ python -m app.cli.journey_demo
 - `POST /tables/{table_id}/join-requests?participant_id=...`：候选人向已有桌表达加入意愿；请求会保留私有候选种子，但响应只返回展示名、角色和申请状态，不会直接新增席位。
 - `GET /tables/{table_id}/join-requests?participant_id=...`：桌内成员查看脱敏申请队列，候选人只能查看自己的申请；`POST .../{request_id}/approve?participant_id=...` 由成员审核并生成现有邀请，候选人仍需通过邀请响应接口接受；`POST .../{request_id}/decline?participant_id=...` 拒绝申请。
 - `PUT /tables/{table_id}/participants/{participant_id}/invitation-preference?viewer_id=...`：本人更新当前桌席位的圆桌邀请偏好（`many`、`few`、`none`）；重复提交幂等，关闭/软过期桌拒绝写入。
-- `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级。
+- `POST /tables/{table_id}/sync/preview?participant_id=...` → `POST /tables/{table_id}/sync/upgrade?participant_id=...`：预览并执行从异步到同步的升级；成功状态带服务端 `sync_expires_at` 截止时间（默认 30 分钟），到期后首次 REST/列表/WS 访问会原子退回异步并广播 `table_mode_changed(reason=sync_window_expired)`。
 - `POST /tables/{table_id}/soft-expire?participant_id=...`：主题或组合价值下降时软过期桌；桌从默认发现中隐藏，但历史和收桌路径保留。
 - `POST /tables/{table_id}/participants/{participant_id}/leave?viewer_id=...`：参与者本人离桌；保留历史快照并立即停止该席位的后续写入。
 - `POST /tables/{table_id}/candidate-preview?participant_id=...` → `POST /tables/{table_id}/invitations/from-preview?inviter_id=...`：桌内成员按当前问题请求候选 source，返回角色缺口和带公开 `evidence_signal_ids` 的候选推荐；每条推荐附短期不透明 `preview_token`，服务端用票据复用已授权候选创建 pending invitation，不把私有立场/经历交给浏览器。预览本身不修改桌状态、不创建邀请、不自动入席。
@@ -117,6 +117,7 @@ WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相�
 
 桌默认异步。同步升级请求需要 `wants_continue=true`、`sync_extra_value=true`，且至少两位成员已经有
 高参与度证据；`discussion_quality`、`external_attention`、`public_value` 只会作为可解释加分信号。
+同步围炉默认限时 30 分钟，可用 `SYNC_WINDOW_SECONDS` 或 `create_app(..., sync_window_seconds=...)` 调整；截止后服务端写入一个新的异步快照，不依赖前端倒计时或后台 scheduler。
 真人桌最多 5 个席位，圆桌 Agent 作为独立的第六个公开角色不计入上限；少于 4 人的桌可以先建立并通过追加参与者或接受邀请逐步补齐，满桌后新入席会返回 409。
 
 软过期是可回放的幂等状态迁移：请求需要桌内成员身份和非空原因，状态会记录 `soft_expiry_reason`。
