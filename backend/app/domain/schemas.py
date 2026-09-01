@@ -193,6 +193,38 @@ class OpportunityPreview(ContractModel):
     confidence: Confidence
 
 
+class JoinRequest(ContractModel):
+    """A candidate's request to be considered for an existing table."""
+
+    request_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    candidate: ParticipantSeed
+    message: str | None = Field(default=None, min_length=1, max_length=240)
+    status: Literal["pending", "invited", "declined"] = "pending"
+    invitation_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def invitation_state_is_consistent(self) -> "JoinRequest":
+        if self.status == "invited" and self.invitation_id is None:
+            raise ValueError("invited join requests require invitation_id")
+        if self.status != "invited" and self.invitation_id is not None:
+            raise ValueError("only invited join requests may reference an invitation")
+        return self
+
+
+class JoinRequestView(ContractModel):
+    """Redacted join-request projection safe for candidates and table members."""
+
+    request_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    participant_id: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    message: str | None = Field(default=None, min_length=1, max_length=240)
+    status: Literal["pending", "invited", "declined"]
+    invitation_id: str | None = Field(default=None, min_length=1)
+
+
 class Invitation(ContractModel):
     """Private persisted invitation; public APIs must project it to InvitationView."""
 

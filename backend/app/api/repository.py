@@ -9,7 +9,7 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ActionEchoEntry, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, QuestionFootprintNextTable, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, ActionEchoEntry, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, JoinRequest, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, QuestionFootprintNextTable, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, build_shared_baseline, observe_turn
 
@@ -19,6 +19,7 @@ MAX_TABLE_LINEAGE_DEPTH = 10
 MAX_QUESTION_FOOTPRINT_ITEMS = 50
 MAX_QUESTION_FOOTPRINT_NEXT_TABLES = 3
 MAX_ACTION_ECHO_ITEMS = 50
+MAX_JOIN_REQUESTS_PER_TABLE = 50
 
 
 def _index_public_source_signals(
@@ -132,6 +133,7 @@ class InMemoryTableRepository:
         self._interventions: dict[str, list[InterventionRecord]] = {}
         self._trusted_grounding_cards: dict[str, GroundingCard] = {}
         self._invitations: dict[str, list[Invitation]] = {}
+        self._join_requests: dict[str, list[JoinRequest]] = {}
         self._follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         self._value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         self._comments: dict[str, list[PeripheralComment]] = {}
@@ -175,6 +177,7 @@ class InMemoryTableRepository:
         self._turns[table_id] = []
         self._interventions[table_id] = []
         self._invitations[table_id] = []
+        self._join_requests[table_id] = []
         self._follow_up_outcomes[table_id] = {}
         self._value_feedback[table_id] = {}
         self._comments[table_id] = []
@@ -261,6 +264,145 @@ class InMemoryTableRepository:
         )
         self._invitations[table_id].append(invitation)
         return invitation.model_copy(deep=True)
+
+    @_synchronized
+    def create_join_request(self, request: JoinRequest) -> tuple[JoinRequest, bool]:
+        """Persist one candidate request without granting a seat."""
+        state = self.get(request.table_id)
+        if request.status != "pending" or request.invitation_id is not None:
+            raise ValueError("new join requests must be pending")
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if request.candidate.participant_id in state.participants:
+            raise ValueError("candidate is already a table participant")
+        if request.candidate.roundtable_invite_preference is InvitationPreference.NONE:
+            raise ValueError("candidate has disabled roundtable invitations")
+        if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
+        if any(
+            self.is_no_match(member_id, request.candidate.participant_id)
+            for member_id in state.participants
+        ):
+            raise ValueError("participant has disabled matching with this table")
+        existing = next(
+            (
+                item for item in self._join_requests[request.table_id]
+                if item.request_id == request.request_id
+            ),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != request.model_dump(mode="json"):
+                raise ValueError("request_id already belongs to a different join request")
+            return existing.model_copy(deep=True), False
+        if any(
+            item.candidate.participant_id == request.candidate.participant_id
+            for item in self._join_requests[request.table_id]
+        ):
+            raise ValueError("candidate already has a join request for this table")
+        if len(self._join_requests[request.table_id]) >= MAX_JOIN_REQUESTS_PER_TABLE:
+            raise ValueError(
+                f"table cannot retain more than {MAX_JOIN_REQUESTS_PER_TABLE} join requests"
+            )
+        self._join_requests[request.table_id].append(request.model_copy(deep=True))
+        return request.model_copy(deep=True), True
+
+    @_synchronized
+    def join_requests(self, table_id: str) -> list[JoinRequest]:
+        """Return isolated join requests for application-level privacy projection."""
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._join_requests[table_id]]
+
+    @_synchronized
+    def approve_join_request(
+        self, table_id: str, request_id: str, inviter_id: str, reason: str
+    ) -> tuple[JoinRequest, Invitation]:
+        """Approve a request by creating an invitation, never a direct seat."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if inviter_id not in state.participants:
+            raise ValueError("inviter must be a table participant")
+        if not reason.strip():
+            raise ValueError("invitation reason must be non-empty")
+        request = next(
+            (item for item in self._join_requests[table_id] if item.request_id == request_id),
+            None,
+        )
+        if request is None:
+            raise KeyError(f"unknown join request: {request_id}")
+        if request.status == "invited":
+            invitation = next(
+                (
+                    item for item in self._invitations[table_id]
+                    if item.invitation_id == request.invitation_id
+                ),
+                None,
+            )
+            if invitation is None:
+                raise ValueError("join request invitation is missing")
+            return request.model_copy(deep=True), invitation.model_copy(deep=True)
+        if request.status == "declined":
+            raise ValueError("join request has already been declined")
+        candidate = request.candidate
+        if candidate.participant_id in state.participants:
+            raise ValueError("candidate is already a table participant")
+        if candidate.roundtable_invite_preference is InvitationPreference.NONE:
+            raise ValueError("candidate has disabled roundtable invitations")
+        if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
+            raise ValueError(f"table cannot exceed {MAX_TABLE_PARTICIPANTS} participants")
+        if self.is_no_match(inviter_id, candidate.participant_id):
+            raise ValueError("participant has disabled matching with this candidate")
+        if any(
+            item.candidate.participant_id == candidate.participant_id
+            for item in self._invitations[table_id]
+        ):
+            raise ValueError("candidate already has an invitation for this table")
+        invitation = Invitation(
+            invitation_id=f"{table_id}:invite:{len(self._invitations[table_id]) + 1}",
+            table_id=table_id,
+            inviter_id=inviter_id,
+            candidate=candidate,
+            reason=reason.strip(),
+        )
+        updated_request = request.model_copy(update={
+            "status": "invited",
+            "invitation_id": invitation.invitation_id,
+        })
+        index = self._join_requests[table_id].index(request)
+        self._join_requests[table_id][index] = updated_request
+        self._invitations[table_id].append(invitation)
+        return updated_request.model_copy(deep=True), invitation.model_copy(deep=True)
+
+    @_synchronized
+    def decline_join_request(
+        self, table_id: str, request_id: str, member_id: str
+    ) -> JoinRequest:
+        """Decline a pending request; repeated decline remains idempotent."""
+        state = self.get(table_id)
+        if state.conversation.closed:
+            raise ValueError("table is closed")
+        if state.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if member_id not in state.participants:
+            raise ValueError("member must be a table participant")
+        request = next(
+            (item for item in self._join_requests[table_id] if item.request_id == request_id),
+            None,
+        )
+        if request is None:
+            raise KeyError(f"unknown join request: {request_id}")
+        if request.status == "invited":
+            raise ValueError("invited join requests cannot be declined")
+        if request.status == "declined":
+            return request.model_copy(deep=True)
+        updated = request.model_copy(update={"status": "declined"})
+        self._join_requests[table_id][self._join_requests[table_id].index(request)] = updated
+        return updated.model_copy(deep=True)
 
     @_synchronized
     def set_no_match(self, participant_id: str, blocked_participant_id: str) -> NoMatchPreference:
@@ -1233,6 +1375,7 @@ class JsonTableRepository(InMemoryTableRepository):
                 self._trusted_grounding_cards,
                 self._interventions,
                 self._invitations,
+                self._join_requests,
                 self._follow_up_outcomes,
                 self._value_feedback,
                 self._comments,
@@ -1277,6 +1420,7 @@ class JsonTableRepository(InMemoryTableRepository):
         turns = {**self._turns, table_id: []}
         interventions = {**self._interventions, table_id: []}
         invitations = {**self._invitations, table_id: []}
+        join_requests = {**self._join_requests, table_id: []}
         outcomes = {**self._follow_up_outcomes, table_id: {}}
         feedback = {**self._value_feedback, table_id: {}}
         comments = {**self._comments, table_id: []}
@@ -1295,8 +1439,34 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_report_audits=report_audits,
             safety_resolutions=resolutions,
             public_source_signals=public_source_signals,
+            join_requests=join_requests,
         )
         return state.model_copy(deep=True)
+
+    @_synchronized
+    def create_join_request(self, request: JoinRequest) -> tuple[JoinRequest, bool]:
+        saved, created = super().create_join_request(request)
+        if created:
+            self._commit(self._states, self._turns, join_requests=self._join_requests)
+        return saved, created
+
+    @_synchronized
+    def approve_join_request(
+        self, table_id: str, request_id: str, inviter_id: str, reason: str
+    ) -> tuple[JoinRequest, Invitation]:
+        saved, invitation = super().approve_join_request(
+            table_id, request_id, inviter_id, reason
+        )
+        self._commit(self._states, self._turns, join_requests=self._join_requests)
+        return saved, invitation
+
+    @_synchronized
+    def decline_join_request(
+        self, table_id: str, request_id: str, member_id: str
+    ) -> JoinRequest:
+        saved = super().decline_join_request(table_id, request_id, member_id)
+        self._commit(self._states, self._turns, join_requests=self._join_requests)
+        return saved
 
     @_synchronized
     def record_safety_report(self, report: SafetyReport) -> tuple[SafetyReport, bool]:
@@ -2130,6 +2300,7 @@ class JsonTableRepository(InMemoryTableRepository):
         safety_resolutions: dict[str, list[SafetyResolution]] | None = None,
         safety_report_audits: dict[str, list[SafetyReportStatusAudit]] | None = None,
         public_source_signals: dict[str, dict[str, ContentSignal]] | None = None,
+        join_requests: dict[str, list[JoinRequest]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -2169,6 +2340,11 @@ class JsonTableRepository(InMemoryTableRepository):
             if public_source_signals is not None
             else self._public_source_signals
         )
+        join_request_rows = (
+            join_requests
+            if join_requests is not None
+            else self._join_requests
+        )
         payload = {
             "tables": {
                 table_id: {
@@ -2176,6 +2352,10 @@ class JsonTableRepository(InMemoryTableRepository):
                     "turns": [turn.model_dump(mode="json") for turn in turns[table_id]],
                     "interventions": [item.model_dump(mode="json") for item in audit[table_id]],
                     "invitations": [item.model_dump(mode="json") for item in invite_rows[table_id]],
+                    "join_requests": [
+                        item.model_dump(mode="json")
+                        for item in join_request_rows[table_id]
+                    ],
                     "follow_up_outcomes": {
                         str(index): item.model_dump(mode="json")
                         for index, item in outcome_rows[table_id].items()
@@ -2243,6 +2423,10 @@ class JsonTableRepository(InMemoryTableRepository):
             if temp_name is not None:
                 Path(temp_name).unlink(missing_ok=True)
         self._states, self._turns, self._interventions, self._invitations = states, turns, audit, invite_rows
+        self._join_requests = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in join_request_rows.items()
+        }
         self._follow_up_outcomes = {
             table_id: {
                 index: item.model_copy(deep=True) for index, item in rows.items()
@@ -2305,6 +2489,7 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, GroundingCard],
         dict[str, list[InterventionRecord]],
         dict[str, list[Invitation]],
+        dict[str, list[JoinRequest]],
         dict[str, dict[int, FollowUpOutcome]],
         dict[str, dict[str, ValueFeedback]],
         dict[str, list[PeripheralComment]],
@@ -2333,6 +2518,7 @@ class JsonTableRepository(InMemoryTableRepository):
         turns: dict[str, list[HumanTurn]] = {}
         interventions: dict[str, list[InterventionRecord]] = {}
         invitations: dict[str, list[Invitation]] = {}
+        join_requests: dict[str, list[JoinRequest]] = {}
         follow_up_outcomes: dict[str, dict[int, FollowUpOutcome]] = {}
         value_feedback: dict[str, dict[str, ValueFeedback]] = {}
         comments: dict[str, list[PeripheralComment]] = {}
@@ -2346,7 +2532,7 @@ class JsonTableRepository(InMemoryTableRepository):
                     or not {"states", "turns"}.issubset(table_keys)
                     or not table_keys.issubset(
                         {
-                            "states", "turns", "interventions", "invitations",
+                            "states", "turns", "interventions", "invitations", "join_requests",
                             "follow_up_outcomes", "value_feedback", "comments",
                             "comment_promotions", "safety_reports",
                             "safety_report_audits", "safety_resolutions",
@@ -2358,6 +2544,10 @@ class JsonTableRepository(InMemoryTableRepository):
                 messages = [HumanTurn.model_validate(item) for item in table["turns"]]
                 audit = [InterventionRecord.model_validate(item) for item in table.get("interventions", [])]
                 invites = [Invitation.model_validate(item) for item in table.get("invitations", [])]
+                raw_join_requests = table.get("join_requests", [])
+                if not isinstance(raw_join_requests, list):
+                    raise ValueError("join_requests must be an array")
+                requests = [JoinRequest.model_validate(item) for item in raw_join_requests]
                 raw_outcomes = table.get("follow_up_outcomes", {})
                 if not isinstance(raw_outcomes, dict):
                     raise ValueError("follow_up_outcomes must be an object")
@@ -2411,6 +2601,28 @@ class JsonTableRepository(InMemoryTableRepository):
             candidate_ids = [invitation.candidate.participant_id for invitation in invites]
             if len(set(candidate_ids)) != len(candidate_ids):
                 raise ValueError(f"invalid persistence file: duplicate invitation candidates for table {table_id!r}")
+            if any(item.table_id != table_id for item in requests):
+                raise ValueError(f"invalid persistence file: incompatible join requests for table {table_id!r}")
+            request_ids = [item.request_id for item in requests]
+            request_candidates = [item.candidate.participant_id for item in requests]
+            if (
+                len(request_ids) != len(set(request_ids))
+                or len(requests) > MAX_JOIN_REQUESTS_PER_TABLE
+                or len(request_candidates) != len(set(request_candidates))
+            ):
+                raise ValueError(f"invalid persistence file: duplicate or excessive join requests for table {table_id!r}")
+            invitation_ids = {item.invitation_id for item in invites}
+            if any(
+                item.status == "invited"
+                and (item.invitation_id not in invitation_ids
+                     or not any(
+                         invitation.invitation_id == item.invitation_id
+                         and invitation.candidate.participant_id == item.candidate.participant_id
+                         for invitation in invites
+                     ))
+                for item in requests
+            ):
+                raise ValueError(f"invalid persistence file: broken join request invitation for table {table_id!r}")
             if any(index < 0 or outcome.follow_up_index != index or outcome.table_id != table_id
                    for index, outcome in outcomes.items()):
                 raise ValueError(f"invalid persistence file: incompatible follow-up outcomes for table {table_id!r}")
@@ -2519,6 +2731,7 @@ class JsonTableRepository(InMemoryTableRepository):
             turns[table_id] = messages
             interventions[table_id] = audit
             invitations[table_id] = invites
+            join_requests[table_id] = requests
             follow_up_outcomes[table_id] = outcomes
             value_feedback[table_id] = {
                 item.participant_id: item for item in feedback
@@ -2636,6 +2849,7 @@ class JsonTableRepository(InMemoryTableRepository):
             cards,
             interventions,
             invitations,
+            join_requests,
             follow_up_outcomes,
             value_feedback,
             comments,
