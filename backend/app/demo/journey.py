@@ -13,7 +13,7 @@ JOURNEY_TABLE_ID = "journey-demo"
 JOURNEY_CORE_QUESTION = "AI Agent 真正进入企业，卡住的是技术还是采购？"
 JOURNEY_ACTOR_ID = "public-architect"
 JOURNEY_MESSAGE_ID = "journey-demo-message-1"
-JOURNEY_TEXT = "我亲历过企业采购，试点预算和责任归属仍是上线瓶颈。"
+JOURNEY_TEXT = "我亲历过企业采购；我会先和采购团队验证责任归属，再决定是否扩大试点。"
 
 
 def _expect(response: Any, status_code: int, label: str) -> dict[str, Any]:
@@ -99,12 +99,59 @@ def run_journey_demo() -> dict[str, Any]:
         close_artifact = _receive_until(websocket, "close_artifact_ready")
         closed_state = _receive_until(websocket, "table_state_changed")
 
+    follow_ups = _expect(
+        client.get(
+            f"/tables/{JOURNEY_TABLE_ID}/follow-ups?participant_id={JOURNEY_ACTOR_ID}"
+        ),
+        200,
+        "load follow-ups",
+    )
+    if not follow_ups:
+        raise RuntimeError("journey message did not produce a follow-up item")
+    follow_up = follow_ups[0]
+    outcome = _expect(
+        client.post(
+            f"/tables/{JOURNEY_TABLE_ID}/follow-ups/{follow_up['follow_up_index']}/outcome?participant_id={JOURNEY_ACTOR_ID}",
+            json={"status": "completed", "note": "已完成第一轮采购责任链验证"},
+        ),
+        200,
+        "record follow-up outcome",
+    )
+    feedback = _expect(
+        client.post(
+            f"/tables/{JOURNEY_TABLE_ID}/feedback?participant_id={JOURNEY_ACTOR_ID}",
+            json={
+                "cognitive_value": 5,
+                "relationship_value": 4,
+                "action_value": 5,
+                "emotional_value": 4,
+                "note": "带走了一个可以验证的下一步",
+                "would_join_again": True,
+            },
+        ),
+        200,
+        "submit value feedback",
+    )
     evaluation = _expect(
         client.get(
             f"/tables/{JOURNEY_TABLE_ID}/evaluation?participant_id={JOURNEY_ACTOR_ID}"
         ),
         200,
         "load evaluation",
+    )
+    action_echoes = _expect(
+        client.get(
+            f"/participants/{JOURNEY_ACTOR_ID}/action-echoes?viewer_id={JOURNEY_ACTOR_ID}"
+        ),
+        200,
+        "load action echoes",
+    )
+    behavior_events = _expect(
+        client.get(
+            f"/participants/{JOURNEY_ACTOR_ID}/behavior-events?viewer_id={JOURNEY_ACTOR_ID}"
+        ),
+        200,
+        "load behavior events",
     )
     replay = _expect(
         client.get(
@@ -167,6 +214,13 @@ def run_journey_demo() -> dict[str, Any]:
             "state_version": close_artifact["state_version"],
             "shared_baseline": close_artifact["shared_baseline"],
             "personal_card": close_artifact["personal_card"],
+        },
+        "post_close": {
+            "follow_up": follow_up,
+            "outcome": outcome,
+            "feedback": feedback,
+            "action_echoes": action_echoes,
+            "behavior_event_types": [item["event_type"] for item in behavior_events],
         },
         "evaluation": evaluation,
         "replay_summary": {

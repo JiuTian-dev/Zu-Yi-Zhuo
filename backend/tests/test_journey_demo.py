@@ -18,6 +18,18 @@ def test_journey_demo_report_covers_real_api_boundaries() -> None:
     assert report["close_artifacts"]["personal_card"]["participant_id"] == "public-architect"
     assert report["evaluation"]["human_turn_count"] == 1
     assert report["evaluation"]["intervention_count"] == 1
+    assert report["evaluation"]["follow_up_count"] == 1
+    assert report["evaluation"]["follow_up_completed_count"] == 1
+    assert report["evaluation"]["feedback_completion_rate"] == 0.25
+    assert report["evaluation"]["would_join_again_rate"] == 1.0
+    assert report["post_close"]["outcome"]["outcome"]["status"] == "completed"
+    assert report["post_close"]["action_echoes"][0]["status"] == "completed"
+    assert report["post_close"]["behavior_event_types"] == [
+        "human_message",
+        "table_closed",
+        "follow_up_outcome",
+        "value_feedback_submitted",
+    ]
     assert report["replay_summary"] == {
         "message_count": 1,
         "snapshot_count": 4,
