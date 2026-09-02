@@ -1,17 +1,20 @@
-import { GlobalCanvas, UseCanvas, ViewportScrollScene } from '@14islands/r3f-scroll-rig'
-import { Suspense, useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
-import * as THREE from 'three'
-import { ValleySceneContent, type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
+import { GlobalCanvas } from '@14islands/r3f-scroll-rig'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import type { ExperiencePhase } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
 import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
 import type { AppPhase, TableSummary } from './domain'
 import { useLive } from './live/store'
-import { joinViewer, requestClose, sendViewerMessage, startLive, stopLive } from './live/backend'
+import { currentTableId, joinViewer, requestClose, requestNudge, sendViewerMessage, startLive, stopLive } from './live/backend'
 import ClosingCard from './live/ClosingCard'
+import DiscussionPanel from './live/DiscussionPanel'
+import type { LobbyFitPreviewLike, LobbyPreviewLike } from './live/contract'
+import { loadLobby, loadLobbyFit, ensureTable, viewerSeed } from './live/backend'
+import { fetchDiscovery } from './live/api'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import { actorAnchors } from './Diorama'
-import BrunoTable from './BrunoTable'
+import TableWorld from './TableWorld'
 
 const turns = [...humanActors, tableHost]
 
@@ -59,24 +62,7 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12 1c1 1.2 1 2.8 0 4m2-7c2.8 2.8 2.8 7.2 0 10" className={muted ? 'muted-wave' : ''} />{muted && <path d="m17 10 4 4m0-4-4 4" />}</svg>
 }
 
-interface ValleyCanvasPortalProps extends ValleySceneProps {
-  track: MutableRefObject<HTMLElement>
-}
-
-function ValleyCanvasPortal({ track, ...sceneProps }: ValleyCanvasPortalProps) {
-  return (
-      <ViewportScrollScene
-        track={track}
-        visible
-        hideOffscreen={false}
-        camera={{ position: [9.2, 3.9, 13.2], fov: 42, near: .1, far: 90 }}
-      >
-      {() => <Suspense fallback={null}><ValleySceneContent {...sceneProps} /></Suspense>}
-    </ViewportScrollScene>
-  )
-}
-
-function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(): void; enhanced: boolean; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null }) {
+function ValleyExperience({ onExit, appPhase, entryIntent, table }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
@@ -85,8 +71,11 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   const [joined, setJoined] = useState(false)
   const [seatDraft, setSeatDraft] = useState('')
   const [joinError, setJoinError] = useState(false)
+  const [joinDismissed, setJoinDismissed] = useState(false)
+  const [profileShared, setProfileShared] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const timer = useRef<number | null>(null)
   const experienceRef = useRef<HTMLElement>(null!)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
@@ -106,9 +95,9 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   const livePersonalCard = useLive((state) => state.personalCard)
 
   useEffect(() => {
-    void startLive()
+    void startLive(table.id, table.hook)
     return () => stopLive()
-  }, [])
+  }, [table.id, table.hook])
 
   useEffect(() => {
     let raf = 0
@@ -135,6 +124,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   }
   const closeJoin = () => {
     focusOpenerFrom('.join-sheet', joinOpenerRef.current)
+    setJoinDismissed(true)
     setJoinOpen(false)
   }
   const closeMenu = () => {
@@ -145,20 +135,25 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
     if (joined) return
     joinOpenerRef.current = opener
     setJoinError(false)
+    setJoinDismissed(false)
     setJoinOpen(true)
   }
 
-  const confirmSeat = () => {
+  const confirmSeat = async () => {
     if (!seatDraft.trim()) {
       setJoinError(true)
       seatDraftRef.current?.focus({ preventScroll: true })
+      return
+    }
+    const connected = await joinViewer(seatDraft, profileShared)
+    if (!connected) {
+      setJoinError(true)
       return
     }
     experienceRef.current?.focus({ preventScroll: true })
     setJoinError(false)
     setJoinOpen(false)
     setJoined(true)
-    void joinViewer()
   }
 
   const submitMessage = (event: { preventDefault(): void }) => {
@@ -173,7 +168,9 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
     const active = document.activeElement
     if (active instanceof HTMLElement && active.closest('.join-sheet,.table-menu')) experienceRef.current?.focus({ preventScroll: true })
     setJoinOpen(false)
+    setHistoryOpen(false)
     setMenuOpen(false)
+    setJoinDismissed(false)
     setHoveredActorId(null)
     setPhase('discovering')
   }
@@ -181,7 +178,8 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (joinOpen) closeJoin()
+      if (historyOpen) setHistoryOpen(false)
+      else if (joinOpen) closeJoin()
       else if (menuOpen) closeMenu()
       else resetDiscovery()
     }
@@ -189,7 +187,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [joinOpen, menuOpen])
+  }, [historyOpen, joinOpen, menuOpen])
 
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
@@ -218,7 +216,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
   useEffect(() => {
     if (appPhase !== 'world' || phase !== 'seated' || entryIntent !== 'join') return
-    if (joined || joinOpen) return
+    if (joined || joinOpen || joinDismissed) return
     setJoinError(false)
     setJoinOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,19 +234,13 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
   const seated = phase === 'seated'
   const listening = entryIntent === 'listen' && !joined
-  const useBrunoWorld = true
   const liveActive = liveStatus === 'live' || liveStatus === 'mock'
   const speakingTurn = liveActive && liveSpeaking ? turns.find((turn) => turn.id === liveSpeaking) ?? null : null
   const currentTurn = speakingTurn ?? turns[activeSpeaker]
   const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
-  const sceneProps: ValleySceneProps = { phase, activeActorId: currentTurn.id, hoveredActorId, reducedMotion }
-
   return (
-    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${enhanced ? 'is-enhanced' : ''} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
-      <div className="art-fallback" aria-hidden="true" style={useBrunoWorld ? { display: "none" } : undefined} />
-      {enhanced && !useBrunoWorld && <UseCanvas {...sceneProps} track={experienceRef}><ValleyCanvasPortal track={experienceRef} {...sceneProps} /></UseCanvas>}
-      {useBrunoWorld && <BrunoTable active={appPhase === 'world'} />}
-      {!enhanced && seated && <img className="dom-host-fallback" src="/assets/actors/table-host-silence.png" alt="" aria-hidden="true" />}
+    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
+      <TableWorld active={appPhase === 'world'} />
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
@@ -264,9 +256,9 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
       </header>
 
       <section className="hero-copy" aria-labelledby="valley-title" inert={seated || phase === 'approaching'}>
-        <p className="eyebrow">瑞士山谷 · 4 人已入席</p>
-        <h1 id="valley-title">为什么我们<br />越来越不会休息？</h1>
-        <p className="missing-line">这一桌，还缺一个真正停下来过的人。</p>
+        <p className="eyebrow">{table.worldId === 'valley' ? '瑞士山谷' : table.worldId} · {table.seatedCount} 人已入席</p>
+        <h1 id="valley-title">{table.hook}</h1>
+        <p className="missing-line">{table.missingPerspective}</p>
         <button className="approach-button" type="button" onClick={approachTable}><span>靠近这桌</span><span aria-hidden="true">↗</span></button>
       </section>
 
@@ -278,6 +270,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
 
       <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
         <button className="back-to-discovery" type="button" onClick={resetDiscovery}>←&nbsp;&nbsp;退回远景</button>
+        <button className="history-button" type="button" onClick={() => setHistoryOpen(true)}>对话历史 <span>↗</span></button>
         <div className="discussion-state"><i />{liveActive ? `${PHASE_LABELS[livePhase] ?? '讨论'}进行中` : '讨论正在发生'}</div>
         {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
         {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
@@ -343,10 +336,12 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
               <button type="submit" disabled={!messageDraft.trim()}>说</button>
             </form>
           )}
+          {liveActive && <button className="nudge-button" type="button" onClick={() => requestNudge()}>请主持人递个话</button>}
         </div>
-        {liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
+        {joined && liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
         {closeState === 'ready' && liveBaseline && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onReturn={onExit} />}
+        <DiscussionPanel open={historyOpen} tableId={currentTableId()} participantId={joined ? 'viewer' : undefined} liveMessages={liveMessages} onClose={() => setHistoryOpen(false)} />
         <button className="join-table-button" type="button" disabled={joined} onClick={(event) => openJoin(event.currentTarget)}><i />{joined ? '已坐到第五席' : '坐到空席'} <span>{joined ? '✓' : '→'}</span></button>
         {joined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
           <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
@@ -359,6 +354,7 @@ function ValleyExperience({ onExit, enhanced, appPhase, entryIntent }: { onExit(
         <h2>你不需要带来答案。<br />只需要带来真实经历。</h2>
         <div className="seat-profile"><p>桌上已经有自由职业、职场压力和心理恢复的视角，但还没有一个真正尝试停下来的人。</p></div>
         <label className="voice-preview"><span>入席后，你想先说什么？</span><textarea ref={seatDraftRef} value={seatDraft} aria-invalid={joinError} aria-describedby={joinError ? 'seat-draft-error' : undefined} onChange={(event) => { setSeatDraft(event.target.value); if (joinError) setJoinError(false) }} placeholder="也许是最近一次，你明明在休息却仍然感到内疚……" /></label>
+        <label className="consent-check"><input type="checkbox" checked={profileShared} onChange={(event) => setProfileShared(event.target.checked)} /><span>允许这张桌看见我的角色与这段经历</span></label>
         {joinError && <p id="seat-draft-error" className="join-error" role="alert">先留下一句真实经历，再坐到桌边。</p>}
         <button className="confirm-seat" type="button" onClick={confirmSeat}>以真实经历入席 <span>→</span></button>
       </aside>
@@ -390,12 +386,17 @@ export default function App() {
   const [enhanced, setEnhanced] = useState(false)
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
   const [lobbyTable, setLobbyTable] = useState<TableSummary | null>(null)
+  const [lobbyData, setLobbyData] = useState<LobbyPreviewLike | null>(null)
+  const [lobbyFit, setLobbyFit] = useState<LobbyFitPreviewLike | null>(null)
+  const [lobbyLoading, setLobbyLoading] = useState(false)
+  const [discovery, setDiscovery] = useState<LobbyPreviewLike[]>([])
   const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(null)
   const transitionTimer = useRef<number | null>(null)
   const pendingRectRef = useRef<GalleryMediaRect | null>(null)
   const reducedMotion = useReducedMotion()
   useEffect(() => {
     setEnhanced(canEnhance())
+    void fetchDiscovery().then(setDiscovery).catch(() => setDiscovery([]))
     return () => {
       if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
       document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
@@ -412,11 +413,30 @@ export default function App() {
     if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
     pendingRectRef.current = rect
     setLobbyTable(table)
+    setLobbyData(null)
+    setLobbyFit(null)
+    setLobbyLoading(true)
     setAppPhase('lobby')
+    void (async () => {
+      const ready = await ensureTable(table.id, table.hook)
+      if (!ready) {
+        setLobbyLoading(false)
+        return
+      }
+      const [preview, fit] = await Promise.all([
+        loadLobby(ready),
+        loadLobbyFit(ready, viewerSeed()),
+      ])
+      setLobbyData(preview)
+      setLobbyFit(fit)
+      setLobbyLoading(false)
+    })()
   }
   const closeLobby = () => {
     if (appPhase !== 'lobby') return
     setLobbyTable(null)
+    setLobbyData(null)
+    setLobbyFit(null)
     setAppPhase('gallery')
   }
   const startWorld = (intent: 'listen' | 'join') => {
@@ -432,6 +452,8 @@ export default function App() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setEntryIntent(null)
     setLobbyTable(null)
+    setLobbyData(null)
+    setLobbyFit(null)
     setAppPhase('collapsing')
     schedulePhase('gallery', reducedMotion ? 160 : 450)
   }
@@ -440,9 +462,9 @@ export default function App() {
   return (
     <>
       {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: false, antialias: true }} shadows onError={() => setEnhanced(false)} />}
-      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} />}
-      {showWorld && <ValleyExperience appPhase={appPhase} enhanced={enhanced} entryIntent={entryIntent} onExit={exitTable} />}
-      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
+      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} discovery={discovery} />}
+      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} appPhase={appPhase} entryIntent={entryIntent} onExit={exitTable} />}
+      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>
   )

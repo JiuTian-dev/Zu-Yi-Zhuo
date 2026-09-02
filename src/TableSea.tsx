@@ -8,7 +8,8 @@ import * as THREE from 'three'
 import { galleryTables, worldLabel, type AppPhase, type TableSummary } from './domain'
 import { GltfFit, SEA_MODEL_PATHS } from './sea/models'
 import { SeaGrass } from './sea/seaGrass'
-import { applyBrunoStyle, updateBrunoShared } from './sea/brunoMaterial'
+import { applyTableStyle, updateTableShared } from './sea/tableMaterial'
+import type { LobbyPreviewLike } from './live/contract'
 import './gallery.css'
 
 export interface GalleryMediaRect { left: number; top: number; width: number; height: number }
@@ -20,6 +21,7 @@ interface TableSeaProps {
   enhanced: boolean
   phase: AppPhase
   returnFocusId: string | null
+  discovery?: LobbyPreviewLike[]
 }
 
 /* ------------------------------------------------------------- themes */
@@ -185,7 +187,7 @@ function SeaTerrain() {
   }, [])
   const terrainMaterial = useMemo(() => {
     const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })
-    applyBrunoStyle(material)
+    applyTableStyle(material)
     return material
   }, [])
   return (
@@ -637,7 +639,7 @@ function SeaCamera({ focusPoint }: { focusPoint: THREE.Vector3 }) {
 function SeaWorld() {
   const focusPoint = useMemo(() => entries[seaState.index].pos.clone(), [])
   useFrame(({ clock }) => {
-    updateBrunoShared(clock.elapsedTime)
+    updateTableShared(clock.elapsedTime)
   })
   return (
     <>
@@ -687,13 +689,14 @@ function SeaWorld() {
 
 /* ------------------------------------------------------------- DOM shell */
 
-export default function TableSea({ onEnter, enhanced, phase, returnFocusId }: TableSeaProps) {
+export default function TableSea({ onEnter, enhanced, phase, returnFocusId, discovery = [] }: TableSeaProps) {
   const [index, setIndex] = useState(seaState.index)
   const cooldown = useRef(0)
   const mainRef = useRef<HTMLElement>(null)
   const glowRef = useRef<HTMLDivElement>(null)
   const seaActive = phase === 'gallery' || phase === 'lobby'
   const focused = entries[index] ?? entries[0]
+  const remoteFocused = discovery.find((item) => item.table_id === focused.table.id)
 
   const switchTo = (target: number) => {
     if (!seaActive || target < 0 || target >= entries.length) return
@@ -767,7 +770,7 @@ export default function TableSea({ onEnter, enhanced, phase, returnFocusId }: Ta
   if (!seaActive) return null
 
   const enter = () => {
-    if (!isCore(focused) || !seaActive) return
+    if (!isCore(focused) || remoteFocused?.status === 'closed' || !seaActive) return
     onEnter(focused.table, { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight })
   }
   const theme = THEMES[focused.theme]
@@ -788,8 +791,8 @@ export default function TableSea({ onEnter, enhanced, phase, returnFocusId }: Ta
         <p className="sea-kicker"><span>{String(index + 1).padStart(2, '0')}</span>{theme.label}</p>
         {isCore(focused) ? (
           <>
-            <h2>{focused.table.hook}</h2>
-            <p className="sea-missing">{focused.table.missingPerspective}</p>
+            <h2>{remoteFocused?.core_question ?? focused.table.hook}</h2>
+            <p className="sea-missing">{remoteFocused?.missing_perspective ?? focused.table.missingPerspective}</p>
             {focused.table.recommendedBecause && <p className="sea-recommend">{focused.table.recommendedBecause}</p>}
             <button className="sea-cta" type="button" data-table-id={focused.table.id} onClick={enter} disabled={!seaActive}>坐下来看看 <i>→</i></button>
           </>

@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 
 /**
- * Bruno folio Grass port: wrapped grid of 3-vertex camera-facing blades
+ * Camera-facing grass field used by the discovery worlds.
  * that follows a focus point, colored by ground palette, sways with wind.
  * Uses three's built-in `cameraPosition` uniform.
  */

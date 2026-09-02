@@ -8,8 +8,8 @@ import { MeshDefaultMaterial } from '../Materials/MeshDefaultMaterial.js'
 
 /**
  * One table: meadow floor + grass + flowers + round table, stools,
- * seated figures, candle and lanterns. Everything through his palette
- * material system (MeshDefaultMaterial + DayCycles dusk).
+ * seated figures, candle and lanterns. The scene uses the project's own
+ * table palette and restrained dusk lighting.
  */
 export class TableWorld
 {
@@ -50,7 +50,7 @@ export class TableWorld
         heart.position.set(0, 0.8, 0)
         this.tableGroup.add(top, leg, heart)
 
-        // Candle + flame (his emissive orange radial gradient)
+        // Candle + flame: the table's warm emissive light source.
         const candleMat = this.game.materials.getFromName?.('emissiveOrangeRadialGradient', new THREE.MeshBasicNodeMaterial({ transparent: true }))
             ?? this.paletteMaterial('#ffcf6e')
         const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.12, 10), this.paletteMaterial('#f3e2bb'))

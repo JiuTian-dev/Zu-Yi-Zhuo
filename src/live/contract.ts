@@ -108,3 +108,82 @@ export interface ClientHumanMessage {
 export interface ClientRequestClose {
   type: 'request_close'
 }
+
+/** Public REST projections used by the entry, lobby and replay surfaces. */
+export interface ParticipantSeedLike {
+  participant_id: string
+  display_name: string
+  role: string
+  declared_position: string
+  relevant_experience: { text: string; source_ref: string }[]
+  roundtable_invite_preference?: 'many' | 'few' | 'none'
+}
+
+export interface LobbyMemberLike {
+  participant_id: string
+  display_name: string
+  role: string
+}
+
+export interface LobbyPreviewLike {
+  table_id: string
+  core_question: string
+  current_subquestion: string | null
+  phase: TablePhase
+  mode: 'async' | 'sync'
+  sync_expires_at?: number
+  status: 'open' | 'soft_expired' | 'closed'
+  state_version: number
+  participant_count: number
+  available_seats: number
+  members: LobbyMemberLike[]
+  role_gaps: string[]
+  missing_perspective: string
+  origin_signal_ids?: string[]
+}
+
+export interface LobbyFitPreviewLike {
+  table_id: string
+  participant_id: string
+  eligible: boolean
+  matched_role_gap: string | null
+  reason: string
+}
+
+export interface ReplayMessageLike {
+  turn_id: number
+  participant_id: string
+  text: string
+  message_id?: string
+  source_comment_id?: string
+}
+
+export interface ReplayInterventionLike {
+  intervention_id: string
+  action: AgentActionName
+  target_participant_id: string | null
+  text: string | null
+  evidence_turns: number[]
+  state_version: number
+  confidence: number
+  grounding_card?: { title: string; excerpt: string; source_ref: string; signal_id?: string }
+  reflection?: { text: string; evidence_turns: number[] }
+}
+
+export interface ReplaySnapshotLike {
+  version: number
+  phase: TablePhase
+  current_subquestion: string | null
+  momentum: string
+  close_readiness: string
+}
+
+export interface ReplayResponseLike {
+  table_id: string
+  messages: ReplayMessageLike[]
+  snapshots: ReplaySnapshotLike[]
+  interventions: ReplayInterventionLike[]
+  comments: unknown[]
+  comment_promotions: unknown[]
+  source_signals: unknown[]
+}

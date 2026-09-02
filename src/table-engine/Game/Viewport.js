@@ -21,4 +21,9 @@ export class Viewport
         this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
         this.events.trigger('change')
     }
+
+    destroy()
+    {
+        window.removeEventListener('resize', this.resize)
+    }
 }

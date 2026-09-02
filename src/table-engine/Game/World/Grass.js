@@ -92,7 +92,6 @@ export class Grass
     setMaterial()
     {
         this.center = uniform(new THREE.Vector2())
-        // this.tracksDelta = uniform(new THREE.Vector2())
 
         const vertexLoopIndex = varying(vertexIndex.toFloat().mod(3))
         const tipness = varying(step(vertexLoopIndex, 0.5))

@@ -23,10 +23,6 @@ export class Terrain
         this.setGradient()
         this.setNodes()
 
-        this.game.ticker.events.on('tick', () =>
-        {
-            this.update()
-        }, 10)
     }
 
     setGradient()
@@ -83,7 +79,6 @@ export class Terrain
     setNodes()
     {
         this.grassColorUniform = uniform(color('#b8b62e'))
-        this.tracksDelta = uniform(vec2(0))
 
         const worldPositionToUvNode = Fn(([position]) =>
         {
@@ -94,13 +89,6 @@ export class Terrain
         {
             const textureUv = worldPositionToUvNode(position)
             const data = texture(this.game.resources.terrainTexture, textureUv)
-
-            // Wheel tracks
-            const groundDataColor = texture(
-                this.game.tracks.renderTarget.texture,
-                position.sub(- this.game.tracks.halfSize).sub(this.tracksDelta).div(this.game.tracks.size)
-            )
-            data.g.mulAssign(groundDataColor.r.oneMinus())
 
             return data
         })
@@ -120,14 +108,5 @@ export class Terrain
         {
             this.game.debug.addThreeColorBinding(this.debugPanel, this.grassColorUniform.value, 'grassColor')
         }
-    }
-    
-    update()
-    {
-        // Tracks delta
-        this.tracksDelta.value.set(
-            this.game.tracks.focusPoint.x,
-            this.game.tracks.focusPoint.y
-        )
     }
 }

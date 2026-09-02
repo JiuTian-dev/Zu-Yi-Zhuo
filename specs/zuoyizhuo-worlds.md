@@ -1,7 +1,7 @@
 # 组一桌：Table First 沉浸式桌面体验
 
-> Status: confirmed for gallery-to-world implementation
-> Last updated: 2026-08-29
+> Status: confirmed for gallery-to-table implementation
+> Last updated: 2026-09-02
 
 <!-- CACHE ANCHOR: stable product decisions and contracts. Change rarely. -->
 
@@ -39,8 +39,8 @@ The discovery state should make users want to approach. The seated state should 
 
 ### Core boundary
 
-- Do not add a lobby, world picker, server hall or explorable table map.
-- The gallery is a product index of tables, not an intermediate world-selection layer.
+- The gallery is a product index of tables; the selected table opens a small, data-backed seat preview before the immersive world.
+- The seat preview is not a separate destination: it is the REST-backed handoff into the same table experience.
 - Select tables, not worlds; the world follows the selected table.
 - Gallery, discovery and seated states share one application and one WebGL canvas, not routes or page cuts.
 
@@ -149,8 +149,8 @@ The outside product uses a deliberately editorial, light two-column grid while t
 ## 7. Technical architecture
 
 - Vite + React + TypeScript.
-- Capable desktop mounts one application-level React Three Fiber renderer through `@14islands/r3f-scroll-rig` `GlobalCanvas`; capability detection happens before mount, so mobile, reduced-capability and WebGL-failure paths stay DOM-only and never create a context.
-- The renderer owns two explicit scenes and cameras: gallery cards use `ScrollScene` with the rig-managed camera; `ValleyScene` renders through an R3F portal with its existing independent perspective camera and never creates a second Canvas.
+- Capable desktop mounts the gallery through the application-level React Three Fiber renderer and mounts the table runtime only after the selected table enters the world; mobile/reduced-capability paths retain the DOM experience.
+- The gallery owns discovery cards and table selection. `TableWorld` owns the reusable low-poly table scene, its perspective camera and mouse orbit; React owns the surrounding HUD and accessibility layer.
 - A shared RGBA8 ping-pong flow target runs at 128–256 px; no float-texture requirement.
 - The rig's `SmoothScrollbar` supplies Lenis-backed desktop wheel smoothing and a shared scroll clock; touch remains native.
 - GSAP coordinates DOM chrome and WebGL uniform transitions. The WebGL plane rect is authoritative for image continuity.
@@ -158,7 +158,7 @@ The outside product uses a deliberately editorial, light two-column grid while t
 - Application state is distinct from the existing scene state: `AppPhase = gallery | expanding | world | collapsing`, while `ExperiencePhase = discovering | approaching | seated` remains owned by the active world.
 - Legal edges are `gallery → expanding → world/discovering → world/approaching → world/seated`; returning from any world phase uses `collapsing → gallery`.
 - In gallery mode only the gallery pass runs. During expansion the gallery scene and world scene render into separate targets, then a transition pass composites them before DOM UI. In world mode the gallery tracker/pass pauses and only the valley pass runs. The capable-desktop `GlobalCanvas` mounts once, stays transparent, and disposes table textures only when their data leaves the registry.
-- Initial scene data is local and typed; no backend or AI API in this phase.
+- Discovery cards are local typed seeds and are enriched by `GET /tables/discovery`; the selected table uses REST projections for lobby/fit/replay and WebSocket events for the live discussion.
 - Generated raster art may provide depth layers, but interactive light, fire, particles, focus, and navigation remain code-driven.
 
 ## 8. Component/data contracts
@@ -225,9 +225,9 @@ The first implemented visual proof is the confirmed Swiss-valley table hero rath
 - Character direction: Stylized Miniature Adults / 轻卡通微缩成人, 4–4.5 heads tall, rounded forms, modern clothing, four occupied seats and one meaningful empty seat.
 - Hero topic: 为什么我们越来越不会休息？
 - Missing perspective: 还缺一个真正停下来过的人.
-- Composition: alpine lake and mountain depth at left/center, table gathering at lower-right, coral tree framing the upper-right, explorer vehicle entering from lower-left.
-- Rendering approach: a high-fidelity art plate is treated as a depth-aware WebGL world layer; Three.js owns pointer parallax, breathing camera, water glints, drifting petals, cloud haze, light motes and focus lighting. DOM owns exact typography and accessible controls.
-- Interaction: pointer parallax, table focus, empty-seat reveal, scene sound toggle placeholder, and reduced-motion fallback.
+- Composition: alpine lake and mountain depth at left/center, table gathering at lower-right, coral tree framing the upper-right, and meadow/lantern details leading the eye toward the empty seat.
+- Rendering approach: the reusable table runtime owns the low-poly meadow, circular table, five seated figures, lanterns, flowers, shadows, fog, light and camera orbit. DOM owns exact typography, live controls, privacy consent and accessible panels.
+- Interaction: table focus, empty-seat reveal, mouse-drag orbit, scroll zoom, live discussion, replay panel, sound toggle and reduced-motion fallback.
 - The image must remain useful if WebGL is unavailable; the DOM and art plate are the fallback.
 
 ## 10.2 Confirmed Plan B2 — depth-authored continuous scene

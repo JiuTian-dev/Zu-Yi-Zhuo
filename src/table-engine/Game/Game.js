@@ -17,7 +17,6 @@ import { Terrain } from './Terrain.js'
 import { Quality } from './Quality.js'
 import { Water } from './Water.js'
 import { Reveal } from './Reveal.js'
-import { Tracks } from './Tracks.js'
 import { Weather } from './Weather.js'
 import { TableWorld } from './World/World.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -35,13 +34,14 @@ export class Game
             return Game.instance
 
         Game.instance = this
+        this.destroyed = false
 
         this.init()
     }
 
     async init()
     {
-        this.domElement = document.querySelector('.bruno-game')
+        this.domElement = document.querySelector('.table-world-canvas')
         this.canvasElement = this.domElement?.querySelector('.js-canvas')
 
         this.scene = new THREE.Scene()
@@ -53,9 +53,20 @@ export class Game
         this.viewport = new Viewport(this.domElement)
         this.rendering = new Rendering()
         await this.rendering.setRenderer()
+        if(this.destroyed)
+        {
+            this.rendering.renderer?.setAnimationLoop?.(null)
+            this.rendering.renderer?.dispose?.()
+            return
+        }
 
         // Resources generated locally (palette + terrain data textures)
         this.resources = await this.buildResources()
+        if(this.destroyed)
+        {
+            this.disposeResources()
+            return
+        }
 
         this.view = new View()
         this.rendering.setPostprocessing()
@@ -64,7 +75,6 @@ export class Game
         this.noises = new Noises()
         this.weather = new Weather()
         this.wind = new Wind()
-        this.tracks = new Tracks()
         this.lighting = new Lighting()
         this.fog = new Fog()
         this.water = new Water()
@@ -80,7 +90,7 @@ export class Game
 
     async buildResources()
     {
-        // Palette (his palette.png, NearestFilter sampled by UVs)
+        // Project palette, sampled with nearest filtering for graphic color blocks.
         const paletteTexture = await new Promise((resolve) => {
             const image = new Image()
             image.onload = () => {
@@ -92,7 +102,7 @@ export class Game
                 texture.needsUpdate = true
                 resolve(texture)
             }
-            image.src = '/assets/bruno/palette.png'
+            image.src = '/assets/table-world/palette.png'
         })
 
         // Terrain data: R = spare, G = grass coverage, B = height/water
@@ -124,9 +134,35 @@ export class Game
         terrainTexture.generateMipmaps = false
 
         const flowersReferencesModel = await new Promise((resolve) => {
-            new GLTFLoader().load('/assets/bruno/flowers.glb', (gltf) => resolve(gltf), undefined, () => resolve({ scene: { children: [] } }))
+            new GLTFLoader().load('/assets/table-world/flowers.glb', (gltf) => resolve(gltf), undefined, () => resolve({ scene: { children: [] } }))
         })
 
         return { paletteTexture, terrainTexture, floorSlabsTexture: paletteTexture, flowersReferencesModel }
+    }
+
+    disposeResources()
+    {
+        this.resources?.paletteTexture?.dispose?.()
+        this.resources?.terrainTexture?.dispose?.()
+        this.resources = null
+    }
+
+    destroy()
+    {
+        this.destroyed = true
+        this.view?.destroy?.()
+        this.viewport?.destroy?.()
+        this.rendering?.renderer?.setAnimationLoop?.(null)
+        this.rendering?.renderer?.dispose?.()
+        this.scene?.traverse((object) =>
+        {
+            object.geometry?.dispose?.()
+            if(Array.isArray(object.material))
+                object.material.forEach((material) => material.dispose?.())
+            else
+                object.material?.dispose?.()
+        })
+        this.disposeResources()
+        Game.instance = null
     }
 }
