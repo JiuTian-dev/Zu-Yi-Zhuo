@@ -1,4 +1,6 @@
-# 组一桌：Table First 沉浸式桌面体验
+# 组一桌：Table First 沉浸式桌面体验（旧视觉探索，已废止）
+
+> **Superseded on 2026-09-02:** 本文的 Swiss art plate、2.5D、低模 Diorama 与“approved plate”结论均被产品明确否决。当前唯一视觉和工程合同是 [`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)：以 Bruno Simon `folio-2025` 的真实实时 3D Runtime 为基准。
 
 > Status: confirmed for gallery-to-table implementation
 > Last updated: 2026-09-02

@@ -1,4 +1,6 @@
-# 组一桌 · Table Runtime 规格
+# 组一桌 · Table Runtime 规格（已废止）
+
+> **Superseded on 2026-09-02:** 本文把 `ValleyScene/Diorama` 与 `valley-world-clean.png` 当成批准视觉，已经被产品明确否决。唯一实施合同请见 [`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)。本文仅保留为历史记录，不得用于视觉或架构决策。
 
 > Status: 融合实施中（2026-09-02）
 > Scope: 项目自有桌面世界、鼠标环绕、讨论 HUD 与后端闭环

@@ -1,4 +1,6 @@
-# 组一桌：前端 v2 终极目标对齐
+# 组一桌：前端 v2 终极目标对齐（视觉方案已废止）
+
+> **Superseded on 2026-09-02:** 本文的定稿图、2.5D 和低模视觉路线不再是产品方向。唯一实施合同请见 [`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)。本文仅保留历史产品决策，不得作为 3D 实现依据。
 
 > Status: 已与产品确认（2026-09-01 四项决策拍板）
 > Branch: `codex/frontend-v2`（独立于后端会话的 `codex/backend-d05-reflection-close`）
