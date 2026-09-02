@@ -13,17 +13,16 @@
 ## 场景结构
 
 ```
-src/table-engine/                 # 项目桌面运行时
-  Game/                            # renderer、材质、雾、风、地形、生命周期
-  Game/CameraOrbit.js              # 鼠标拖拽环绕 + 滚轮缩放
-  Game/World/World.js              # 一桌：桌、五席、人物、烛光、灯笼、花
-src/TableWorld.tsx                 # React 挂载与卸载边界
+src/ValleyScene.tsx                # 当前主视觉 Canvas 与相机
+src/Diorama.tsx                    # 湖面、山谷、码头、木屋、树林、花草、圆桌、人物
+src/TableWorld.tsx                 # 实验性桌面运行时挂载（当前不作为主入口）
+src/table-engine/                  # 保留的实验性 renderer/材质/地形代码
 src/live/api.ts                    # REST JSON client
 src/live/backend.ts                # WS、剧本、mock fallback、桌生命周期
 src/live/DiscussionPanel.tsx       # 只读讨论历史和状态回放
 ```
 
-场景视觉属于“湖边的一桌”：暖色桌面、低饱和草地、微弱烛光和留白 HUD。第三方渲染代码只作为内部技术来源，界面、文案、挂载名、资源路径和交互均使用项目语义；许可证文件保留在 `src/table-engine/THIRD_PARTY_LICENSE.md`。
+当前产品视觉属于“湖边的一桌”：湖、山谷、码头、木屋、树林、花草和暖色桌面作为主视觉；问题、成员信息和后端讨论状态由 DOM HUD 承载。背景图 `public/assets/valley-world-clean.png` 只承担远景氛围，已移除车辆元素。实验性 `table-engine` 不应重新接回 `App.tsx`，除非先通过视觉验收。
 
 ## 前后端接线
 
@@ -52,5 +51,6 @@ src/live/DiscussionPanel.tsx       # 只读讨论历史和状态回放
 - `pnpm check`：通过
 - `pnpm build`：通过；仍有包体积和 mock 动态导入提示
 - `python -m pytest -q`：496 passed
-- 已验收：浏览器真实拖拽视觉、桌海→预览→桌内→回放主路径、入席空内容校验、干净页面运行时无 error
+- 已验收：浏览器真实桌海→预览→山谷桌内→回放主路径、恢复后的主视觉、背景去车、入席空内容校验、干净页面运行时无 error
+- 已接入：桌内相机的鼠标左键拖拽环绕；需在最终设备上再做一次 pointer stroke 的手动体验确认。
 - 待补：长时间反复进出桌面的 WebGL 资源回收压力测试、六种主持动作的独立 3D 姿态差异化

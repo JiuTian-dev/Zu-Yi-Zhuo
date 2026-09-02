@@ -150,7 +150,7 @@ The outside product uses a deliberately editorial, light two-column grid while t
 
 - Vite + React + TypeScript.
 - Capable desktop mounts the gallery through the application-level React Three Fiber renderer and mounts the table runtime only after the selected table enters the world; mobile/reduced-capability paths retain the DOM experience.
-- The gallery owns discovery cards and table selection. `TableWorld` owns the reusable low-poly table scene, its perspective camera and mouse orbit; React owns the surrounding HUD and accessibility layer.
+- The gallery owns discovery cards and table selection. `ValleyScene`/`Diorama` owns the approved lake-valley table composition and its perspective camera; React owns the surrounding HUD, backend state, and accessibility layer. `TableWorld` remains an experimental low-poly implementation and is not the product entry point.
 - A shared RGBA8 ping-pong flow target runs at 128–256 px; no float-texture requirement.
 - The rig's `SmoothScrollbar` supplies Lenis-backed desktop wheel smoothing and a shared scroll clock; touch remains native.
 - GSAP coordinates DOM chrome and WebGL uniform transitions. The WebGL plane rect is authoritative for image continuity.
