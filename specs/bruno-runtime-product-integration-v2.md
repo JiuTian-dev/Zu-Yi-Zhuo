@@ -7,6 +7,8 @@
 > Visual baseline: `D:\folio-2025` at commit `41046b5`
 >
 > Product repository: `D:\知乎黑客松` / `codex/frontend-v2`
+
+> Execution record: [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md)
 >
 > Supersedes: `table-runtime-spec.md`、`vision-alignment-v2.md`、`zuoyizhuo-worlds.md` 与 `HANDOFF-2026-09-02.md` 中所有相冲突的视觉和运行时结论
 
@@ -103,9 +105,9 @@
 | `public/assets/valley-world-clean.png` | 否决：定稿背景图 | 不作为桌内背景或桌面 fallback |
 | `src/ValleyScene.tsx` | 否决：不是 Bruno 原运行时 | 新运行时验收后移除主路径引用 |
 | `src/Diorama.tsx` | 否决：低模 / 2.5D 重搭 | 新运行时验收后删除或移入历史归档 |
-| `src/TableWorld.tsx` | 否决：简化程序化桌景 | 新运行时验收后删除 |
+| `src/TableWorld.tsx` | 否决：简化程序化桌景 | 保留为 React 生命周期壳；真实渲染由 `src/bruno-runtime/Game` 挂载 |
 | `src/TableSea.tsx` 与 `src/sea/*` 的低模桌海 | 不作为视觉基准 | DOM 选桌或 Bruno 世界内桌锚点替代后删除主路径引用 |
-| `src/table-engine/Game/World/TableMeeting.js` 的基础几何成品 | 否决：美术质量不足 | 只保留可复用逻辑思想，不保留最终可见模型 |
+| `src/table-engine/Game/World/TableMeeting.js` 的基础几何成品 | 否决：美术质量不足 | 删除；产品桌锚点迁入 Bruno Runtime，由同一材质/阴影管线渲染 |
 
 替换采用“先让新 Bruno Runtime 达到视觉门槛，再切主入口”，避免中途留下空白产品。
 
@@ -470,8 +472,8 @@ MIT License、`Copyright (c) 2025 Bruno Simon`、上游 commit 和文件来源�
 
 ## 19. 当前仓库事实（spec 创建时）
 
-- 当前主路径仍是 `ValleyScene/Diorama + valley-world-clean.png`，已被产品否决。
-- 当前 `TableWorld` / `table-engine` 是不完整的 Bruno 摘取与低模产品桌，也未达到视觉基准。
+- 原主路径 `ValleyScene/Diorama + valley-world-clean.png` 已移除；当前由 Bruno Runtime 作为唯一渲染底座。
+- `TableWorld.tsx` 只负责生命周期；旧 `table-engine` 与低模桌海已移除。
 - REST、WS、历史和收桌已有部分适配代码，可按契约复用，但必须重新验证 identity、重连、隐私和 mock 隔离。
 - 最近“approved valley scene”类提交不代表当前产品批准；本 spec 已明确推翻该结论。
 - 用户已有的 `3D/` 和 DOCX 是工作区素材，不属于本次 spec 提交。

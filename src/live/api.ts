@@ -56,6 +56,19 @@ export function fetchLobby(tableId: string) {
   return requestJson<LobbyPreviewLike>(`/tables/${encodeURIComponent(tableId)}/lobby`)
 }
 
+export function fetchTableState(tableId: string, participantId?: string) {
+  return requestJson<TableStateLike>(
+    `/tables/${encodeURIComponent(tableId)}${query({ participant_id: participantId })}`,
+  )
+}
+
+export function selectTable(tableId: string, participantId: string) {
+  return requestJson<{ event_id: string; event_type: string }>(
+    `/tables/${encodeURIComponent(tableId)}/select${query({ participant_id: participantId })}`,
+    { method: 'POST' },
+  )
+}
+
 export function previewLobbyFit(tableId: string, participant: ParticipantSeedLike) {
   return requestJson<LobbyFitPreviewLike>(
     `/tables/${encodeURIComponent(tableId)}/lobby-fit${query({ participant_id: participant.participant_id })}`,
@@ -82,6 +95,13 @@ export function setProfileConsent(tableId: string, participantId: string, profil
   return requestJson<TableStateLike>(
     `/tables/${encodeURIComponent(tableId)}/participants/${encodeURIComponent(participantId)}/consent${query({ viewer_id: participantId })}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_shared: profileShared }) },
+  )
+}
+
+export function leaveTable(tableId: string, participantId: string) {
+  return requestJson<TableStateLike>(
+    `/tables/${encodeURIComponent(tableId)}/participants/${encodeURIComponent(participantId)}/leave${query({ viewer_id: participantId })}`,
+    { method: 'POST' },
   )
 }
 

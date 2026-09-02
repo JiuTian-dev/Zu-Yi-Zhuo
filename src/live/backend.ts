@@ -1,9 +1,9 @@
 import { humanActors } from '../actors'
 import type { ClientHumanMessage, ParticipantSeedLike, ServerEvent } from './contract'
-import { fetchLobby, fetchReplay, previewLobbyFit, setProfileConsent } from './api'
+import { fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, setProfileConsent } from './api'
 import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike } from './contract'
 import * as mock from './mock'
-import { getLiveState, pushMessage, resetLive, setLive } from './store'
+import { getLiveState, pushMessage, resetLive, setLive, type LiveStatus } from './store'
 
 export const VIEWER_ID = 'viewer'
 const DEFAULT_TABLE_ID = 'valley-learning-to-rest'
@@ -13,6 +13,7 @@ const runtime = {
   sockets: new Set<WebSocket>(),
   timers: new Set<number>(),
   viewerSocket: null as WebSocket | null,
+  observerSocket: null as WebSocket | null,
   viewerJoined: false,
   reopenCount: 0,
   viewerMessageSeq: 0,
@@ -59,7 +60,8 @@ async function fetchWithTimeout(url: string, init?: RequestInit, ms = 3000): Pro
 
 function wsUrl(tableId: string, participantId: string): string {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${scheme}://${location.host}/ws/tables/${encodeURIComponent(tableId)}?participant_id=${encodeURIComponent(participantId)}`
+  const mode = participantId === VIEWER_ID ? '&viewer_mode=observer' : ''
+  return `${scheme}://${location.host}/ws/tables/${encodeURIComponent(tableId)}?participant_id=${encodeURIComponent(participantId)}${mode}`
 }
 
 function trackSocket(socket: WebSocket) {
@@ -87,11 +89,42 @@ function handleServerEvent(event: ServerEvent) {
       if (runtime.seenStateVersions.has(event.state.version)) return
       runtime.seenStateVersions.add(event.state.version)
       setLive({
+        tableState: event.state,
         phase: event.state.phase,
         coreQuestion: event.state.core_question,
         subQuestion: event.state.current_subquestion,
         seatCount: Object.keys(event.state.participants).length,
       })
+      break
+    case 'grounding_card':
+      setLive({ groundingCard: { title: event.title, excerpt: event.excerpt, source_ref: event.source_ref, signal_id: event.signal_id } })
+      break
+    case 'intervention_reflected':
+      setLive({ latestReflection: event.record.reflection ?? null })
+      break
+    case 'participant_added':
+    case 'participant_left':
+      if (event.state) setLive({ tableState: event.state, seatCount: Object.keys(event.state.participants).length })
+      break
+    case 'table_mode_changed':
+      setLive({ tableMode: event.mode })
+      break
+    case 'safety_private_reminder':
+    case 'safety_soft_intervention':
+      setLive({ safetyNotice: event.text })
+      break
+    case 'safety_enforced':
+      setLive({ tableState: event.state, phase: event.state.phase, subQuestion: event.state.current_subquestion, seatCount: Object.keys(event.state.participants).length, safetyNotice: event.decision.reason })
+      break
+    case 'error':
+      setLive({ lastError: event.detail })
+      break
+    case 'participant_consent_changed':
+      {
+        const state = getLiveState().tableState
+        if (state?.participants[event.participant_id])
+          setLive({ tableState: { ...state, participants: { ...state.participants, [event.participant_id]: { ...state.participants[event.participant_id], profile_shared: event.profile_shared } } } })
+      }
       break
     case 'close_started':
       setLive({ closeState: 'started' })
@@ -99,17 +132,37 @@ function handleServerEvent(event: ServerEvent) {
     case 'close_artifact_ready':
       setLive({ closeState: 'ready', baseline: event.shared_baseline, personalCard: event.personal_card })
       break
+    case 'table_closed':
+      setLive({ closeState: 'started' })
+      void recoverCloseArtifacts(activeTableId, VIEWER_ID)
+      break
     default:
       break
   }
 }
 
-function openPuppet(tableId: string, participantId: string): Promise<WebSocket | null> {
+async function recoverCloseArtifacts(tableId: string, participantId: string) {
+  try {
+    const artifacts = await fetchCloseArtifacts(tableId, participantId)
+    setLive({
+      closeState: 'ready',
+      baseline: artifacts.shared_baseline as LiveStatus['baseline'],
+      personalCard: artifacts.personal_card as LiveStatus['personalCard'],
+    })
+  } catch {
+    // The live close event remains the first source. Recovery is best effort
+    // because a viewer may not be a member and therefore cannot read a card.
+  }
+}
+
+function openPuppet(tableId: string, participantId: string, mode: 'participant' | 'observer' = 'participant'): Promise<WebSocket | null> {
   return new Promise((resolve) => {
     let settled = false
     let socket: WebSocket
     try {
-      socket = new WebSocket(wsUrl(tableId, participantId))
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
+      const url = `${scheme}://${location.host}/ws/tables/${encodeURIComponent(tableId)}?participant_id=${encodeURIComponent(participantId)}${mode === 'observer' ? '&viewer_mode=observer' : ''}`
+      socket = new WebSocket(url)
     } catch {
       resolve(null)
       return
@@ -137,7 +190,7 @@ function openPuppet(tableId: string, participantId: string): Promise<WebSocket |
     })
     socket.addEventListener('close', () => {
       settle(null)
-      if (participantId !== humanActors[0].id) return
+      if (mode !== 'participant') return
       if (getHealthy()) return
       if (getLiveState().status === 'live') setLive({ status: 'error' })
     })
@@ -155,18 +208,7 @@ function sendVia(socket: WebSocket, payload: ClientHumanMessage | { type: 'reque
   return true
 }
 
-/** Scripted table conversation that drives the deterministic backend host. */
-const SCRIPT: Array<{ id: string; text: string; waitMs: number }> = [
-  { id: 'shen-zhiyao', text: '上个月我给自己排了三天「什么都不做」，结果每天都在焦虑这三天被浪费了。', waitMs: 4200 },
-  { id: 'zhou-mo', text: '我不敢让时间空下来，一空下来就觉得自己正在被淘汰。', waitMs: 5200 },
-  { id: 'lin-zhou', text: '自由职业之后没人给我下班的概念，我反而怀念被迫休息的日子。', waitMs: 5200 },
-  { id: 'xu-qing', text: '你们说的都是「停下来之后的内疚」，这其实是把价值感绑在了产出上。', waitMs: 5600 },
-  { id: 'zhou-mo', text: '所以问题不是没时间休息，而是停下来的时候，我什么都不是？', waitMs: 5600 },
-  { id: 'shen-zhiyao', text: '可能吧，可我就是靠产出获得安全感的，放下它我不知道自己是谁。', waitMs: 5600 },
-  { id: 'xu-qing', text: '休息不是从工作里偷来的时间，它本来就是生活的默认状态，是我们把它变成了奖励。', waitMs: 5600 },
-  { id: 'lin-zhou', text: '如果把它当默认状态，我第一件要改的就是把「回消息」从休息日的义务里删掉。', waitMs: 5400 },
-]
-
+/** Runtime bookkeeping for the authoritative backend stream and explicit mock fallback. */
 let liveGeneration = 0
 
 function resetEventDedupe() {
@@ -175,14 +217,25 @@ function resetEventDedupe() {
   runtime.seenStateVersions.clear()
 }
 
-export async function ensureTable(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION): Promise<string | null> {
+function applyTableState(state: NonNullable<LiveStatus['tableState']>) {
+  setLive({
+    tableState: state,
+    phase: state.phase,
+    coreQuestion: state.core_question,
+    subQuestion: state.current_subquestion,
+    seatCount: Object.keys(state.participants).length,
+    tableMode: state.conversation.mode ?? null,
+  })
+}
+
+export async function ensureTable(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION, allowClosed = false): Promise<string | null> {
   let candidateTableId = tableId === DEFAULT_TABLE_ID && activeTableId !== DEFAULT_TABLE_ID ? activeTableId : tableId
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const existing = await fetchWithTimeout(`/tables/${candidateTableId}`)
       if (existing.ok) {
         const state = await existing.json()
-        if (state.conversation?.closed) {
+        if (state.conversation?.closed && !allowClosed) {
           runtime.reopenCount += 1
           candidateTableId = `${tableId}-${runtime.reopenCount}`
           continue
@@ -212,44 +265,46 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   resetLive()
   resetEventDedupe()
   setLive({ status: 'connecting' })
-  const readyTableId = await ensureTable(tableId, coreQuestion)
+  const readyTableId = await ensureTable(tableId, coreQuestion, true)
   if (generation !== liveGeneration) return
   if (!readyTableId) {
-    const { startMock } = await import('./mock')
     if (generation !== liveGeneration) return
-    startMock()
+    mock.startMock()
     return
   }
-  const [first, ...rest] = humanActors
-  const stageSocket = await openPuppet(readyTableId, first.id)
+  const stageSocket = await openPuppet(readyTableId, VIEWER_ID, 'observer')
   if (generation !== liveGeneration) return
   if (!stageSocket) {
-    const { startMock } = await import('./mock')
     if (generation !== liveGeneration) return
-    startMock()
+    mock.startMock()
     return
   }
   setLive({ status: 'live', coreQuestion })
-  for (const actor of rest) {
-    void openPuppet(readyTableId, actor.id)
+  runtime.observerSocket = stageSocket
+  try {
+    const state = await fetchTableState(readyTableId)
+    applyTableState(state)
+    if (state.participants[VIEWER_ID]) {
+      const participantSocket = await openPuppet(readyTableId, VIEWER_ID, 'participant')
+      if (participantSocket && generation === liveGeneration) {
+        runtime.observerSocket?.close()
+        runtime.observerSocket = null
+        runtime.viewerJoined = true
+        runtime.viewerSocket = participantSocket
+        setLive({ viewerJoined: true })
+      }
+      if (state.conversation.closed) void recoverCloseArtifacts(readyTableId, VIEWER_ID)
+    }
+  } catch {
+    // The observer stream remains authoritative if the initial REST refresh races it.
   }
-  let index = 0
-  const step = () => {
-    if (index >= SCRIPT.length) return
-    const line = SCRIPT[index]
-    index += 1
-    const socket = [...runtime.sockets].find((candidate) => candidate.readyState === WebSocket.OPEN)
-    if (socket) sendVia(socket, { type: 'human_message', message_id: `script-${readyTableId}-${index}`, participant_id: line.id, text: line.text, client_ts: Date.now() })
-    runtime.timers.add(window.setTimeout(step, line.waitMs))
-  }
-  runtime.timers.add(window.setTimeout(step, 2600))
 }
 
 export async function joinViewer(openingText = '', profileShared = false): Promise<boolean> {
   if (runtime.viewerJoined) return true
   if (getLiveState().status === 'mock') {
     runtime.viewerJoined = true
-    setLive({ seatCount: 5 })
+    setLive({ seatCount: 5, viewerJoined: true })
     if (openingText.trim()) mock.sendViewerMessage(openingText.trim())
     return true
   }
@@ -263,11 +318,19 @@ export async function joinViewer(openingText = '', profileShared = false): Promi
   } catch {
     return false
   }
-  const socket = await openPuppet(currentTableId(), VIEWER_ID)
+  runtime.observerSocket?.close()
+  runtime.observerSocket = null
+  const socket = await openPuppet(currentTableId(), VIEWER_ID, 'participant')
   if (!socket) return false
   runtime.viewerJoined = true
   runtime.viewerSocket = socket
-  if (profileShared) void setProfileConsent(currentTableId(), VIEWER_ID, true).catch(() => undefined)
+  setLive({ viewerJoined: true })
+  try {
+    applyTableState(await fetchTableState(currentTableId(), VIEWER_ID))
+  } catch {
+    // The participant socket remains the authoritative source if this refresh races it.
+  }
+  if (profileShared) void setProfileConsent(currentTableId(), VIEWER_ID, true).then(applyTableState).catch(() => undefined)
   if (openingText.trim()) {
     sendViewerMessage(openingText.trim())
   }
@@ -338,6 +401,8 @@ export function stopLive() {
   runtime.sockets.forEach((socket) => socket.close())
   runtime.sockets.clear()
   runtime.viewerSocket = null
+  runtime.observerSocket = null
   runtime.viewerJoined = false
+  setLive({ viewerJoined: false })
   resetEventDedupe()
 }

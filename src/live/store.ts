@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase } from './contract'
+import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike } from './contract'
 
 export interface LiveMessage {
   participantId: string
@@ -17,9 +17,16 @@ export interface LiveStatus {
   speakingId: string | null
   hostAction: { action: AgentActionName; text: string | null; target: string | null } | null
   seatCount: number
+  viewerJoined: boolean
   closeState: 'idle' | 'started' | 'ready'
   baseline: SharedBaselineLike | null
   personalCard: PersonalCardLike | null
+  tableState: TableStateLike | null
+  groundingCard: GroundingCardLike | null
+  safetyNotice: string | null
+  tableMode: 'async' | 'sync' | null
+  latestReflection: InterventionReflectionLike | null
+  lastError: string | null
 }
 
 const initial: LiveStatus = {
@@ -31,9 +38,16 @@ const initial: LiveStatus = {
   speakingId: null,
   hostAction: null,
   seatCount: 4,
+  viewerJoined: false,
   closeState: 'idle',
   baseline: null,
   personalCard: null,
+  tableState: null,
+  groundingCard: null,
+  safetyNotice: null,
+  tableMode: null,
+  latestReflection: null,
+  lastError: null,
 }
 
 let state: LiveStatus = initial

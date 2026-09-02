@@ -18,6 +18,8 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
   const title = lobby?.core_question ?? table.hook
   const missingPerspective = lobby?.missing_perspective ?? table.missingPerspective
   const members = lobby?.members ?? humanActors.map((actor) => ({ participant_id: actor.id, display_name: actor.displayName, role: actor.role }))
+  const viewerAlreadySeated = members.some((member) => member.participant_id === 'viewer')
+  const hasOpenSeat = lobby ? lobby.available_seats > 0 : true
 
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true })
@@ -55,10 +57,10 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
             <i style={{ background: tableHost.accent }} aria-hidden="true" />
             <span><b>{tableHost.displayName}</b><small>{tableHost.role}</small></span>
           </div>
-          <div className="lobby-member is-empty">
+          {hasOpenSeat && !viewerAlreadySeated && <div className="lobby-member is-empty">
             <i aria-hidden="true" />
             <span><b>第五席 · 空着</b><small>{missingPerspective}</small></span>
-          </div>
+          </div>}
         </div>
 
         {table.previewLines && table.previewLines.length > 0 && (
@@ -78,7 +80,7 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
 
         <div className="lobby-actions">
           <button className="lobby-listen" type="button" onClick={onListen} disabled={loading || lobby?.status === 'closed'}>先在旁边听听</button>
-          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || lobby?.status === 'closed' || lobby?.available_seats === 0}>坐下来看看 <span>→</span></button>
+          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || lobby?.status === 'closed' || lobby?.available_seats === 0 || viewerAlreadySeated}>{viewerAlreadySeated ? '已在这一席' : '坐下来看看'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
         </div>
 
       </section>

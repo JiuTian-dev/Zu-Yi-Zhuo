@@ -30,7 +30,7 @@ export interface TableStateLike {
   disagreements: { text: string; disagreement_type: string; participant_ids: string[] }[]
   open_loops: { question: string; priority: string }[]
   participants: Record<string, ParticipantStateLike>
-  conversation: { state: string; closed: boolean; safety_level: string }
+  conversation: { state: string; closed: boolean; safety_level: string; mode?: 'async' | 'sync' }
 }
 
 export interface ServerMessageCommitted {
@@ -87,12 +87,26 @@ export interface ServerCloseReady {
   personal_card: PersonalCardLike
 }
 
+export interface GroundingCardLike {
+  title: string
+  excerpt: string
+  source_ref: string
+  signal_id?: string
+}
+
 export type ServerEvent =
   | ServerMessageCommitted
   | ServerAgentAction
   | ServerStateChanged
   | ServerCloseStarted
   | ServerCloseReady
+  | { type: 'grounding_card'; table_id: string; state_version: number; title: string; excerpt: string; source_ref: string; signal_id?: string }
+  | { type: 'intervention_reflected'; record: ReplayInterventionLike }
+  | { type: 'participant_added' | 'participant_left'; participant_id: string; state?: TableStateLike }
+  | { type: 'table_mode_changed'; mode: 'async' | 'sync'; reason: string; state_version: number }
+  | { type: 'table_closed'; state_version: number }
+  | { type: 'safety_private_reminder'; participant_id: string; strike_count: number; text: string }
+  | { type: 'safety_soft_intervention'; text: string; state_version: number }
   | { type: 'error'; code: string; detail: string }
   | { type: 'safety_enforced'; decision: { reason: string }; state: TableStateLike }
   | { type: 'participant_consent_changed'; participant_id: string; profile_shared: boolean }
@@ -186,4 +200,9 @@ export interface ReplayResponseLike {
   comments: unknown[]
   comment_promotions: unknown[]
   source_signals: unknown[]
+}
+
+export interface InterventionReflectionLike {
+  text: string
+  evidence_turns: number[]
 }

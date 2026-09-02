@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { humanActors, tableHost } from '../actors'
 import type { ReplayResponseLike } from './contract'
-import type { LiveMessage } from './store'
 import { loadReplay } from './backend'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -24,17 +23,19 @@ interface DiscussionPanelProps {
   open: boolean
   tableId: string
   participantId?: string
-  liveMessages: LiveMessage[]
+  members: Array<{ participant_id: string; display_name: string }>
   onClose(): void
 }
 
-function speakerName(participantId: string) {
+function speakerName(participantId: string, members: Array<{ participant_id: string; display_name: string }>) {
   if (participantId === 'table-host') return tableHost.displayName
   if (participantId === 'viewer') return '你'
-  return humanActors.find((actor) => actor.id === participantId)?.displayName ?? participantId
+  return members.find((member) => member.participant_id === participantId)?.display_name
+    ?? humanActors.find((actor) => actor.id === participantId)?.displayName
+    ?? participantId
 }
 
-export default function DiscussionPanel({ open, tableId, participantId, liveMessages, onClose }: DiscussionPanelProps) {
+export default function DiscussionPanel({ open, tableId, participantId, members, onClose }: DiscussionPanelProps) {
   const [replay, setReplay] = useState<ReplayResponseLike | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -59,11 +60,10 @@ export default function DiscussionPanel({ open, tableId, participantId, liveMess
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose, open])
 
-  const messages = useMemo(() => replay?.messages ?? liveMessages.map((message, index) => ({
-    turn_id: index + 1,
-    participant_id: message.participantId,
-    text: message.text,
-  })), [liveMessages, replay])
+  // PRODUCT DATA BOUNDARY — history is a replay projection, never a locally
+  // fabricated copy of the live stream. If replay is unavailable, show the
+  // explicit unavailable state below instead of silently mixing sources.
+  const messages = replay?.messages ?? []
 
   if (!open) return null
 
@@ -96,7 +96,7 @@ export default function DiscussionPanel({ open, tableId, participantId, liveMess
                 <div className="discussion-entry-mark" aria-hidden="true"><span /></div>
                 <div className="discussion-entry-copy">
                   <div className="discussion-entry-meta">
-                    <b>{speakerName(message.participant_id)}</b>
+                    <b>{speakerName(message.participant_id, members)}</b>
                     <small>第 {message.turn_id} 轮</small>
                   </div>
                   <p>“{message.text}”</p>
