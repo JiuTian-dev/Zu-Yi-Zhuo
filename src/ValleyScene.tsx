@@ -1,6 +1,6 @@
 import { Sparkles } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Suspense, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import DioramaScene, { type DioramaProps } from './Diorama'
 
@@ -14,23 +14,73 @@ const CAMERA_TARGETS: Record<ExperiencePhase, { pos: [number, number, number]; l
 }
 
 function CameraRig({ phase, reducedMotion }: Pick<ValleySceneProps, 'phase' | 'reducedMotion'>) {
-  const { camera } = useThree()
+  const { camera, gl } = useThree()
   const lookAt = useRef(new THREE.Vector3())
   const target = useMemo(() => new THREE.Vector3(), [])
+  const basePosition = useMemo(() => new THREE.Vector3(), [])
+  const offset = useMemo(() => new THREE.Vector3(), [])
   const position = useMemo(() => new THREE.Vector3(), [])
+  const orbit = useRef({ active: false, pointerId: -1, lastX: 0, lastY: 0, yaw: 0, pitch: 0, root: null as HTMLElement | null })
+
+  useEffect(() => {
+    const state = orbit.current
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Element)) return
+      const root = event.target.closest<HTMLElement>('.valley-experience')
+      if (!root || root.getAttribute('aria-hidden') === 'true' || event.target.closest('button,a,input,textarea,select')) return
+      state.active = true
+      state.pointerId = event.pointerId
+      state.lastX = event.clientX
+      state.lastY = event.clientY
+      state.root = root
+      root.classList.add('is-camera-dragging')
+    }
+    const onPointerMove = (event: PointerEvent) => {
+      if (!state.active || event.pointerId !== state.pointerId) return
+      state.yaw -= (event.clientX - state.lastX) * 0.006
+      state.pitch = THREE.MathUtils.clamp(state.pitch + (event.clientY - state.lastY) * 0.004, -0.55, 0.55)
+      state.lastX = event.clientX
+      state.lastY = event.clientY
+      event.preventDefault()
+    }
+    const endDrag = (event: PointerEvent) => {
+      if (!state.active || (event.pointerId !== undefined && event.pointerId !== state.pointerId)) return
+      state.active = false
+      state.pointerId = -1
+      state.root?.classList.remove('is-camera-dragging')
+      state.root = null
+    }
+
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove, { passive: false })
+    window.addEventListener('pointerup', endDrag)
+    window.addEventListener('pointercancel', endDrag)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', endDrag)
+      window.removeEventListener('pointercancel', endDrag)
+      state.root?.classList.remove('is-camera-dragging')
+    }
+  }, [gl])
 
   useFrame(({ clock, pointer }, delta) => {
     const stage = CAMERA_TARGETS[phase]
     const drift = reducedMotion ? 0 : Math.sin(clock.elapsedTime * 0.18) * 0.05
-    position.set(...stage.pos)
+    basePosition.set(...stage.pos)
     target.set(...stage.look)
     if (!reducedMotion) {
       const parallax = phase === 'discovering' ? 1 : 0.55
-      position.x += pointer.x * 0.4 * parallax + drift
-      position.y += pointer.y * 0.2 * parallax
+      basePosition.x += pointer.x * 0.4 * parallax + drift
+      basePosition.y += pointer.y * 0.2 * parallax
       target.x += pointer.x * 0.16 * parallax
       target.y += pointer.y * 0.1 * parallax
     }
+    offset.copy(basePosition).sub(target)
+    const spherical = new THREE.Spherical().setFromVector3(offset)
+    spherical.theta += orbit.current.yaw
+    spherical.phi = THREE.MathUtils.clamp(spherical.phi + orbit.current.pitch, 0.45, 1.52)
+    position.setFromSpherical(spherical).add(target)
     const speed = reducedMotion ? 18 : phase === 'approaching' ? 1.15 : phase === 'seated' ? 2.6 : 3.1
     camera.position.x = THREE.MathUtils.damp(camera.position.x, position.x, speed, delta)
     camera.position.y = THREE.MathUtils.damp(camera.position.y, position.y, speed, delta)

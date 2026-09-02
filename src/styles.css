@@ -8,6 +8,8 @@ button,textarea { color: inherit; font: inherit; }
 button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outline-offset: 5px; }
 
 .valley-experience { --paper:#fff9e9; --gold:#ffd180; position:relative; width:100%; height:100svh; overflow:hidden; isolation:isolate; background:#789caf; }
+.valley-experience.app-expanding,.valley-experience.app-world { cursor:grab; touch-action:none; }
+.valley-experience.is-camera-dragging { cursor:grabbing; }
 .art-fallback,.valley-canvas,.world-grade { position:absolute!important; inset:0; width:100%!important; height:100%!important; }
 .art-fallback { z-index:0; pointer-events:none; background:url('/assets/valley-world-clean.png') center/cover no-repeat; }
 .valley-canvas { z-index:1; pointer-events:none; }
@@ -58,7 +60,7 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
 .phase-approaching .approach-cue { opacity:1; transform:translate(-50%,0); }
 
 .seated-hud { position:absolute; z-index:12; inset:0; opacity:0; transition:opacity .8s ease .12s; pointer-events:none; }
-.phase-seated .seated-hud { opacity:1; }
+.phase-seated .seated-hud { opacity:1; pointer-events:auto; }
 .seated-hud[aria-hidden='true'],.seated-hud[aria-hidden='true'] * { pointer-events:none!important; }
 .back-to-discovery,.conversation-dock,.join-table-button,.seat-marker,.close-table-button { pointer-events:auto; }
 .back-to-discovery { position:absolute; top:clamp(92px,12.5vh,130px); left:clamp(24px,4vw,68px); padding:9px 0; border:0; background:none; color:rgba(255,250,236,.72); font-size:10px; letter-spacing:.16em; cursor:pointer; }

@@ -1,6 +1,6 @@
 import { GlobalCanvas } from '@14islands/r3f-scroll-rig'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import type { ExperiencePhase } from './ValleyScene'
+import ValleyScene, { type ExperiencePhase, type ValleySceneProps } from './ValleyScene'
 import { humanActors, tableHost, type ActorId } from './actors'
 import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
@@ -14,7 +14,6 @@ import { loadLobby, loadLobbyFit, ensureTable, viewerSeed } from './live/backend
 import { fetchDiscovery } from './live/api'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import { actorAnchors } from './Diorama'
-import TableWorld from './TableWorld'
 
 const turns = [...humanActors, tableHost]
 
@@ -62,7 +61,7 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12 1c1 1.2 1 2.8 0 4m2-7c2.8 2.8 2.8 7.2 0 10" className={muted ? 'muted-wave' : ''} />{muted && <path d="m17 10 4 4m0-4-4 4" />}</svg>
 }
 
-function ValleyExperience({ onExit, appPhase, entryIntent, table }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary }) {
+function ValleyExperience({ onExit, appPhase, entryIntent, table, enhanced }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; enhanced: boolean }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [activeSpeaker, setActiveSpeaker] = useState(0)
@@ -238,9 +237,12 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table }: { onExit(): 
   const speakingTurn = liveActive && liveSpeaking ? turns.find((turn) => turn.id === liveSpeaking) ?? null : null
   const currentTurn = speakingTurn ?? turns[activeSpeaker]
   const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
+  const sceneProps: ValleySceneProps = { phase, activeActorId: currentTurn.id, hoveredActorId, reducedMotion }
   return (
     <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
-      <TableWorld active={appPhase === 'world'} />
+      <div className="art-fallback" aria-hidden="true" style={enhanced ? { display: 'none' } : undefined} />
+      {enhanced && <ValleyScene {...sceneProps} />}
+      {!enhanced && seated && <img className="dom-host-fallback" src="/assets/actors/table-host-silence.png" alt="" aria-hidden="true" />}
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
@@ -461,9 +463,9 @@ export default function App() {
   const showWorld = appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing'
   return (
     <>
-      {enhanced && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: false, antialias: true }} shadows onError={() => setEnhanced(false)} />}
+      {enhanced && showGallery && !showWorld && <GlobalCanvas dpr={[1, 1.5]} gl={{ alpha: false, antialias: true }} shadows onError={() => setEnhanced(false)} />}
       {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} enhanced={enhanced} discovery={discovery} />}
-      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} appPhase={appPhase} entryIntent={entryIntent} onExit={exitTable} />}
+      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} appPhase={appPhase} entryIntent={entryIntent} enhanced={enhanced} onExit={exitTable} />}
       {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>
