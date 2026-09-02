@@ -11,3 +11,6 @@ __pycache__/
 *.py[cod]
 # Local backend table snapshots may contain participant data.
 runtime/
+build.log
+out/
+.v2c/
