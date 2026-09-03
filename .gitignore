@@ -31,6 +31,15 @@ venv/
 
 # Local large assets that are not part of the shipped runtime.
 3D/
+/*.docx
+
+# Superseded non-Bruno visual prototypes.
+public/assets/sea/
+public/assets/table-world/
+public/assets/actors/
+public/assets/valley-world-*.png
+public/assets/world-gallery.png
+public/assets/campfire-table.png
 
 # Local databases and generated logs.
 *.sqlite
