@@ -14,6 +14,8 @@ them is a visual-regression decision, not a product-UI refactor.
 ## Product additions
 
 - `Game.js` composes the visual systems without the portfolio/game loop.
+- `SceneBridge.js` is the only product-state-to-scene adapter; it receives
+  backend projections and forwards only visual state to the table object.
 - `CameraOrbit.js` owns mouse drag orbit and wheel zoom only.
 - `World/TableMeeting.js` adds the product table furniture inside the same
   renderer; it does not own participant data, selection, or conversation.

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useLive } from './live/store'
 
 /**
  * Mounts the project table runtime. The runtime owns only the round-table
@@ -7,6 +8,15 @@ import { useEffect, useRef } from 'react'
 export default function TableWorld({ active }: { active: boolean }) {
   const holder = useRef<HTMLDivElement>(null)
   const gameRef = useRef<{ destroy?: () => void } | null>(null)
+  const tableState = useLive((state) => state.tableState)
+  const hostAction = useLive((state) => state.hostAction)
+  const speakingId = useLive((state) => state.speakingId)
+  const closeState = useLive((state) => state.closeState)
+
+  useEffect(() => {
+    const game = gameRef.current as { sceneBridge?: { apply?: (projection: unknown) => void } } | null
+    game?.sceneBridge?.apply?.({ tableState, hostAction, speakingId, closeState })
+  }, [closeState, hostAction, speakingId, tableState])
 
   useEffect(() => {
     if (!active || !holder.current) return
@@ -19,7 +29,10 @@ export default function TableWorld({ active }: { active: boolean }) {
       gameRef.current = game
       try {
         await game.ready
-        if (!cancelled) holder.current?.setAttribute('data-runtime-state', 'ready')
+        if (!cancelled) {
+          holder.current?.setAttribute('data-runtime-state', 'ready')
+          game.sceneBridge?.apply?.({ tableState, hostAction, speakingId, closeState })
+        }
       } catch {
         if (!cancelled) holder.current?.setAttribute('data-runtime-state', 'error')
       }

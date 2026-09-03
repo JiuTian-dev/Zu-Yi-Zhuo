@@ -1,11 +1,11 @@
 import { humanActors } from '../actors'
 import type { ClientHumanMessage, ParticipantSeedLike, ServerEvent } from './contract'
-import { fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, setProfileConsent } from './api'
+import { BackendApiError, fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, requestRaw, setProfileConsent, wsUrl } from './api'
 import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike } from './contract'
+import { VIEWER_ID, viewerIdentity } from './identity'
 import * as mock from './mock'
-import { getLiveState, pushMessage, resetLive, setLive, type LiveStatus } from './store'
+import { commitMessage, getLiveState, markMessageFailed, markMessagePending, pushMessage, resetLive, setLive, type LiveStatus } from './store'
 
-export const VIEWER_ID = 'viewer'
 const DEFAULT_TABLE_ID = 'valley-learning-to-rest'
 const DEFAULT_CORE_QUESTION = '为什么我们越来越不会休息？'
 
@@ -19,10 +19,14 @@ const runtime = {
   viewerMessageSeq: 0,
   seenMessageIds: new Set<string>(),
   seenActionKeys: new Set<string>(),
-  seenStateVersions: new Set<number>(),
+  latestStateVersion: -1,
+  reconnectAttempt: 0,
+  reconnectTimer: null as number | null,
+  intentionalCloses: new WeakSet<WebSocket>(),
 }
 
 let activeTableId = DEFAULT_TABLE_ID
+const ensureRequests = new Map<string, Promise<string | null>>()
 
 export function currentTableId(): string {
   return activeTableId
@@ -40,33 +44,23 @@ function actorSeeds() {
 
 export const viewerSeed = (openingText = ''): ParticipantSeedLike => ({
   participant_id: VIEWER_ID,
-  display_name: '你',
-  role: '第五席',
+  display_name: viewerIdentity.displayName,
+  role: viewerIdentity.role,
   declared_position: openingText.trim() || '一个正在尝试真正停下来的人',
   relevant_experience: openingText.trim()
     ? [{ text: openingText.trim(), source_ref: 'ui:viewer:opening' }]
     : [],
 })
 
-async function fetchWithTimeout(url: string, init?: RequestInit, ms = 3000): Promise<Response> {
-  const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), ms)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    window.clearTimeout(timer)
-  }
-}
-
-function wsUrl(tableId: string, participantId: string): string {
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-  const mode = participantId === VIEWER_ID ? '&viewer_mode=observer' : ''
-  return `${scheme}://${location.host}/ws/tables/${encodeURIComponent(tableId)}?participant_id=${encodeURIComponent(participantId)}${mode}`
-}
-
 function trackSocket(socket: WebSocket) {
   runtime.sockets.add(socket)
   socket.addEventListener('close', () => runtime.sockets.delete(socket))
+}
+
+function closeSocket(socket: WebSocket | null) {
+  if (!socket) return
+  runtime.intentionalCloses.add(socket)
+  socket.close()
 }
 
 function handleServerEvent(event: ServerEvent) {
@@ -74,7 +68,7 @@ function handleServerEvent(event: ServerEvent) {
     case 'message_committed':
       if (runtime.seenMessageIds.has(event.message.message_id)) return
       runtime.seenMessageIds.add(event.message.message_id)
-      pushMessage({ participantId: event.message.participant_id, text: event.message.text, fromHost: false, action: null })
+      commitMessage(event.message.message_id, { participantId: event.message.participant_id, text: event.message.text, fromHost: false, action: null })
       break
     case 'agent_action':
       {
@@ -82,19 +76,11 @@ function handleServerEvent(event: ServerEvent) {
         if (runtime.seenActionKeys.has(actionKey)) return
         runtime.seenActionKeys.add(actionKey)
       }
-      setLive({ hostAction: { action: event.action, text: event.text, target: event.target_participant_id } })
+      setLive({ hostAction: { action: event.action, text: event.text, target: event.target_participant_id }, speakingId: event.target_participant_id ?? 'table-host' })
       if (event.text) pushMessage({ participantId: 'table-host', text: event.text, fromHost: true, action: event.action })
       break
     case 'table_state_changed':
-      if (runtime.seenStateVersions.has(event.state.version)) return
-      runtime.seenStateVersions.add(event.state.version)
-      setLive({
-        tableState: event.state,
-        phase: event.state.phase,
-        coreQuestion: event.state.core_question,
-        subQuestion: event.state.current_subquestion,
-        seatCount: Object.keys(event.state.participants).length,
-      })
+      applyTableState(event.state)
       break
     case 'grounding_card':
       setLive({ groundingCard: { title: event.title, excerpt: event.excerpt, source_ref: event.source_ref, signal_id: event.signal_id } })
@@ -104,7 +90,7 @@ function handleServerEvent(event: ServerEvent) {
       break
     case 'participant_added':
     case 'participant_left':
-      if (event.state) setLive({ tableState: event.state, seatCount: Object.keys(event.state.participants).length })
+      if (event.state) applyTableState(event.state)
       break
     case 'table_mode_changed':
       setLive({ tableMode: event.mode })
@@ -114,7 +100,7 @@ function handleServerEvent(event: ServerEvent) {
       setLive({ safetyNotice: event.text })
       break
     case 'safety_enforced':
-      setLive({ tableState: event.state, phase: event.state.phase, subQuestion: event.state.current_subquestion, seatCount: Object.keys(event.state.participants).length, safetyNotice: event.decision.reason })
+      if (acceptStateVersion(event.state.version)) setLive({ tableState: event.state, phase: event.state.phase, subQuestion: event.state.current_subquestion, seatCount: Object.keys(event.state.participants).length, safetyNotice: event.decision.reason })
       break
     case 'error':
       setLive({ lastError: event.detail })
@@ -122,8 +108,10 @@ function handleServerEvent(event: ServerEvent) {
     case 'participant_consent_changed':
       {
         const state = getLiveState().tableState
-        if (state?.participants[event.participant_id])
+        if (state?.participants[event.participant_id] && event.state_version === undefined)
           setLive({ tableState: { ...state, participants: { ...state.participants, [event.participant_id]: { ...state.participants[event.participant_id], profile_shared: event.profile_shared } } } })
+        else if (event.state_version !== undefined && state && event.state_version > state.version)
+          setLive({ lastError: '收到授权变化，正在等待完整桌状态…' })
       }
       break
     case 'close_started':
@@ -155,13 +143,13 @@ async function recoverCloseArtifacts(tableId: string, participantId: string) {
   }
 }
 
-function openPuppet(tableId: string, participantId: string, mode: 'participant' | 'observer' = 'participant'): Promise<WebSocket | null> {
+function openPuppet(tableId: string, participantId: string, mode: 'participant' | 'observer' = 'participant', generation = liveGeneration): Promise<WebSocket | null> {
   return new Promise((resolve) => {
     let settled = false
+    let opened = false
     let socket: WebSocket
     try {
-      const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-      const url = `${scheme}://${location.host}/ws/tables/${encodeURIComponent(tableId)}?participant_id=${encodeURIComponent(participantId)}${mode === 'observer' ? '&viewer_mode=observer' : ''}`
+      const url = wsUrl(`/ws/tables/${encodeURIComponent(tableId)}?participant_id=${encodeURIComponent(participantId)}${mode === 'observer' ? '&viewer_mode=observer' : ''}`)
       socket = new WebSocket(url)
     } catch {
       resolve(null)
@@ -174,10 +162,11 @@ function openPuppet(tableId: string, participantId: string, mode: 'participant' 
       resolve(result)
     }
     const timer = window.setTimeout(() => {
-      socket.close()
+      closeSocket(socket)
       settle(null)
     }, 4000)
     socket.addEventListener('open', () => {
+      opened = true
       trackSocket(socket)
       settle(socket)
     })
@@ -190,22 +179,63 @@ function openPuppet(tableId: string, participantId: string, mode: 'participant' 
     })
     socket.addEventListener('close', () => {
       settle(null)
-      if (mode !== 'participant') return
-      if (getHealthy()) return
-      if (getLiveState().status === 'live') setLive({ status: 'error' })
+      if (!opened || runtime.intentionalCloses.has(socket) || generation !== liveGeneration) return
+      if (mode === 'participant' && !runtime.viewerJoined) return
+      scheduleReconnect(generation)
     })
     socket.addEventListener('error', () => settle(null))
   })
 }
 
-function getHealthy(): boolean {
-  return [...runtime.sockets].some((socket) => socket.readyState === WebSocket.OPEN)
+function scheduleReconnect(generation = liveGeneration) {
+  if (generation !== liveGeneration || runtime.reconnectTimer !== null) return
+  const delay = Math.min(8000, 500 * (2 ** runtime.reconnectAttempt))
+  runtime.reconnectAttempt += 1
+  setLive({ status: 'connecting', lastError: '实时连接中断，正在重连…' })
+  const timer = window.setTimeout(async () => {
+    runtime.timers.delete(timer)
+    if (runtime.reconnectTimer === timer) runtime.reconnectTimer = null
+    if (generation !== liveGeneration) return
+    const mode = runtime.viewerJoined ? 'participant' : 'observer'
+    const socket = await openPuppet(currentTableId(), VIEWER_ID, mode, generation)
+    if (generation !== liveGeneration) return
+    if (!socket) {
+      scheduleReconnect(generation)
+      return
+    }
+    if (mode === 'participant') runtime.viewerSocket = socket
+    else runtime.observerSocket = socket
+    runtime.reconnectAttempt = 0
+    setLive({ status: 'live', lastError: null })
+    await hydrateAfterReconnect()
+  }, delay)
+  runtime.reconnectTimer = timer
+  runtime.timers.add(timer)
+}
+
+async function hydrateAfterReconnect() {
+  try {
+    const participantId = runtime.viewerJoined ? VIEWER_ID : undefined
+    const state = await fetchTableState(currentTableId(), participantId)
+    applyTableState(state)
+    // The replay endpoint is the recovery boundary for history. The panel
+    // fetches it on demand; this request warms the same server-side path after
+    // a reconnect and lets a closed table restore its artifacts immediately.
+    await fetchReplay(currentTableId(), participantId)
+    if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(currentTableId(), VIEWER_ID)
+  } catch (error) {
+    setLive({ lastError: error instanceof Error ? error.message : '重连后的桌状态恢复失败' })
+  }
 }
 
 function sendVia(socket: WebSocket, payload: ClientHumanMessage | { type: 'request_close' } | { type: 'request_nudge' }): boolean {
   if (socket.readyState !== WebSocket.OPEN) return false
-  socket.send(JSON.stringify(payload))
-  return true
+  try {
+    socket.send(JSON.stringify(payload))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Runtime bookkeeping for the authoritative backend stream and explicit mock fallback. */
@@ -214,10 +244,18 @@ let liveGeneration = 0
 function resetEventDedupe() {
   runtime.seenMessageIds.clear()
   runtime.seenActionKeys.clear()
-  runtime.seenStateVersions.clear()
+  runtime.latestStateVersion = -1
+  runtime.reconnectAttempt = 0
 }
 
-function applyTableState(state: NonNullable<LiveStatus['tableState']>) {
+function acceptStateVersion(version: number): boolean {
+  if (version <= runtime.latestStateVersion) return false
+  runtime.latestStateVersion = version
+  return true
+}
+
+function applyTableState(state: NonNullable<LiveStatus['tableState']>): boolean {
+  if (!acceptStateVersion(state.version)) return false
   setLive({
     tableState: state,
     phase: state.phase,
@@ -226,38 +264,50 @@ function applyTableState(state: NonNullable<LiveStatus['tableState']>) {
     seatCount: Object.keys(state.participants).length,
     tableMode: state.conversation.mode ?? null,
   })
+  return true
 }
 
-export async function ensureTable(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION, allowClosed = false): Promise<string | null> {
+async function ensureTableInternal(tableId: string, coreQuestion: string, allowClosed: boolean): Promise<string | null> {
   let candidateTableId = tableId === DEFAULT_TABLE_ID && activeTableId !== DEFAULT_TABLE_ID ? activeTableId : tableId
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const existing = await fetchWithTimeout(`/tables/${candidateTableId}`)
-      if (existing.ok) {
-        const state = await existing.json()
-        if (state.conversation?.closed && !allowClosed) {
-          runtime.reopenCount += 1
-          candidateTableId = `${tableId}-${runtime.reopenCount}`
-          continue
-        }
-        activeTableId = candidateTableId
-        return candidateTableId
+    const existing = await requestRaw(`/tables/${encodeURIComponent(candidateTableId)}`)
+    if (existing.ok) {
+      const state = await existing.json()
+      if (state.conversation?.closed && !allowClosed) {
+        runtime.reopenCount += 1
+        candidateTableId = `${tableId}-${runtime.reopenCount}`
+        continue
       }
-      const created = await fetchWithTimeout('/tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id: candidateTableId, core_question: coreQuestion, participants: actorSeeds() }),
-      })
-      if (created.ok || created.status === 409) {
-        activeTableId = candidateTableId
-        return candidateTableId
-      }
-      return null
-    } catch {
-      return null
+      activeTableId = candidateTableId
+      return candidateTableId
     }
+    if (existing.status !== 404 || import.meta.env.VITE_ALLOW_DEV_SEED !== 'true') {
+      throw new BackendApiError(existing.status, existing.status === 404
+        ? `找不到桌「${candidateTableId}」`
+        : `桌状态请求失败（${existing.status}）`)
+    }
+    const created = await requestRaw('/tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ table_id: candidateTableId, core_question: coreQuestion, participants: actorSeeds() }),
+    })
+    if (created.ok || created.status === 409) {
+      activeTableId = candidateTableId
+      return candidateTableId
+    }
+    throw new BackendApiError(created.status, `创建桌失败（${created.status}）`)
   }
   return candidateTableId
+}
+
+export function ensureTable(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION, allowClosed = false): Promise<string | null> {
+  const key = `${tableId}:${coreQuestion}:${allowClosed ? 'closed' : 'open'}`
+  const inFlight = ensureRequests.get(key)
+  if (inFlight) return inFlight
+  const request = ensureTableInternal(tableId, coreQuestion, allowClosed)
+  ensureRequests.set(key, request)
+  void request.then(() => ensureRequests.delete(key), () => ensureRequests.delete(key))
+  return request
 }
 
 export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION): Promise<void> {
@@ -265,63 +315,83 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   resetLive()
   resetEventDedupe()
   setLive({ status: 'connecting' })
-  const readyTableId = await ensureTable(tableId, coreQuestion, true)
+  let readyTableId: string | null = null
+  try {
+    readyTableId = await ensureTable(tableId, coreQuestion, true)
+  } catch (error) {
+    if (generation !== liveGeneration) return
+    if (error instanceof BackendApiError && error.status === 0) {
+      mock.startMock()
+    } else {
+      setLive({ status: 'error', lastError: error instanceof Error ? error.message : '无法恢复这张桌' })
+    }
+    return
+  }
   if (generation !== liveGeneration) return
   if (!readyTableId) {
+    setLive({ status: 'error', lastError: '无法恢复这张桌' })
+    return
+  }
+  let initialState: NonNullable<LiveStatus['tableState']>
+  try {
+    initialState = await fetchTableState(readyTableId)
+  } catch (error) {
     if (generation !== liveGeneration) return
-    mock.startMock()
+    if (error instanceof BackendApiError && error.status === 0) mock.startMock()
+    else setLive({ status: 'error', lastError: error instanceof Error ? error.message : '无法读取这张桌的状态' })
     return
   }
   const stageSocket = await openPuppet(readyTableId, VIEWER_ID, 'observer')
   if (generation !== liveGeneration) return
   if (!stageSocket) {
-    if (generation !== liveGeneration) return
-    mock.startMock()
+    setLive({ status: 'error', lastError: '实时连接暂时没有建立，请稍后重试。' })
     return
   }
   setLive({ status: 'live', coreQuestion })
   runtime.observerSocket = stageSocket
   try {
-    const state = await fetchTableState(readyTableId)
-    applyTableState(state)
-    if (state.participants[VIEWER_ID]) {
+    applyTableState(initialState)
+    if (initialState.participants[VIEWER_ID]) {
       const participantSocket = await openPuppet(readyTableId, VIEWER_ID, 'participant')
       if (participantSocket && generation === liveGeneration) {
-        runtime.observerSocket?.close()
+        closeSocket(runtime.observerSocket)
         runtime.observerSocket = null
         runtime.viewerJoined = true
         runtime.viewerSocket = participantSocket
         setLive({ viewerJoined: true })
       }
-      if (state.conversation.closed) void recoverCloseArtifacts(readyTableId, VIEWER_ID)
+      if (initialState.conversation.closed) void recoverCloseArtifacts(readyTableId, VIEWER_ID)
     }
   } catch {
     // The observer stream remains authoritative if the initial REST refresh races it.
   }
 }
 
-export async function joinViewer(openingText = '', profileShared = false): Promise<boolean> {
-  if (runtime.viewerJoined) return true
+export async function joinViewer(openingText = '', profileShared = false): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (runtime.viewerJoined) return { ok: true }
   if (getLiveState().status === 'mock') {
     runtime.viewerJoined = true
     setLive({ seatCount: 5, viewerJoined: true })
     if (openingText.trim()) mock.sendViewerMessage(openingText.trim())
-    return true
+    return { ok: true }
   }
   try {
-    const response = await fetchWithTimeout(`/tables/${currentTableId()}/participants`, {
+    const response = await requestRaw(`/tables/${encodeURIComponent(currentTableId())}/participants`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(viewerSeed(openingText)),
     })
-    if (!response.ok && response.status !== 409) return false
-  } catch {
-    return false
+    if (!response.ok && response.status !== 409) {
+      const body = await response.json().catch(() => null) as { detail?: string } | null
+      return { ok: false, error: body?.detail || `入席请求失败（${response.status}）` }
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '后端暂时不可用' }
   }
-  runtime.observerSocket?.close()
+  closeSocket(runtime.observerSocket)
   runtime.observerSocket = null
   const socket = await openPuppet(currentTableId(), VIEWER_ID, 'participant')
-  if (!socket) return false
+  if (!socket) return { ok: false, error: '实时连接暂时没有建立，请稍后重试。' }
   runtime.viewerJoined = true
   runtime.viewerSocket = socket
   setLive({ viewerJoined: true })
@@ -330,11 +400,15 @@ export async function joinViewer(openingText = '', profileShared = false): Promi
   } catch {
     // The participant socket remains the authoritative source if this refresh races it.
   }
-  if (profileShared) void setProfileConsent(currentTableId(), VIEWER_ID, true).then(applyTableState).catch(() => undefined)
+  if (profileShared) {
+    void setProfileConsent(currentTableId(), VIEWER_ID, true)
+      .then(applyTableState)
+      .catch((error) => setLive({ lastError: error instanceof Error ? error.message : '资料授权没有保存成功' }))
+  }
   if (openingText.trim()) {
     sendViewerMessage(openingText.trim())
   }
-  return true
+  return { ok: true }
 }
 
 export function sendViewerMessage(text: string): boolean {
@@ -344,13 +418,35 @@ export function sendViewerMessage(text: string): boolean {
     mock.sendViewerMessage(trimmed)
     return true
   }
-  return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, {
-    type: 'human_message',
-    message_id: `viewer-${Date.now()}-${++runtime.viewerMessageSeq}`,
+  const messageId = `viewer-${Date.now()}-${++runtime.viewerMessageSeq}`
+  const payload = {
+    type: 'human_message' as const,
+    message_id: messageId,
     participant_id: VIEWER_ID,
     text: trimmed,
     client_ts: Date.now(),
+  }
+  if (!runtime.viewerSocket || !sendVia(runtime.viewerSocket, payload)) {
+    pushMessage({ participantId: VIEWER_ID, text: trimmed, fromHost: false, action: null, messageId, delivery: 'failed' })
+    markMessageFailed(messageId)
+    return false
+  }
+  pushMessage({ participantId: VIEWER_ID, text: trimmed, fromHost: false, action: null, messageId, delivery: 'pending' })
+  return true
+}
+
+export function retryViewerMessage(messageId: string): boolean {
+  const message = getLiveState().messages.find((item) => item.messageId === messageId)
+  if (!message || !runtime.viewerSocket) return false
+  const sent = sendVia(runtime.viewerSocket, {
+    type: 'human_message',
+    message_id: messageId,
+    participant_id: VIEWER_ID,
+    text: message.text,
+    client_ts: Date.now(),
   })
+  if (sent) markMessagePending(messageId)
+  return sent
 }
 
 export function requestNudge(): boolean {
@@ -361,28 +457,16 @@ export function requestNudge(): boolean {
   return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_nudge' })
 }
 
-export async function loadLobby(tableId = currentTableId()): Promise<LobbyPreviewLike | null> {
-  try {
-    return await fetchLobby(tableId)
-  } catch {
-    return null
-  }
+export function loadLobby(tableId = currentTableId()): Promise<LobbyPreviewLike> {
+  return fetchLobby(tableId)
 }
 
-export async function loadLobbyFit(tableId: string, participant = viewerSeed()): Promise<LobbyFitPreviewLike | null> {
-  try {
-    return await previewLobbyFit(tableId, participant)
-  } catch {
-    return null
-  }
+export function loadLobbyFit(tableId: string, participant = viewerSeed()): Promise<LobbyFitPreviewLike> {
+  return previewLobbyFit(tableId, participant)
 }
 
-export async function loadReplay(tableId = currentTableId(), participantId?: string): Promise<ReplayResponseLike | null> {
-  try {
-    return await fetchReplay(tableId, participantId)
-  } catch {
-    return null
-  }
+export function loadReplay(tableId = currentTableId(), participantId?: string): Promise<ReplayResponseLike> {
+  return fetchReplay(tableId, participantId)
 }
 
 export function requestClose(): boolean {
@@ -397,8 +481,12 @@ export function stopLive() {
   liveGeneration += 1
   runtime.timers.forEach((timer) => window.clearTimeout(timer))
   runtime.timers.clear()
+  if (runtime.reconnectTimer !== null) {
+    window.clearTimeout(runtime.reconnectTimer)
+    runtime.reconnectTimer = null
+  }
   mock.stopMock()
-  runtime.sockets.forEach((socket) => socket.close())
+  runtime.sockets.forEach((socket) => closeSocket(socket))
   runtime.sockets.clear()
   runtime.viewerSocket = null
   runtime.observerSocket = null

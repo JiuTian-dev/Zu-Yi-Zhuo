@@ -6,6 +6,8 @@ export interface LiveMessage {
   text: string
   fromHost: boolean
   action: AgentActionName | null
+  messageId?: string
+  delivery?: 'pending' | 'committed' | 'failed'
 }
 
 export interface LiveStatus {
@@ -79,4 +81,24 @@ export function useLive<T>(selector: (state: LiveStatus) => T): T {
 export function pushMessage(message: LiveMessage) {
   const next = [...state.messages, message].slice(-30)
   setLive({ messages: next, speakingId: message.participantId })
+}
+
+export function commitMessage(messageId: string, message: Omit<LiveMessage, 'messageId' | 'delivery'>) {
+  const next = state.messages.filter((item) => item.messageId !== messageId)
+  next.push({ ...message, messageId, delivery: 'committed' })
+  setLive({ messages: next.slice(-30), speakingId: message.participantId })
+}
+
+export function markMessageFailed(messageId: string) {
+  const next = state.messages.map((item) => item.messageId === messageId
+    ? { ...item, delivery: 'failed' as const }
+    : item)
+  setLive({ messages: next })
+}
+
+export function markMessagePending(messageId: string) {
+  const next = state.messages.map((item) => item.messageId === messageId
+    ? { ...item, delivery: 'pending' as const }
+    : item)
+  setLive({ messages: next })
 }

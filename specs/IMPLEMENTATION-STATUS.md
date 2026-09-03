@@ -28,10 +28,9 @@ baseline, remove its vehicle/player/game/portfolio product layer, and mount
 - Source boundaries are marked with `@origin`, `PRODUCT DOM`, `PRODUCT 3D`,
   `PRODUCT DATA BOUNDARY` and `THIRD_PARTY_NOTICES.md`.
 
-> 2026-09-03 审计结论：下面的勾选项记录的是主流程实现里程碑，
-> 不等于严格 DoD 已完成。当前仍有地形数据纹理缺失、水景构图、状态版本、
-> 重连、真实身份和 3D 状态映射等缺口。下一阶段执行合同见
-> [`NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](./NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md)。
+> 2026-09-03 阶段更新：水景数据链路、临水默认构图、状态版本单调性、WS
+> 重连、稳定消息 ID、统一 REST/WS 适配和 SceneBridge 已落地。严格 DoD
+> 仍保留双客户端证据、正式身份和最终桌椅美术签收，不能把这些未完成项写成已完成。
 
 ## 已完成的实现里程碑（非严格 DoD）
 
@@ -54,13 +53,18 @@ baseline, remove its vehicle/player/game/portfolio product layer, and mount
 - `corepack pnpm build` — passed; only the expected large WebGPU runtime chunk
   warning remains.
 - `git diff --check` — passed.
-- Backend `pytest` — **496 passed** (21.73s; Python dependency deprecation
+- Backend `pytest` — **496 passed** (20.52s; Python dependency deprecation
   warnings only).
 - Browser smoke on `http://127.0.0.1:5174/` with local backend on `:8000`:
   original Bruno environment rendered; table entry → lobby → same 3D room;
-  backend seat count and live connection shown; drag orbit and wheel zoom
-  changed only the camera; refresh restored the active room; history opened as
-  a darkened/blurred overlay and displayed the backend replay.
+  backend seat count and live connection shown; a real viewer message was
+  committed and then returned by `/replay`; history opened as a
+  darkened/blurred overlay. Fresh page load finished with 0 console errors
+  (only the Windows WebGPU `powerPreference` warning).
+- Visual captures at `1440×900` and `1920×1080` show the restored water band,
+  white shoreline detail, table and original lighting/post-processing together;
+  captures are local QA artifacts under `output/playwright/` and are ignored by
+  Git.
 
 ## Known local-state note
 
@@ -71,10 +75,9 @@ backend state outside the frontend code change.
 
 ## 当前缺口
 
-- `Terrain.js` 依赖的 `terrainTexture` 没有被加载，仓库也尚未包含原始
-  `terrain.png/ktx`；这会破坏水深、岸线、地表颜色和草地遮罩。
-- 当前默认桌锚点和镜头尚未完成临水构图验收，水景没有达到 Bruno 基准。
-- 产品桌椅仍是程序化占位资产，尚未达到严格视觉 DoD。
-- 状态版本单调性、WS 重连、消息 pending/重试和错误到 mock 的边界仍需收紧。
-- 五个席位、当前发言者和六种主持动作尚未完整映射到 3D。
-- 仍缺双真实客户端、隐私投影、断线恢复和视觉矩阵的完整验收证据。
+- 产品桌椅仍是 Bruno 材质管线下的程序化产品资产，尚未达到最终美术签收；
+  后续替换时仍应只改 `TableMeeting` 与它的资源边界。
+- 目前使用开发态 `viewer` 身份，正式登录/身份解析器还没有接入前端。
+- 还缺两台独立浏览器的并行加入、断线后恢复、低/中/高质量档和移动端的
+  完整验收证据；这些是证据缺口，不代表后端接口未实现。
+- 主动需求入口、关系/行动回响等产品计划后续能力尚未进入本阶段。

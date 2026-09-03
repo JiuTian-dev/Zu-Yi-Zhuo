@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { humanActors, tableHost } from './actors'
 import { worldLabel, type TableSummary } from './domain'
 import type { LobbyFitPreviewLike, LobbyPreviewLike } from './live/contract'
+import { VIEWER_ID } from './live/identity'
 
 interface LobbyProps {
   table: TableSummary
@@ -11,14 +12,15 @@ interface LobbyProps {
   lobby: LobbyPreviewLike | null
   fit: LobbyFitPreviewLike | null
   loading: boolean
+  error?: string | null
 }
 
-export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, loading }: LobbyProps) {
+export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, loading, error = null }: LobbyProps) {
   const panelRef = useRef<HTMLElement>(null)
   const title = lobby?.core_question ?? table.hook
   const missingPerspective = lobby?.missing_perspective ?? table.missingPerspective
   const members = lobby?.members ?? humanActors.map((actor) => ({ participant_id: actor.id, display_name: actor.displayName, role: actor.role }))
-  const viewerAlreadySeated = members.some((member) => member.participant_id === 'viewer')
+  const viewerAlreadySeated = members.some((member) => member.participant_id === VIEWER_ID)
   const hasOpenSeat = lobby ? lobby.available_seats > 0 : true
 
   useEffect(() => {
@@ -77,10 +79,11 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
         )}
 
         {loading && <p className="lobby-loading" role="status">正在把这张桌的最新状态接过来…</p>}
+        {error && <p className="lobby-error" role="alert">{error}</p>}
 
         <div className="lobby-actions">
-          <button className="lobby-listen" type="button" onClick={onListen} disabled={loading || lobby?.status === 'closed'}>先在旁边听听</button>
-          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || lobby?.status === 'closed' || lobby?.available_seats === 0 || viewerAlreadySeated}>{viewerAlreadySeated ? '已在这一席' : '坐下来看看'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
+          <button className="lobby-listen" type="button" onClick={onListen} disabled={loading || Boolean(error) || lobby?.status === 'closed'}>先在旁边听听</button>
+          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || Boolean(error) || lobby?.status === 'closed' || lobby?.available_seats === 0 || viewerAlreadySeated}>{viewerAlreadySeated ? '已在这一席' : '坐下来看看'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
         </div>
 
       </section>

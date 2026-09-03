@@ -24,6 +24,7 @@ import { Respawns } from './Respawns.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { CameraOrbit } from './CameraOrbit.js'
+import { SceneBridge } from '../SceneBridge.js'
 
 export class Game
 {
@@ -96,12 +97,13 @@ export class Game
         this.rendering.setPostprocessing()
         this.rendering.start()
         this.world = new World()
+        this.sceneBridge = new SceneBridge(this)
 
         this.initialized = true
         this.domElement.dataset.runtimeState = 'ready'
     }
 
-    loadTexture(path, { colorSpace = THREE.NoColorSpace, repeat = false } = {})
+    loadTexture(path, { colorSpace = THREE.NoColorSpace, repeat = false, flipY = true } = {})
     {
         return new Promise((resolve, reject) =>
         {
@@ -111,6 +113,7 @@ export class Game
                 texture.minFilter = THREE.LinearFilter
                 texture.magFilter = THREE.LinearFilter
                 texture.generateMipmaps = false
+                texture.flipY = flipY
                 if(repeat)
                 {
                     texture.wrapS = THREE.RepeatWrapping
@@ -149,6 +152,7 @@ export class Game
             paletteTexture,
             floorSlabsTexture,
             foliageTexture,
+            terrainTexture,
             respawnsReferencesModel,
             terrainModel,
             flowersReferencesModel,
@@ -169,6 +173,7 @@ export class Game
             this.loadTexture(`${base}palette.png`, { colorSpace: THREE.SRGBColorSpace }),
             this.loadTexture(`${base}floor/slabs.png`, { colorSpace: THREE.SRGBColorSpace, repeat: true }),
             this.loadTexture(`${base}foliage/foliageSDF.png`),
+            this.loadTexture(`${base}terrain/terrain.png`, { flipY: false }),
             this.loadGLTF(`${base}respawnsReferences.glb`),
             this.loadGLTF(`${base}terrain/terrain.glb`),
             this.loadGLTF(`${base}flowers/flowersReferences.glb`),
@@ -191,6 +196,7 @@ export class Game
             paletteTexture,
             floorSlabsTexture,
             foliageTexture,
+            terrainTexture,
             respawnsReferencesModel,
             terrainModel,
             flowersReferencesModel,
@@ -228,6 +234,7 @@ export class Game
             return
         this.destroyed = true
         this.cameraOrbit?.destroy?.()
+        this.sceneBridge?.destroy?.()
         this.view?.destroy?.()
         this.viewport?.destroy?.()
         this.rendering?.destroy?.()

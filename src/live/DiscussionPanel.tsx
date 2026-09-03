@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { humanActors, tableHost } from '../actors'
 import type { ReplayResponseLike } from './contract'
 import { loadReplay } from './backend'
+import { VIEWER_ID } from './identity'
 
 const ACTION_LABELS: Record<string, string> = {
   PASS: '递话',
@@ -9,6 +10,7 @@ const ACTION_LABELS: Record<string, string> = {
   REFRAME: '换个角度',
   GROUND: '落在桌面',
   CLOSE: '收束',
+  SILENCE: '安静听',
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -29,7 +31,7 @@ interface DiscussionPanelProps {
 
 function speakerName(participantId: string, members: Array<{ participant_id: string; display_name: string }>) {
   if (participantId === 'table-host') return tableHost.displayName
-  if (participantId === 'viewer') return '你'
+  if (participantId === VIEWER_ID) return '你'
   return members.find((member) => member.participant_id === participantId)?.display_name
     ?? humanActors.find((actor) => actor.id === participantId)?.displayName
     ?? participantId
@@ -38,18 +40,27 @@ function speakerName(participantId: string, members: Array<{ participant_id: str
 export default function DiscussionPanel({ open, tableId, participantId, members, onClose }: DiscussionPanelProps) {
   const [replay, setReplay] = useState<ReplayResponseLike | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
     if (!open) return
     let active = true
     setLoading(true)
+    setError(null)
+    setReplay(null)
     void loadReplay(tableId, participantId).then((result) => {
       if (!active) return
       setReplay(result)
       setLoading(false)
+    }).catch((reason) => {
+      if (!active) return
+      setReplay(null)
+      setError(reason instanceof Error ? reason.message : '暂时取不到这张桌的历史')
+      setLoading(false)
     })
     return () => { active = false }
-  }, [open, participantId, tableId])
+  }, [open, participantId, reloadToken, tableId])
 
   useEffect(() => {
     if (!open) return
@@ -86,7 +97,12 @@ export default function DiscussionPanel({ open, tableId, participantId, members,
         </div>
 
         {loading && <p className="discussion-panel-loading" role="status">正在从桌面回放取回历史…</p>}
-        {!loading && !replay && <p className="discussion-panel-loading">暂时取不到完整回放，下面保留当前已收到的表达。</p>}
+        {!loading && error && (
+          <p className="discussion-panel-loading" role="alert">
+            {error} <button type="button" onClick={() => setReloadToken((value) => value + 1)}>重新读取</button>
+          </p>
+        )}
+        {!loading && !error && !replay && <p className="discussion-panel-loading">暂时取不到这张桌的历史。</p>}
 
         <div className="discussion-panel-body">
           <div className="discussion-timeline" aria-label="真人表达历史">

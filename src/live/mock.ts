@@ -1,5 +1,6 @@
 import type { AgentActionName, TablePhase } from './contract'
 import { pushMessage, resetLive, setLive } from './store'
+import { VIEWER_ID } from './identity'
 
 /** Mock driver used when the backend is unreachable: same event shapes, fully local. */
 
@@ -65,9 +66,9 @@ export function stopMock() {
 }
 
 export function sendViewerMessage(text: string) {
-  pushMessage({ participantId: 'viewer', text, fromHost: false, action: null })
+  pushMessage({ participantId: VIEWER_ID, text, fromHost: false, action: null })
   timers.push(window.setTimeout(() => {
-    setLive({ hostAction: { action: 'PROBE', text: '能再多说一句那天的感受吗？', target: 'viewer' } })
+    setLive({ hostAction: { action: 'PROBE', text: '能再多说一句那天的感受吗？', target: VIEWER_ID } })
     pushMessage({ participantId: 'table-host', text: '能再多说一句那天的感受吗？', fromHost: true, action: 'PROBE' })
   }, 2400))
 }

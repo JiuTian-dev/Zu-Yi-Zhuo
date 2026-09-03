@@ -62,7 +62,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 
 - React + Vite，3D 底座是 Three.js WebGPU。
 - 入口、Lobby、入席、讨论、历史和收桌卡都是 DOM 产品层，叠在同一个持续存在的 3D Runtime 上。
-- 3D 场景已经迁入原运行时的地形、水面、植被、灯光、雾、风场、Bloom、景深和环境变化；地形数据纹理与临水构图仍在下一阶段恢复和验收。
+- 3D 场景已经迁入原运行时的地形、水面、植被、灯光、雾、风场、Bloom、景深和环境变化；原始 `terrain.png` 数据纹理已恢复，默认镜头现在能看到临水构图。
 - 小车、驾驶、角色移动、游戏玩法、作品集菜单和可见的 Bruno 产品界面已经从生产路径移除。
 - 桌内只允许鼠标拖拽改变镜头环绕角度，滚轮改变距离；这些操作不会写入后端，也不会影响桌状态。
 
@@ -86,7 +86,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 已完成：
 
 - [x] 锁定 Bruno `folio-2025` 实时 3D 场景为唯一视觉基准。
-- [ ] 完整恢复原有地形与水景数据链路，并完成临水构图验收（当前水面模块已迁入，但地形数据纹理缺失）。
+- [x] 恢复原有地形与水景数据链路，并完成 1440×900 / 1920×1080 默认镜头的临水构图验收。
 - [x] 复用原有材质、光照、雾、风、植被和后处理。
 - [x] 移除车辆、Player、物理、碰撞玩法、作品集导航和相关菜单。
 - [x] 实现鼠标环绕、滚轮缩放，并把相机状态和后端桌状态隔离。
@@ -107,7 +107,7 @@ backend pytest        496 passed
 
 接下来沿着产品计划继续，把“坐下来和刚好在场的人聊一会儿”做完整，而不是再做一个游戏或作品集网站。
 
-当前先执行 [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md)，恢复 Bruno 水景并收紧数据一致性。完成这一步后再进入以下产品扩展：
+当前阶段按 [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md) 已恢复 Bruno 水景并收紧数据一致性；双客户端、正式身份和最终桌椅美术签收仍在收口。下一步沿产品计划进入以下扩展：
 
 1. **补主动需求入口**：用户可以直接说想聊什么或想一起做什么，经过澄清后进入已有桌或创建新桌。
 2. **让匹配理由可理解**：不只告诉用户“推荐了这桌”，还要说清楚共同问题、互补经历和当前缺口。
@@ -120,6 +120,7 @@ backend pytest        496 passed
 ```text
 src/
 ├── bruno-runtime/                 # Bruno Runtime 的适配版：唯一 3D 渲染和环境系统
+│   ├── SceneBridge.js             # 后端投影到 3D 的唯一桥接
 │   └── Game/
 ├── TableWorld.tsx                 # React 生命周期壳，负责挂载和销毁 Runtime
 ├── TableSea.tsx                   # DOM 桌发现，不再创建第二个 3D 场景
@@ -127,6 +128,7 @@ src/
 ├── live/
 │   ├── api.ts                     # REST 适配层
 │   ├── backend.ts                 # WebSocket、连接和事件适配层
+│   ├── identity.ts                # 当前开发身份；未来替换为登录身份适配器
 │   ├── store.ts                   # 前端实时投影
 │   ├── DiscussionPanel.tsx        # `/replay` 历史弹窗
 │   └── mock.ts                    # 后端不可用时的显式兜底
@@ -173,6 +175,10 @@ corepack pnpm dev
 打开 Vite 输出的地址，默认是 `http://localhost:5173/`。前端开发服务器会把 `/tables`、`/ws` 等请求代理到 `127.0.0.1:8000`。
 
 如果后端没有启动，前端会进入 mock 演示模式；要验证真实桌状态、实时讨论和回放，需要同时启动后端。
+
+本地如果要让旧的静态桌卡首次在空后端里创建演示桌，需要复制 `.env.example` 为 `.env.local`，并将 `VITE_ALLOW_DEV_SEED` 改为 `true`。这个开关只允许开发环境使用，业务错误不会因此被替换成 mock。
+
+生产部署时可在 `.env.local` 或部署环境里设置 `VITE_API_BASE_URL` 和 `VITE_WS_BASE_URL`；留空则使用 Vite 开发代理或同源路径。
 
 ## 常用检查
 

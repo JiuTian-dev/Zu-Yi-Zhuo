@@ -222,6 +222,11 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
 .lobby-context span{display:grid;gap:5px;padding:11px 13px;border-top:1px solid rgba(255,248,225,.16);color:rgba(255,246,227,.84);font-family:'Noto Serif SC',serif;font-size:11px;line-height:1.5}
 .lobby-context small{color:#ffd28d;font-family:'Noto Sans SC',sans-serif;font-size:8px;letter-spacing:.16em}
 .lobby-loading{margin:-8px 0 18px;color:rgba(255,246,227,.5);font-size:10px;letter-spacing:.06em}
+.lobby-error{margin:-8px 0 18px;padding:10px 12px;border-left:2px solid #ff9e80;background:rgba(255,125,94,.08);color:#ffc1a9;font-size:10px;line-height:1.6}
+.message-delivery{display:inline-block;margin-left:8px;color:rgba(255,246,227,.45);font:10px 'Noto Sans SC',sans-serif}
+.message-retry{margin-left:8px;padding:2px 7px;border:1px solid rgba(255,210,141,.5);border-radius:10px;background:none;color:#ffd28d;font-size:9px;cursor:pointer}
+.message-retry:hover{background:rgba(255,210,141,.1)}
+.message-retry:focus-visible{outline:1px solid #ffe19b;outline-offset:3px}
 
 .discussion-panel-root{position:fixed;z-index:60;inset:0;color:#fff6e3}
 .discussion-panel-backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(9,18,17,.68);backdrop-filter:blur(9px);cursor:pointer}

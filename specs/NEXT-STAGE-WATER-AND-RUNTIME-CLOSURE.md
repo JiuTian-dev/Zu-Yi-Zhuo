@@ -1,6 +1,6 @@
 # 下一阶段：水景恢复与运行时收口
 
-> 状态：Ready for execution  
+> 状态：Implementation landed; strict acceptance pending
 > 制定时间：2026-09-03  
 > 上位产品文档：[`docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx`](../docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx)  
 > 视觉与技术合同：[`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)  
@@ -27,14 +27,14 @@
 - 水面继续受 Bruno 的雾、光照、昼夜、景深和后处理影响，不做贴在地面上的独立低模河流；
 - 默认镜头下水面应占据有意义的画面比例，同时桌子仍是视觉和产品焦点。
 
-当前代码已经找到一个确定缺口：
+本阶段确认并修复了一个确定缺口：
 
 - `src/bruno-runtime/Game/Terrain.js` 使用 `this.game.resources.terrainTexture` 生成地表颜色、水深、草密度、岸线和水面细节遮罩；
-- `src/bruno-runtime/Game/Game.js` 当前只加载 `terrain.glb`，没有加载 `terrainTexture`；
-- `public/assets/bruno-runtime/terrain/` 当前也只有 `terrain.glb`；
+- `src/bruno-runtime/Game/Game.js` 已恢复加载 `terrainTexture`，并固定 `flipY = false`；
+- `public/assets/bruno-runtime/terrain/` 已包含浏览器直载的 `terrain.png`；
 - Bruno 基准提交同时包含 `terrain.png` / `terrain.ktx`，并显式加载为 `terrainTexture`。
 
-因此第一步是恢复原地形数据链路，而不是先改颜色或另画一条河。恢复数据后，还要检查当前 `landing` 锚点、桌子位置和默认镜头是否落在合适的临水区域。
+因此本阶段先恢复了原地形数据链路，而不是另画一条河；当前 `landing` 锚点和默认镜头已在 1440×900、1920×1080 下检查到临水构图。
 
 ## 3. 不可破坏的边界
 
@@ -125,4 +125,12 @@
 5. `feat: bridge live table state into Bruno scene`
 6. `test: verify water runtime and two-client flow`
 
-每个提交保持单一目的。S1 验收前不要开始调桌子资产，S3 没通过前不要继续扩主动需求入口。
+每个提交保持单一目的。当前代码已完成 S1、S2 的实现与本地视觉验证，S3、S4 已完成主链路收口；S5 的双客户端、断线恢复和正式身份仍待补证，未因此宣称本阶段严格完成。
+
+## 7. 本次执行记录
+
+- S1：迁入 `terrain.png`，由 `Game.loadResources()` 以数据纹理方式加载；没有引入独立河道、车辆或物理依赖。
+- S2：保留 `landing` 原锚点，使用鼠标拖拽和滚轮检查默认、环绕和缩放；默认画面可见水面、深浅层次和白色岸线。
+- S3：统一 `requestRaw` REST 请求和可配置 API/WS origin；状态版本只接受更新版本；WS 使用有上限退避重连；消息显示 pending/failed/retry；`viewer` 集中在 `live/identity.ts`。
+- S4：新增唯一 `SceneBridge`，把服务端桌状态、当前发言者、主持动作和收桌阶段映射到 `TableMeeting`，历史继续从 `/replay` 读取。
+- S5：`pnpm check`、`pnpm build`、后端 496 项测试和一次真实后端发言→`/replay` 浏览器链路已通过；双客户端及正式身份仍是后续验收项。

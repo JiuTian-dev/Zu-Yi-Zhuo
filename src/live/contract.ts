@@ -109,7 +109,7 @@ export type ServerEvent =
   | { type: 'safety_soft_intervention'; text: string; state_version: number }
   | { type: 'error'; code: string; detail: string }
   | { type: 'safety_enforced'; decision: { reason: string }; state: TableStateLike }
-  | { type: 'participant_consent_changed'; participant_id: string; profile_shared: boolean }
+  | { type: 'participant_consent_changed'; participant_id: string; profile_shared: boolean; state_version?: number }
 
 export interface ClientHumanMessage {
   type: 'human_message'
