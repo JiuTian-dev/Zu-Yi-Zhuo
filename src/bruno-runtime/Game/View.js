@@ -2,6 +2,7 @@
 import * as THREE from 'three/webgpu'
 import { Game } from './Game.js'
 import { Events } from './Events.js'
+import { CAMERA_PRESETS, cloneTableAnchor } from './tableAnchors.js'
 
 export class View
 {
@@ -11,8 +12,8 @@ export class View
         this.events = new Events()
         this.delta = new THREE.Vector3()
         this.camera = new THREE.PerspectiveCamera(38, this.game.viewport.ratio, 0.1, 220)
-        const defaultRespawn = this.game.respawns?.getDefault?.()
-        const focus = new THREE.Vector3(defaultRespawn?.position.x ?? 0, 0.35, defaultRespawn?.position.z ?? 0)
+        const focus = cloneTableAnchor('valley')
+        focus.y = 0.35
         this.focusPoint = {
             position: focus,
             smoothedPosition: focus.clone(),
@@ -26,9 +27,14 @@ export class View
         }
         this.spherical = {
             offset: new THREE.Vector3(8, 6, 10),
-            radius: { current: 13 },
+            radius: { current: CAMERA_PRESETS.overview.radius },
         }
-        this.camera.position.copy(focus).add(new THREE.Vector3(8, 5.2, 11))
+        const horizontal = Math.cos(CAMERA_PRESETS.overview.elevation) * CAMERA_PRESETS.overview.radius
+        this.camera.position.set(
+            focus.x + Math.sin(CAMERA_PRESETS.overview.azimuth) * horizontal,
+            focus.y + Math.sin(CAMERA_PRESETS.overview.elevation) * CAMERA_PRESETS.overview.radius,
+            focus.z + Math.cos(CAMERA_PRESETS.overview.azimuth) * horizontal,
+        )
         this.camera.lookAt(this.focusPoint.position)
         this.game.viewport.events.on('change', () => this.resize())
         this.events.trigger('change')

@@ -1,8 +1,26 @@
-/** @origin PRODUCT DATA BOUNDARY — replace the development identity here when auth is introduced. */
-export const VIEWER_ID = 'viewer'
+/** @origin BACKEND-ADAPTER — session identity boundary for the local client. */
+
+const SESSION_ID_KEY = 'zuoyizhuo.session-identity'
+
+function sessionId() {
+  try {
+    const stored = sessionStorage.getItem(SESSION_ID_KEY)
+    if (stored) return stored
+    const generated = `guest-${crypto.randomUUID().slice(0, 12)}`
+    sessionStorage.setItem(SESSION_ID_KEY, generated)
+    return generated
+  } catch {
+    return `guest-${Math.random().toString(36).slice(2, 14)}`
+  }
+}
+
+export const VIEWER_ID = sessionId()
 
 export const viewerIdentity = {
   participantId: VIEWER_ID,
-  displayName: '你',
+  observerId: `observer-${VIEWER_ID.replace(/^guest-/, '')}`,
+  // The UI resolves this session back to “你”; the backend-facing label must
+  // stay meaningful to other observers instead of leaking a self-relative label.
+  displayName: '第五席',
   role: '第五席',
 } as const

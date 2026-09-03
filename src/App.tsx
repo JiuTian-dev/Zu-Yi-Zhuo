@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { humanActors, tableHost, type ActorId } from './actors'
+import { tableHost } from './actors'
 import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
 import type { AppPhase, TableSummary } from './domain'
@@ -13,19 +13,7 @@ import { loadLobby, loadLobbyFit, ensureTable } from './live/backend'
 import { fetchDiscovery, selectTable } from './live/api'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import TableWorld from './TableWorld'
-
-const turns = [...humanActors, tableHost]
-
-// PRODUCT DOM — deliberately stable screen anchors; they are not 3D objects
-// and never write camera or backend state.
-const actorAnchors: Partial<Record<ActorId, { x: number; y: number }>> = {
-  'shen-zhiyao': { x: 43, y: 42 },
-  'zhou-mo': { x: 54, y: 35 },
-  'lin-zhou': { x: 66, y: 44 },
-  'xu-qing': { x: 61, y: 59 },
-  'table-host': { x: 48, y: 28 },
-  [VIEWER_ID]: { x: 48, y: 76 },
-}
+import { projectTableAnchor, setRuntimeInteraction, transitionTableCamera } from './bruno-runtime/runtimeController'
 
 const ACTION_LABELS: Record<string, string> = {
   SILENCE: '安静听', PASS: '递话', PROBE: '追问', REFRAME: '换个角度', GROUND: '落在桌面', CLOSE: '收束',
@@ -36,20 +24,18 @@ const PHASE_LABELS: Record<string, string> = {
 }
 
 type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
-function speakerName(participantId: string, members: Array<{ participant_id: string; display_name: string }>): string {
+function speakerName(participantId: string, members: Array<{ participant_id: string; display_name: string }>, viewerParticipantId?: string): string {
   if (participantId === 'table-host') return '圆桌主持'
-  if (participantId === VIEWER_ID) return '你'
-  return members.find((member) => member.participant_id === participantId)?.display_name
-    ?? turns.find((turn) => turn.id === participantId)?.displayName
-    ?? participantId
+  if (participantId === viewerParticipantId) return '你'
+  const member = members.find((item) => item.participant_id === participantId)
+  if (!viewerParticipantId && member?.display_name === '你') return '第五席'
+  return member?.display_name ?? participantId
 }
 
-function speakerRole(participantId: string, members: Array<{ participant_id: string; role: string }>): string {
+function speakerRole(participantId: string, members: Array<{ participant_id: string; role: string }>, viewerParticipantId?: string): string {
   if (participantId === 'table-host') return 'Table Host'
-  if (participantId === VIEWER_ID) return '第五席'
-  return members.find((member) => member.participant_id === participantId)?.role
-    ?? turns.find((turn) => turn.id === participantId)?.role
-    ?? '嘉宾'
+  if (participantId === viewerParticipantId) return '第五席'
+  return members.find((member) => member.participant_id === participantId)?.role ?? '嘉宾'
 }
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -67,11 +53,11 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12 1c1 1.2 1 2.8 0 4m2-7c2.8 2.8 2.8 7.2 0 10" className={muted ? 'muted-wave' : ''} />{muted && <path d="m17 10 4 4m0-4-4 4" />}</svg>
 }
 
-function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discovery }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; lobby: LobbyPreviewLike | null; discovery: LobbyPreviewLike[] }) {
+function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discovery, initialJoined = false }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; lobby: LobbyPreviewLike | null; discovery: LobbyPreviewLike[]; initialJoined?: boolean }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [joinOpen, setJoinOpen] = useState(false)
-  const [joined, setJoined] = useState(false)
+  const [joined, setJoined] = useState(initialJoined)
   const [seatDraft, setSeatDraft] = useState('')
   const [joinError, setJoinError] = useState<string | null>(null)
   const [joinDismissed, setJoinDismissed] = useState(false)
@@ -79,7 +65,6 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const [menuOpen, setMenuOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const timer = useRef<number | null>(null)
   const experienceRef = useRef<HTMLElement>(null!)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const joinOpenerRef = useRef<HTMLButtonElement | null>(null)
@@ -110,14 +95,14 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       display_name: participant.display_name,
       role: participant.role,
     }))
-    : lobby?.members ?? humanActors.map((actor) => ({ participant_id: actor.id, display_name: actor.displayName, role: actor.role }))
+    : lobby?.members ?? []
   const roomTurns = tableMembers.map((member) => ({ ...member, id: member.participant_id, displayName: member.display_name, whyHere: '', quote: '', role: member.role }))
   const allTurns = [...roomTurns, { ...tableHost, participant_id: tableHost.id, display_name: tableHost.displayName }]
 
   useEffect(() => {
-    void startLive(table.id, table.hook)
+    void startLive(table.id, table.hook, initialJoined ? 'participant' : 'observer')
     return () => stopLive()
-  }, [table.id, table.hook])
+  }, [initialJoined, table.id, table.hook])
 
   useEffect(() => {
     let raf = 0
@@ -126,17 +111,25 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       const root = experienceRef.current
       if (!root) return
       root.querySelectorAll<HTMLElement>('[data-anchor]').forEach((el) => {
-        const id = (el.dataset.anchor || '') as ActorId | 'viewer'
-        const anchor = actorAnchors[id]
-        if (!anchor) return
-        el.style.left = `${anchor.x}%`
-        el.style.top = `${anchor.y}%`
+        const anchor = projectTableAnchor(el.dataset.anchor || '')
+        if (!anchor) {
+          el.style.visibility = 'hidden'
+          return
+        }
+        el.style.visibility = anchor.visible ? 'visible' : 'hidden'
+        el.style.left = `${anchor.x}px`
+        el.style.top = `${anchor.y}px`
         el.style.transform = 'translate(-50%, -50%)'
       })
     }
     raf = requestAnimationFrame(apply)
     return () => cancelAnimationFrame(raf)
   }, [])
+
+  useEffect(() => {
+    setRuntimeInteraction(!historyOpen && !joinOpen && !menuOpen)
+    return () => setRuntimeInteraction(true)
+  }, [historyOpen, joinOpen, menuOpen])
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
     const active = document.activeElement
@@ -174,6 +167,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setJoinError(null)
     setJoinOpen(false)
     setJoined(true)
+    const stored = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? '{}') as Record<string, unknown>
+    sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ ...stored, joined: true }))
   }
 
   const submitMessage = (event: { preventDefault(): void }) => {
@@ -183,8 +178,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }
 
   const resetDiscovery = () => {
-    if (timer.current !== null) window.clearTimeout(timer.current)
-    timer.current = null
+    void transitionTableCamera({ mode: 'overview', reducedMotion })
     const active = document.activeElement
     if (active instanceof HTMLElement && active.closest('.join-sheet,.table-menu')) experienceRef.current?.focus({ preventScroll: true })
     setJoinOpen(false)
@@ -209,7 +203,6 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [historyOpen, joinOpen, menuOpen])
 
   useEffect(() => () => {
-    if (timer.current !== null) window.clearTimeout(timer.current)
     stopAmbient()
   }, [])
 
@@ -227,16 +220,17 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     if (appPhase === 'world') experienceRef.current.focus({ preventScroll: true })
   }, [appPhase])
 
+  const beginApproach = () => {
+    if (phase !== 'discovering') return
+    setMenuOpen(false)
+    setPhase('approaching')
+    void transitionTableCamera({ mode: 'approach', reducedMotion }).then(() => setPhase('seated'))
+  }
+
   useEffect(() => {
     if (appPhase !== 'world' || entryIntent !== 'join') return
     if (phase === 'discovering') {
-      // Entering from the lobby starts the same short camera approach; there
-      // is no second scene and no vehicle/player state behind this transition.
-      setPhase('approaching')
-      timer.current = window.setTimeout(() => {
-        setPhase('seated')
-        timer.current = null
-      }, reducedMotion ? 60 : 2350)
+      beginApproach()
       return
     }
     if (phase !== 'seated') return
@@ -247,13 +241,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [appPhase, entryIntent, phase, reducedMotion, liveViewerJoined, joinOpen, joinDismissed, joined])
 
   const approachTable = () => {
-    if (phase !== 'discovering') return
-    setMenuOpen(false)
-    setPhase('approaching')
-    timer.current = window.setTimeout(() => {
-      setPhase('seated')
-      timer.current = null
-    }, reducedMotion ? 60 : 2350)
+    beginApproach()
   }
 
   const seated = phase === 'seated'
@@ -264,7 +252,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const currentTurn = speakingTurn ?? allTurns[0]
   const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
   return (
-    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world'} aria-hidden={appPhase !== 'world'} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
+    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world' || historyOpen} aria-hidden={appPhase !== 'world' || historyOpen} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
@@ -308,18 +296,17 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
 
         <div className="actor-hotspots" aria-label="桌上成员">
           {tableMembers.filter((member) => member.participant_id !== VIEWER_ID).map((member) => {
-            const actor = humanActors.find((item) => item.id === member.participant_id)
             return (
             <button
               key={member.participant_id}
-              className={`actor-hotspot ${actor?.hotspotClass ?? ''}`}
+              className="actor-hotspot"
               type="button"
               data-anchor={member.participant_id}
               data-active={currentTurn.id === member.participant_id}
               aria-label={`查看${member.display_name}，${member.role}`}
             >
               <i />
-              <span className="actor-profile"><small>{member.role}</small><b>{member.display_name}</b><em>{actor?.whyHere ?? '这张桌的参与者'}</em><strong>参与者 · {member.participant_id}</strong></span>
+              <span className="actor-profile"><small>{member.role}</small><b>{member.display_name}</b><em>这张桌的参与者</em><strong>参与者 · {member.participant_id}</strong></span>
             </button>
             )
           })}
@@ -344,7 +331,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
             liveMessages.slice(-2).map((message, index, list) => (
               <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
                 <b className={message.fromHost ? 'host-name' : ''}>
-                  {speakerName(message.participantId, tableMembers)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
+                  {speakerName(message.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
                 </b>
                 “{message.text}”
                 {message.delivery === 'pending' && <small className="message-delivery">正在送达</small>}
@@ -355,7 +342,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
             <p>桌面正在等下一句真实表达。</p>
           )}
           <div>
-            <span><b>{lastLive ? speakerName(lastLive.participantId, tableMembers) : '等待发言'}</b>{lastLive ? ` · ${speakerRole(lastLive.participantId, tableMembers)}` : ''}</span>
+            <span><b>{lastLive ? speakerName(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined) : '等待发言'}</b>{lastLive ? ` · ${speakerRole(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}` : ''}</span>
             <i>{liveActive ? '·' : '—'}</i>
           </div>
           {hasJoined && liveActive && (
@@ -364,12 +351,12 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
               <button type="submit" disabled={!messageDraft.trim()}>说</button>
             </form>
           )}
-          {liveActive && <button className="nudge-button" type="button" onClick={() => requestNudge()}>请主持人递个话</button>}
+          {hasJoined && liveActive && <button className="nudge-button" type="button" onClick={() => requestNudge()}>请主持人递个话</button>}
         </div>
         {hasJoined && liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
         {closeState === 'ready' && liveBaseline && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onReturn={onExit} />}
-        <DiscussionPanel open={historyOpen} tableId={currentTableId()} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} />
+        <DiscussionPanel open={historyOpen} tableId={currentTableId()} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
         <button className="join-table-button" type="button" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i />{hasJoined ? '已坐到第五席' : '坐到空席'} <span>{hasJoined ? '✓' : '→'}</span></button>
         {hasJoined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
           <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
@@ -408,11 +395,11 @@ interface TransitionSnapshot { table: TableSummary; rect: GalleryMediaRect }
 
 const ROOM_SESSION_KEY = 'zuoyizhuo.active-room'
 
-function readActiveRoom(): { table: TableSummary; intent: 'listen' | 'join' } | null {
+function readActiveRoom(): { table: TableSummary; intent: 'listen' | 'join'; joined: boolean } | null {
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? 'null') as { table?: TableSummary; intent?: 'listen' | 'join' } | null
+    const parsed = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? 'null') as { table?: TableSummary; intent?: 'listen' | 'join'; joined?: boolean } | null
     if (!parsed?.table?.id || !parsed.table.hook || (parsed.intent !== 'listen' && parsed.intent !== 'join')) return null
-    return { table: parsed.table, intent: parsed.intent }
+    return { table: parsed.table, intent: parsed.intent, joined: parsed.joined === true }
   } catch {
     return null
   }
@@ -443,6 +430,7 @@ export default function App() {
   const pendingRectRef = useRef<GalleryMediaRect | null>(null)
   const reducedMotion = useReducedMotion()
   const liveStatus = useLive((state) => state.status)
+  const liveTableState = useLive((state) => state.tableState)
   useEffect(() => {
     void fetchDiscovery().then((items) => {
       setDiscovery(items)
@@ -456,6 +444,7 @@ export default function App() {
       document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
     }
   }, [])
+
   useEffect(() => {
     if (appPhase !== 'world' || !lobbyTable || lobbyData || (liveStatus !== 'live' && liveStatus !== 'mock')) return
     let active = true
@@ -464,6 +453,25 @@ export default function App() {
     }).catch(() => undefined)
     return () => { active = false }
   }, [appPhase, liveStatus, lobbyData, lobbyTable])
+
+  useEffect(() => {
+    if (!liveTableState) return
+    setLobbyData((current) => current ? {
+      ...current,
+      state_version: liveTableState.version,
+      current_subquestion: liveTableState.current_subquestion,
+      phase: liveTableState.phase,
+      mode: liveTableState.conversation.mode ?? current.mode,
+      status: liveTableState.conversation.closed ? 'closed' : current.status,
+      participant_count: Object.keys(liveTableState.participants).length,
+      available_seats: Math.max(0, 5 - Object.keys(liveTableState.participants).length),
+      members: Object.values(liveTableState.participants).map((participant) => ({
+        participant_id: participant.participant_id,
+        display_name: participant.display_name,
+        role: participant.role,
+      })),
+    } : current)
+  }, [liveTableState])
   const schedulePhase = (phase: AppPhase, delay: number) => {
     if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
     transitionTimer.current = window.setTimeout(() => {
@@ -509,7 +517,7 @@ export default function App() {
   const startWorld = (intent: 'listen' | 'join') => {
     if (appPhase !== 'lobby' || !lobbyTable) return
     setEntryIntent(intent)
-    sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ table: lobbyTable, intent }))
+    sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ table: lobbyTable, intent, joined: false }))
     const viewportRect: GalleryMediaRect = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
     setTransition({ table: lobbyTable, rect: pendingRectRef.current ?? viewportRect })
     setAppPhase('expanding')
@@ -533,7 +541,7 @@ export default function App() {
     <>
       <TableWorld active />
       {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} discovery={discovery} backendUnavailable={discoveryUnavailable} />}
-      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} onExit={exitTable} />}
+      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={activeRoom?.joined ?? false} onExit={exitTable} />}
       {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>

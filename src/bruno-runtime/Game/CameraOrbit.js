@@ -1,5 +1,6 @@
 /** @origin ZUOYIZHUO-SCENE — mouse-only camera input; never writes table state. */
 import * as THREE from 'three/webgpu'
+import { CAMERA_PRESETS } from './tableAnchors.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -10,13 +11,16 @@ export class CameraOrbit
         this.game = game
         this.camera = camera
         this.target = target
+        this.goalTarget = target.clone()
         this.domElement = game.domElement
         this.azimuth = 0.62
         this.elevation = 0.42
-        this.radius = 12.8
+        this.radius = CAMERA_PRESETS.overview.radius
         this.goalAzimuth = this.azimuth
         this.goalElevation = this.elevation
         this.goalRadius = this.radius
+        this.transition = null
+        this.enabled = true
         this.dragging = false
         this.pointerId = null
         this.lastX = 0
@@ -37,12 +41,17 @@ export class CameraOrbit
 
     isUiTarget(target)
     {
-        return target instanceof Element && !!target.closest('button,a,input,textarea,select,[role="dialog"],[data-ui-interactive]')
+        if(!(target instanceof Element)) return false
+        if(target.closest('button,a,input,textarea,select,[role="dialog"],[data-ui-interactive]')) return true
+        // Product DOM sits above the persistent canvas. Text, cards and status
+        // surfaces must never become accidental camera drag targets.
+        return Boolean(this.domElement && !this.domElement.contains(target))
     }
 
     onPointerDown(event)
     {
-        if(event.button !== 0 || this.isUiTarget(event.target)) return
+        if(!this.enabled || event.button !== 0 || this.isUiTarget(event.target)) return
+        this.cancelTransition()
         this.dragging = true
         this.pointerId = event.pointerId
         this.lastX = event.clientX
@@ -73,17 +82,37 @@ export class CameraOrbit
 
     onWheel(event)
     {
-        if(this.isUiTarget(event.target)) return
+        if(!this.enabled || this.isUiTarget(event.target)) return
         event.preventDefault()
         this.goalRadius = clamp(this.goalRadius + event.deltaY * 0.008, 7.2, 20)
     }
 
     update(delta = 0.016)
     {
-        const easing = 1 - Math.exp(-7 * Math.min(delta || 0.016, 0.1))
-        this.azimuth = THREE.MathUtils.lerp(this.azimuth, this.goalAzimuth, easing)
-        this.elevation = THREE.MathUtils.lerp(this.elevation, this.goalElevation, easing)
-        this.radius = THREE.MathUtils.lerp(this.radius, this.goalRadius, easing)
+        if(this.transition)
+        {
+            this.transition.elapsed += Math.min(delta || 0.016, 0.1) * 1000
+            const progress = clamp(this.transition.elapsed / this.transition.duration, 0, 1)
+            const eased = progress * progress * (3 - 2 * progress)
+            this.target.lerpVectors(this.transition.startTarget, this.transition.target, eased)
+            this.azimuth = THREE.MathUtils.lerp(this.transition.startAzimuth, this.transition.azimuth, eased)
+            this.elevation = THREE.MathUtils.lerp(this.transition.startElevation, this.transition.elevation, eased)
+            this.radius = THREE.MathUtils.lerp(this.transition.startRadius, this.transition.radius, eased)
+            if(progress >= 1)
+            {
+                const resolve = this.transition.resolve
+                this.transition = null
+                resolve?.()
+            }
+        }
+        else
+        {
+            this.target.lerp(this.goalTarget ?? this.target, 1 - Math.exp(-8 * Math.min(delta || 0.016, 0.1)))
+            const easing = 1 - Math.exp(-7 * Math.min(delta || 0.016, 0.1))
+            this.azimuth = THREE.MathUtils.lerp(this.azimuth, this.goalAzimuth, easing)
+            this.elevation = THREE.MathUtils.lerp(this.elevation, this.goalElevation, easing)
+            this.radius = THREE.MathUtils.lerp(this.radius, this.goalRadius, easing)
+        }
         const horizontal = Math.cos(this.elevation) * this.radius
         this.camera.position.set(
             this.target.x + Math.sin(this.azimuth) * horizontal,
@@ -97,15 +126,76 @@ export class CameraOrbit
 
     reset()
     {
-        this.goalAzimuth = 0.62
-        this.goalElevation = 0.42
-        this.goalRadius = 12.8
+        this.goalAzimuth = CAMERA_PRESETS.overview.azimuth
+        this.goalElevation = CAMERA_PRESETS.overview.elevation
+        this.goalRadius = CAMERA_PRESETS.overview.radius
+        this.goalTarget?.copy(this.target)
     }
 
     setTarget(target)
     {
         this.target.copy(target)
+        this.goalTarget = target.clone()
         this.reset()
+    }
+
+    focusTable(target, options = {})
+    {
+        return this.transitionTo(target, options)
+    }
+
+    setEnabled(enabled)
+    {
+        this.enabled = enabled
+        if(!enabled)
+        {
+            this.cancelTransition()
+            this.dragging = false
+            this.pointerId = null
+            this.domElement.classList.remove('is-orbiting')
+        }
+    }
+
+    transitionTo(target, { azimuth = this.goalAzimuth, elevation = this.goalElevation, radius = this.goalRadius, duration = 1100 } = {})
+    {
+        this.cancelTransition()
+        if(duration <= 0)
+        {
+            this.target.copy(target)
+            this.goalTarget = target.clone()
+            this.azimuth = this.goalAzimuth = azimuth
+            this.elevation = this.goalElevation = elevation
+            this.radius = this.goalRadius = radius
+            return Promise.resolve()
+        }
+        return new Promise((resolve) =>
+        {
+            this.transition = {
+                elapsed: 0,
+                duration,
+                startTarget: this.target.clone(),
+                target: target.clone(),
+                startAzimuth: this.azimuth,
+                azimuth,
+                startElevation: this.elevation,
+                elevation,
+                startRadius: this.radius,
+                radius,
+                resolve,
+            }
+            this.goalTarget = target.clone()
+            this.goalAzimuth = azimuth
+            this.goalElevation = elevation
+            this.goalRadius = radius
+        })
+    }
+
+    cancelTransition()
+    {
+        if(!this.transition) return
+        const resolve = this.transition.resolve
+        this.transition = null
+        resolve?.()
     }
 
     destroy()

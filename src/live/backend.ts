@@ -6,7 +6,7 @@ import { VIEWER_ID, viewerIdentity } from './identity'
 import * as mock from './mock'
 import { commitMessage, getLiveState, markMessageFailed, markMessagePending, pushMessage, resetLive, setLive, type LiveStatus } from './store'
 
-const DEFAULT_TABLE_ID = 'valley-learning-to-rest'
+const DEFAULT_TABLE_ID = 'learning-to-rest'
 const DEFAULT_CORE_QUESTION = '为什么我们越来越不会休息？'
 
 const runtime = {
@@ -15,6 +15,7 @@ const runtime = {
   viewerSocket: null as WebSocket | null,
   observerSocket: null as WebSocket | null,
   viewerJoined: false,
+  connectionMode: 'observer' as 'observer' | 'participant',
   reopenCount: 0,
   viewerMessageSeq: 0,
   seenMessageIds: new Set<string>(),
@@ -122,7 +123,7 @@ function handleServerEvent(event: ServerEvent) {
       break
     case 'table_closed':
       setLive({ closeState: 'started' })
-      void recoverCloseArtifacts(activeTableId, VIEWER_ID)
+      if (runtime.viewerJoined) void recoverCloseArtifacts(activeTableId, VIEWER_ID)
       break
     default:
       break
@@ -197,7 +198,8 @@ function scheduleReconnect(generation = liveGeneration) {
     if (runtime.reconnectTimer === timer) runtime.reconnectTimer = null
     if (generation !== liveGeneration) return
     const mode = runtime.viewerJoined ? 'participant' : 'observer'
-    const socket = await openPuppet(currentTableId(), VIEWER_ID, mode, generation)
+    const identity = mode === 'participant' ? VIEWER_ID : viewerIdentity.observerId
+    const socket = await openPuppet(currentTableId(), identity, mode, generation)
     if (generation !== liveGeneration) return
     if (!socket) {
       scheduleReconnect(generation)
@@ -310,7 +312,7 @@ export function ensureTable(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_C
   return request
 }
 
-export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION): Promise<void> {
+export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION, requestedMode: 'observer' | 'participant' = 'observer'): Promise<void> {
   const generation = ++liveGeneration
   resetLive()
   resetEventDedupe()
@@ -334,34 +336,31 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   }
   let initialState: NonNullable<LiveStatus['tableState']>
   try {
-    initialState = await fetchTableState(readyTableId)
+    initialState = await fetchTableState(readyTableId, requestedMode === 'participant' ? VIEWER_ID : undefined)
   } catch (error) {
     if (generation !== liveGeneration) return
     if (error instanceof BackendApiError && error.status === 0) mock.startMock()
     else setLive({ status: 'error', lastError: error instanceof Error ? error.message : '无法读取这张桌的状态' })
     return
   }
-  const stageSocket = await openPuppet(readyTableId, VIEWER_ID, 'observer')
+  const shouldParticipate = requestedMode === 'participant' && Boolean(initialState.participants[VIEWER_ID])
+  const connectionMode = shouldParticipate ? 'participant' : 'observer'
+  const socketIdentity = shouldParticipate ? VIEWER_ID : viewerIdentity.observerId
+  const stageSocket = await openPuppet(readyTableId, socketIdentity, connectionMode)
   if (generation !== liveGeneration) return
   if (!stageSocket) {
     setLive({ status: 'error', lastError: '实时连接暂时没有建立，请稍后重试。' })
     return
   }
   setLive({ status: 'live', coreQuestion })
-  runtime.observerSocket = stageSocket
+  runtime.connectionMode = connectionMode
+  runtime.viewerJoined = shouldParticipate
+  if (connectionMode === 'participant') runtime.viewerSocket = stageSocket
+  else runtime.observerSocket = stageSocket
   try {
     applyTableState(initialState)
-    if (initialState.participants[VIEWER_ID]) {
-      const participantSocket = await openPuppet(readyTableId, VIEWER_ID, 'participant')
-      if (participantSocket && generation === liveGeneration) {
-        closeSocket(runtime.observerSocket)
-        runtime.observerSocket = null
-        runtime.viewerJoined = true
-        runtime.viewerSocket = participantSocket
-        setLive({ viewerJoined: true })
-      }
-      if (initialState.conversation.closed) void recoverCloseArtifacts(readyTableId, VIEWER_ID)
-    }
+    setLive({ viewerJoined: shouldParticipate })
+    if (initialState.conversation.closed && shouldParticipate) void recoverCloseArtifacts(readyTableId, VIEWER_ID)
   } catch {
     // The observer stream remains authoritative if the initial REST refresh races it.
   }
@@ -393,6 +392,7 @@ export async function joinViewer(openingText = '', profileShared = false): Promi
   const socket = await openPuppet(currentTableId(), VIEWER_ID, 'participant')
   if (!socket) return { ok: false, error: '实时连接暂时没有建立，请稍后重试。' }
   runtime.viewerJoined = true
+  runtime.connectionMode = 'participant'
   runtime.viewerSocket = socket
   setLive({ viewerJoined: true })
   try {
@@ -454,7 +454,7 @@ export function requestNudge(): boolean {
     mock.sendViewerMessage('我想听听主持人的下一步引导。')
     return true
   }
-  return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_nudge' })
+  return runtime.viewerJoined && !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_nudge' })
 }
 
 export function loadLobby(tableId = currentTableId()): Promise<LobbyPreviewLike> {
@@ -474,7 +474,7 @@ export function requestClose(): boolean {
     mock.requestClose()
     return true
   }
-  return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_close' })
+  return runtime.viewerJoined && !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_close' })
 }
 
 export function stopLive() {
@@ -491,6 +491,7 @@ export function stopLive() {
   runtime.viewerSocket = null
   runtime.observerSocket = null
   runtime.viewerJoined = false
+  runtime.connectionMode = 'observer'
   setLive({ viewerJoined: false })
   resetEventDedupe()
 }

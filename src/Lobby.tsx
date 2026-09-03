@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { humanActors, tableHost } from './actors'
+import { tableHost } from './actors'
 import { worldLabel, type TableSummary } from './domain'
 import type { LobbyFitPreviewLike, LobbyPreviewLike } from './live/contract'
 import { VIEWER_ID } from './live/identity'
@@ -19,9 +19,12 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
   const panelRef = useRef<HTMLElement>(null)
   const title = lobby?.core_question ?? table.hook
   const missingPerspective = lobby?.missing_perspective ?? table.missingPerspective
-  const members = lobby?.members ?? humanActors.map((actor) => ({ participant_id: actor.id, display_name: actor.displayName, role: actor.role }))
+  // PRODUCT DATA BOUNDARY — member rows only come from the backend lobby
+  // projection. An unavailable lobby is shown as an error, never as fixture
+  // participants that look like real people.
+  const members = lobby?.members ?? []
   const viewerAlreadySeated = members.some((member) => member.participant_id === VIEWER_ID)
-  const hasOpenSeat = lobby ? lobby.available_seats > 0 : true
+  const hasOpenSeat = Boolean(lobby && lobby.available_seats > 0)
 
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true })
@@ -47,10 +50,9 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
 
         <div className="lobby-members" aria-label="桌上的成员">
           {members.map((member) => {
-            const actor = humanActors.find((item) => item.id === member.participant_id)
             return (
             <div key={member.participant_id} className="lobby-member">
-              <i style={{ background: actor?.accent ?? '#9ec5a7' }} aria-hidden="true" />
+              <i style={{ background: `hsl(${(member.participant_id.length * 29) % 360} 38% 58%)` }} aria-hidden="true" />
               <span><b>{member.display_name}</b><small>{member.role}</small></span>
             </div>
             )
@@ -82,8 +84,8 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
         {error && <p className="lobby-error" role="alert">{error}</p>}
 
         <div className="lobby-actions">
-          <button className="lobby-listen" type="button" onClick={onListen} disabled={loading || Boolean(error) || lobby?.status === 'closed'}>先在旁边听听</button>
-          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || Boolean(error) || lobby?.status === 'closed' || lobby?.available_seats === 0 || viewerAlreadySeated}>{viewerAlreadySeated ? '已在这一席' : '坐下来看看'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
+          <button className="lobby-listen" type="button" onClick={onListen} disabled={loading || Boolean(error) || !lobby || lobby.status === 'closed'}>先在旁边听听</button>
+          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || Boolean(error) || !lobby || lobby.status === 'closed' || lobby.available_seats === 0 || viewerAlreadySeated}>{viewerAlreadySeated ? '已在这一席' : '坐下来看看'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
         </div>
 
       </section>

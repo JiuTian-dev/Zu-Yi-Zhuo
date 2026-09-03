@@ -20,7 +20,6 @@ import { Terrain } from './Terrain.js'
 import { Water } from './Water.js'
 import { Quality } from './Quality.js'
 import { World } from './World/World.js'
-import { Respawns } from './Respawns.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { CameraOrbit } from './CameraOrbit.js'
@@ -71,7 +70,6 @@ export class Game
             return
         }
 
-        this.respawns = new Respawns('landing')
         this.view = new View()
         this.cameraOrbit = new CameraOrbit(this, this.view.camera, this.view.focusPoint.position)
 
@@ -153,7 +151,6 @@ export class Game
             floorSlabsTexture,
             foliageTexture,
             terrainTexture,
-            respawnsReferencesModel,
             terrainModel,
             flowersReferencesModel,
             bushesReferences,
@@ -174,7 +171,6 @@ export class Game
             this.loadTexture(`${base}floor/slabs.png`, { colorSpace: THREE.SRGBColorSpace, repeat: true }),
             this.loadTexture(`${base}foliage/foliageSDF.png`),
             this.loadTexture(`${base}terrain/terrain.png`, { flipY: false }),
-            this.loadGLTF(`${base}respawnsReferences.glb`),
             this.loadGLTF(`${base}terrain/terrain.glb`),
             this.loadGLTF(`${base}flowers/flowersReferences.glb`),
             this.loadGLTF(`${base}bushes/bushesReferences.glb`),
@@ -197,7 +193,6 @@ export class Game
             floorSlabsTexture,
             foliageTexture,
             terrainTexture,
-            respawnsReferencesModel,
             terrainModel,
             flowersReferencesModel,
             bushesReferences,
@@ -216,10 +211,13 @@ export class Game
         }
     }
 
-    setTableTarget(target)
+    setTableTarget(target, options = {})
     {
+        if(this.cameraOrbit?.focusTable)
+            return this.cameraOrbit.focusTable(target, options)
         this.view?.setTarget?.(target)
         this.cameraOrbit?.setTarget?.(target)
+        return Promise.resolve()
     }
 
     disposeResources()

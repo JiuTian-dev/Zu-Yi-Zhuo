@@ -184,6 +184,18 @@ export interface ReplayInterventionLike {
   reflection?: { text: string; evidence_turns: number[] }
 }
 
+export interface ReplaySourceSignalLike {
+  signal_id?: string
+  type?: string
+  title?: string
+  excerpt?: string
+  summary?: string
+  source_ref?: string
+  author_display_name?: string
+  declared_position?: string
+  interaction_count?: number
+}
+
 export interface ReplaySnapshotLike {
   version: number
   phase: TablePhase
@@ -199,7 +211,7 @@ export interface ReplayResponseLike {
   interventions: ReplayInterventionLike[]
   comments: unknown[]
   comment_promotions: unknown[]
-  source_signals: unknown[]
+  source_signals: ReplaySourceSignalLike[]
 }
 
 export interface InterventionReflectionLike {

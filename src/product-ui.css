@@ -1588,3 +1588,96 @@ body:has(.lobby-root) .sea-page.product-entry .sea-backend-note {
     animation: none;
   }
 }
+
+/* P4 — the replay is portaled to body so it is independent of the scene HUD.
+ * Collapse the product chrome through the body state instead of relying on a
+ * descendant selector that would stop working after the portal move. */
+body:has(.discussion-panel-root) .valley-experience > .site-header,
+body:has(.discussion-panel-root) .valley-experience > .hero-copy,
+body:has(.discussion-panel-root) .valley-experience .seated-hud > :not(.discussion-panel-root) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.discussion-close-banner {
+  margin: 0 31px 12px;
+  padding: 10px 13px;
+  border-left: 2px solid var(--ui-blue);
+  border-radius: 0 12px 12px 0;
+  background: rgba(223, 227, 255, .24);
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.discussion-close-banner.is-ready {
+  border-left-color: #58a78d;
+}
+
+.discussion-grounding,
+.discussion-source {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .22);
+}
+
+.discussion-grounding p,
+.discussion-source b {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.discussion-grounding em,
+.discussion-source small,
+.discussion-activity-count {
+  color: var(--ui-faint);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.discussion-reflection {
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.discussion-close-summary p {
+  display: grid;
+  gap: 4px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.discussion-close-summary p b {
+  color: var(--ui-ink);
+}
+
+@media (max-width: 760px) {
+  .sea-table-list {
+    top: 104px;
+    max-height: 154px;
+    grid-template-columns: 1fr;
+  }
+
+  .sea-copy {
+    bottom: 20px;
+    max-height: min(245px, calc(100svh - 286px));
+    overflow: auto;
+  }
+
+  .discussion-panel-stats {
+    flex-wrap: wrap;
+  }
+
+  .discussion-close-banner {
+    margin-right: 20px;
+    margin-left: 20px;
+  }
+}
