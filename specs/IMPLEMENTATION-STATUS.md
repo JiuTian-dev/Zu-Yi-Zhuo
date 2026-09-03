@@ -9,9 +9,12 @@
 - Previous：Bruno 的原始 WebGPU 场景已经恢复，但桌区水岸、相机进入、旁听
   身份、回放弹窗和清理边界没有完全闭环。
 - Current：P1–P6 的代码主链已经落地；入口、预览、入席、旁听、实时讨论、回放
-  和相机交互均在同一个 Bruno Canvas 上运行。
-- Next：接入正式身份后做生产环境联调；如果美术评审需要更高规格桌椅，只改
-  `src/bruno-runtime/Game/World/TableMeeting.js` 及其资源边界。
+  和相机交互均在同一个 Bruno Canvas 上运行。本轮又完成了一轮前端交互审计：
+  按钮防重复、异步请求隔离、动态成员席位映射、弹层焦点和错误恢复已补齐，详见
+  [`FRONTEND-INTERACTION-AUDIT.md`](./FRONTEND-INTERACTION-AUDIT.md)。
+- Next：接入正式身份后做生产环境联调，并用独立测试桌完成双客户端收桌/断线演练；
+  如果美术评审需要更高规格桌椅，只改 `src/bruno-runtime/Game/World/TableMeeting.js`
+  及其资源边界。
 
 ## 产品与运行时不变量
 

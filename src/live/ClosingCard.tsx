@@ -1,18 +1,56 @@
+import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { PersonalCardLike, SharedBaselineLike } from './contract'
 
 interface ClosingCardProps {
   baseline: SharedBaselineLike
   personalCard: PersonalCardLike | null
+  onDismiss(): void
   onReturn(): void
 }
 
-export default function ClosingCard({ baseline, personalCard, onReturn }: ClosingCardProps) {
-  return (
-    <div className="closing-root" role="dialog" aria-modal="true" aria-label="收桌卡">
-      <div className="closing-veil" aria-hidden="true" />
-      <section className="closing-panel">
+export default function ClosingCard({ baseline, personalCard, onDismiss, onReturn }: ClosingCardProps) {
+  const panelRef = useRef<HTMLElement>(null)
+  const dismissButtonRef = useRef<HTMLButtonElement>(null)
+  const onDismissRef = useRef(onDismiss)
+  onDismissRef.current = onDismiss
+
+  useEffect(() => {
+    dismissButtonRef.current?.focus({ preventScroll: true })
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!panelRef.current) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onDismissRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="closing-root">
+      <div className="closing-veil" role="presentation" aria-hidden="true" onClick={onDismiss} />
+      <section className="closing-panel" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="closing-card-title">
         <p className="closing-kicker">收桌 · 这一桌聊成了什么</p>
-        <h2 className="closing-question">
+        <h2 className="closing-question" id="closing-card-title">
           <small>问题长成了这样</small>
           {baseline.evolved_question.text}
         </h2>
@@ -78,9 +116,13 @@ export default function ClosingCard({ baseline, personalCard, onReturn }: Closin
 
         <div className="closing-echo">
           <span>这道问题长出了下一桌。</span>
-          <button type="button" onClick={onReturn}>回到正在发生的桌 <i>→</i></button>
+          <div className="closing-actions">
+            <button ref={dismissButtonRef} type="button" className="closing-dismiss" onClick={onDismiss}>先留在这张桌</button>
+            <button type="button" onClick={onReturn}>回到桌单 <i>→</i></button>
+          </div>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }

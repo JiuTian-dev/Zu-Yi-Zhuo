@@ -64,6 +64,12 @@ function closeSocket(socket: WebSocket | null) {
   socket.close()
 }
 
+function publicServerError(detail: string) {
+  if (detail.includes('cold-start nudge')) return '主持人还在等桌面上的第一句真实表达。'
+  if (detail.includes('table_soft_expired')) return '这张桌已经暂停接收新表达。'
+  return detail
+}
+
 function handleServerEvent(event: ServerEvent) {
   switch (event.type) {
     case 'message_committed':
@@ -104,7 +110,7 @@ function handleServerEvent(event: ServerEvent) {
       if (acceptStateVersion(event.state.version)) setLive({ tableState: event.state, phase: event.state.phase, subQuestion: event.state.current_subquestion, seatCount: Object.keys(event.state.participants).length, safetyNotice: event.decision.reason })
       break
     case 'error':
-      setLive({ lastError: event.detail })
+      setLive({ lastError: publicServerError(event.detail) })
       break
     case 'participant_consent_changed':
       {
@@ -123,16 +129,17 @@ function handleServerEvent(event: ServerEvent) {
       break
     case 'table_closed':
       setLive({ closeState: 'started' })
-      if (runtime.viewerJoined) void recoverCloseArtifacts(activeTableId, VIEWER_ID)
+      if (runtime.viewerJoined) void recoverCloseArtifacts(activeTableId, VIEWER_ID, liveGeneration)
       break
     default:
       break
   }
 }
 
-async function recoverCloseArtifacts(tableId: string, participantId: string) {
+async function recoverCloseArtifacts(tableId: string, participantId: string, generation = liveGeneration) {
   try {
     const artifacts = await fetchCloseArtifacts(tableId, participantId)
+    if (generation !== liveGeneration || tableId !== currentTableId()) return
     setLive({
       closeState: 'ready',
       baseline: artifacts.shared_baseline as LiveStatus['baseline'],
@@ -167,11 +174,17 @@ function openPuppet(tableId: string, participantId: string, mode: 'participant' 
       settle(null)
     }, 4000)
     socket.addEventListener('open', () => {
+      if (generation !== liveGeneration) {
+        closeSocket(socket)
+        settle(null)
+        return
+      }
       opened = true
       trackSocket(socket)
       settle(socket)
     })
     socket.addEventListener('message', (raw) => {
+      if (generation !== liveGeneration) return
       try {
         handleServerEvent(JSON.parse(raw.data) as ServerEvent)
       } catch {
@@ -209,23 +222,27 @@ function scheduleReconnect(generation = liveGeneration) {
     else runtime.observerSocket = socket
     runtime.reconnectAttempt = 0
     setLive({ status: 'live', lastError: null })
-    await hydrateAfterReconnect()
+    await hydrateAfterReconnect(generation)
   }, delay)
   runtime.reconnectTimer = timer
   runtime.timers.add(timer)
 }
 
-async function hydrateAfterReconnect() {
+async function hydrateAfterReconnect(generation = liveGeneration) {
+  const tableId = currentTableId()
   try {
     const participantId = runtime.viewerJoined ? VIEWER_ID : undefined
-    const state = await fetchTableState(currentTableId(), participantId)
+    const state = await fetchTableState(tableId, participantId)
+    if (generation !== liveGeneration || tableId !== currentTableId()) return
     applyTableState(state)
     // The replay endpoint is the recovery boundary for history. The panel
     // fetches it on demand; this request warms the same server-side path after
     // a reconnect and lets a closed table restore its artifacts immediately.
-    await fetchReplay(currentTableId(), participantId)
-    if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(currentTableId(), VIEWER_ID)
+    await fetchReplay(tableId, participantId)
+    if (generation !== liveGeneration || tableId !== currentTableId()) return
+    if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(tableId, VIEWER_ID, generation)
   } catch (error) {
+    if (generation !== liveGeneration || tableId !== currentTableId()) return
     setLive({ lastError: error instanceof Error ? error.message : '重连后的桌状态恢复失败' })
   }
 }
@@ -346,8 +363,11 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   const shouldParticipate = requestedMode === 'participant' && Boolean(initialState.participants[VIEWER_ID])
   const connectionMode = shouldParticipate ? 'participant' : 'observer'
   const socketIdentity = shouldParticipate ? VIEWER_ID : viewerIdentity.observerId
-  const stageSocket = await openPuppet(readyTableId, socketIdentity, connectionMode)
-  if (generation !== liveGeneration) return
+  const stageSocket = await openPuppet(readyTableId, socketIdentity, connectionMode, generation)
+  if (generation !== liveGeneration) {
+    closeSocket(stageSocket)
+    return
+  }
   if (!stageSocket) {
     setLive({ status: 'error', lastError: '实时连接暂时没有建立，请稍后重试。' })
     return
@@ -360,7 +380,7 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   try {
     applyTableState(initialState)
     setLive({ viewerJoined: shouldParticipate })
-    if (initialState.conversation.closed && shouldParticipate) void recoverCloseArtifacts(readyTableId, VIEWER_ID)
+    if (initialState.conversation.closed && shouldParticipate) void recoverCloseArtifacts(readyTableId, VIEWER_ID, generation)
   } catch {
     // The observer stream remains authoritative if the initial REST refresh races it.
   }
@@ -368,14 +388,17 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
 
 export async function joinViewer(openingText = '', profileShared = false): Promise<{ ok: true } | { ok: false; error: string }> {
   if (runtime.viewerJoined) return { ok: true }
+  const generation = liveGeneration
+  const tableId = currentTableId()
   if (getLiveState().status === 'mock') {
+    if (generation !== liveGeneration) return { ok: false, error: '这张桌已经离开，请重新进入。' }
     runtime.viewerJoined = true
     setLive({ seatCount: 5, viewerJoined: true })
     if (openingText.trim()) mock.sendViewerMessage(openingText.trim())
     return { ok: true }
   }
   try {
-    const response = await requestRaw(`/tables/${encodeURIComponent(currentTableId())}/participants`, {
+    const response = await requestRaw(`/tables/${encodeURIComponent(tableId)}/participants`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(viewerSeed(openingText)),
@@ -387,23 +410,33 @@ export async function joinViewer(openingText = '', profileShared = false): Promi
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : '后端暂时不可用' }
   }
+  if (generation !== liveGeneration || tableId !== currentTableId()) return { ok: false, error: '这张桌已经离开，请重新进入。' }
   closeSocket(runtime.observerSocket)
   runtime.observerSocket = null
-  const socket = await openPuppet(currentTableId(), VIEWER_ID, 'participant')
+  const socket = await openPuppet(tableId, VIEWER_ID, 'participant', generation)
   if (!socket) return { ok: false, error: '实时连接暂时没有建立，请稍后重试。' }
+  if (generation !== liveGeneration || tableId !== currentTableId()) {
+    closeSocket(socket)
+    return { ok: false, error: '这张桌已经离开，请重新进入。' }
+  }
   runtime.viewerJoined = true
   runtime.connectionMode = 'participant'
   runtime.viewerSocket = socket
   setLive({ viewerJoined: true })
   try {
-    applyTableState(await fetchTableState(currentTableId(), VIEWER_ID))
+    const state = await fetchTableState(tableId, VIEWER_ID)
+    if (generation === liveGeneration && tableId === currentTableId()) applyTableState(state)
   } catch {
     // The participant socket remains the authoritative source if this refresh races it.
   }
   if (profileShared) {
-    void setProfileConsent(currentTableId(), VIEWER_ID, true)
-      .then(applyTableState)
-      .catch((error) => setLive({ lastError: error instanceof Error ? error.message : '资料授权没有保存成功' }))
+    void setProfileConsent(tableId, VIEWER_ID, true)
+      .then((state) => {
+        if (generation === liveGeneration && tableId === currentTableId()) applyTableState(state)
+      })
+      .catch((error) => {
+        if (generation === liveGeneration && tableId === currentTableId()) setLive({ lastError: error instanceof Error ? error.message : '资料授权没有保存成功' })
+      })
   }
   if (openingText.trim()) {
     sendViewerMessage(openingText.trim())
@@ -414,7 +447,10 @@ export async function joinViewer(openingText = '', profileShared = false): Promi
 export function sendViewerMessage(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
-  if (getLiveState().status === 'mock') {
+  if (!runtime.viewerJoined) return false
+  const status = getLiveState().status
+  if (status !== 'live' && status !== 'mock') return false
+  if (status === 'mock') {
     mock.sendViewerMessage(trimmed)
     return true
   }
@@ -436,6 +472,8 @@ export function sendViewerMessage(text: string): boolean {
 }
 
 export function retryViewerMessage(messageId: string): boolean {
+  if (!runtime.viewerJoined) return false
+  if (getLiveState().status !== 'live') return false
   const message = getLiveState().messages.find((item) => item.messageId === messageId)
   if (!message || !runtime.viewerSocket) return false
   const sent = sendVia(runtime.viewerSocket, {
@@ -450,11 +488,14 @@ export function retryViewerMessage(messageId: string): boolean {
 }
 
 export function requestNudge(): boolean {
-  if (getLiveState().status === 'mock') {
+  if (!runtime.viewerJoined) return false
+  const state = getLiveState()
+  if (state.closeState !== 'idle' || (state.status !== 'live' && state.status !== 'mock')) return false
+  if (state.status === 'mock') {
     mock.sendViewerMessage('我想听听主持人的下一步引导。')
     return true
   }
-  return runtime.viewerJoined && !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_nudge' })
+  return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_nudge' })
 }
 
 export function loadLobby(tableId = currentTableId()): Promise<LobbyPreviewLike> {
@@ -470,11 +511,14 @@ export function loadReplay(tableId = currentTableId(), participantId?: string): 
 }
 
 export function requestClose(): boolean {
-  if (getLiveState().status === 'mock') {
+  if (!runtime.viewerJoined) return false
+  const state = getLiveState()
+  if (state.closeState !== 'idle' || (state.status !== 'live' && state.status !== 'mock')) return false
+  if (state.status === 'mock') {
     mock.requestClose()
     return true
   }
-  return runtime.viewerJoined && !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_close' })
+  return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_close' })
 }
 
 export function stopLive() {

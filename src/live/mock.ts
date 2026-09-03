@@ -30,6 +30,15 @@ const PHASE_TIMELINE: Record<number, { phase: TablePhase; subQuestion: string | 
 
 let timers: number[] = []
 
+function schedule(callback: () => void, delayMs: number) {
+  const timer = window.setTimeout(() => {
+    timers = timers.filter((item) => item !== timer)
+    callback()
+  }, delayMs)
+  timers.push(timer)
+  return timer
+}
+
 function clearTimers() {
   timers.forEach((timer) => window.clearTimeout(timer))
   timers = []
@@ -52,12 +61,12 @@ export function startMock() {
     seatCount: 4,
   })
   SCRIPT.forEach((line, index) => {
-    timers.push(window.setTimeout(() => {
+    schedule(() => {
       pushMessage({ participantId: line.id, text: line.text, fromHost: false, action: null })
       const timeline = PHASE_TIMELINE[index]
       if (timeline) setLive({ phase: timeline.phase, subQuestion: timeline.subQuestion })
-      window.setTimeout(() => hostBeat(index), 1500)
-    }, 2600 + SCRIPT.slice(0, index).reduce((sum, item) => sum + item.waitMs, 0)))
+      schedule(() => hostBeat(index), 1500)
+    }, 2600 + SCRIPT.slice(0, index).reduce((sum, item) => sum + item.waitMs, 0))
   })
 }
 
@@ -67,15 +76,15 @@ export function stopMock() {
 
 export function sendViewerMessage(text: string) {
   pushMessage({ participantId: VIEWER_ID, text, fromHost: false, action: null })
-  timers.push(window.setTimeout(() => {
+  schedule(() => {
     setLive({ hostAction: { action: 'PROBE', text: '能再多说一句那天的感受吗？', target: VIEWER_ID } })
     pushMessage({ participantId: 'table-host', text: '能再多说一句那天的感受吗？', fromHost: true, action: 'PROBE' })
-  }, 2400))
+  }, 2400)
 }
 
 export function requestClose() {
   setLive({ closeState: 'started' })
-  timers.push(window.setTimeout(() => {
+  schedule(() => {
     setLive({
       closeState: 'ready',
       baseline: {
@@ -107,5 +116,5 @@ export function requestClose() {
         ],
       },
     })
-  }, 1400))
+  }, 1400)
 }

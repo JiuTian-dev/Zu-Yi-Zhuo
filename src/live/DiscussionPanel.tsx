@@ -135,7 +135,7 @@ export default function DiscussionPanel({
 
   return createPortal(
     <div className="discussion-panel-root">
-      <button className="discussion-panel-backdrop" type="button" aria-label="关闭讨论历史" onClick={onClose} />
+      <div className="discussion-panel-backdrop" role="presentation" aria-hidden="true" onClick={onClose} />
       <section
         className="discussion-panel"
         ref={panelRef}
@@ -172,7 +172,7 @@ export default function DiscussionPanel({
         )}
         {!loading && !error && !replay && <p className="discussion-panel-loading">暂时取不到这张桌的历史。</p>}
 
-        <div className="discussion-panel-body">
+        {!loading && !error && replay && <div className="discussion-panel-body">
           <div className="discussion-timeline" aria-label="真人表达历史">
             {messages.length === 0 && <p className="discussion-empty">这张桌还在等第一句话。</p>}
             {messages.map((message, index) => (
@@ -231,7 +231,7 @@ export default function DiscussionPanel({
               </section>
             )}
           </aside>
-        </div>
+        </div>}
 
         <footer className="discussion-panel-footer">
           <span>历史只读 · 由这张桌的证据快照重建</span>

@@ -4,7 +4,7 @@ import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
 import type { AppPhase, TableSummary } from './domain'
 import { useLive } from './live/store'
-import { currentTableId, joinViewer, requestClose, requestNudge, retryViewerMessage, sendViewerMessage, startLive, stopLive, viewerSeed } from './live/backend'
+import { joinViewer, requestClose, requestNudge, retryViewerMessage, sendViewerMessage, startLive, stopLive, viewerSeed } from './live/backend'
 import { VIEWER_ID } from './live/identity'
 import ClosingCard from './live/ClosingCard'
 import DiscussionPanel from './live/DiscussionPanel'
@@ -37,6 +37,10 @@ function speakerRole(participantId: string, members: Array<{ participant_id: str
   if (participantId === viewerParticipantId) return '第五席'
   return members.find((member) => member.participant_id === participantId)?.role ?? '嘉宾'
 }
+
+function sentence(text: string) {
+  return text.replace(/[。.!！?？\s]+$/u, '')
+}
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
   useEffect(() => {
@@ -68,9 +72,21 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const experienceRef = useRef<HTMLElement>(null!)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const joinOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const joinPanelRef = useRef<HTMLElement>(null)
   const seatDraftRef = useRef<HTMLTextAreaElement>(null)
   const joinedStatusRef = useRef<HTMLDivElement>(null)
+  const nudgeTimerRef = useRef<number | null>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const retryTimerRef = useRef<number | null>(null)
+  const reopenClosingCardRef = useRef<HTMLButtonElement>(null)
   const [messageDraft, setMessageDraft] = useState('')
+  const [joinPending, setJoinPending] = useState(false)
+  const [nudgePending, setNudgePending] = useState(false)
+  const [closePending, setClosePending] = useState(false)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null)
+  const [selectedActorId, setSelectedActorId] = useState<string | null>(null)
+  const [closingCardOpen, setClosingCardOpen] = useState(false)
 
   const liveStatus = useLive((state) => state.status)
   const liveMessages = useLive((state) => state.messages)
@@ -98,6 +114,11 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     : lobby?.members ?? []
   const roomTurns = tableMembers.map((member) => ({ ...member, id: member.participant_id, displayName: member.display_name, whyHere: '', quote: '', role: member.role }))
   const allTurns = [...roomTurns, { ...tableHost, participant_id: tableHost.id, display_name: tableHost.displayName }]
+  const selectedActor = selectedActorId === tableHost.id
+    ? { participant_id: tableHost.id, display_name: tableHost.displayName, role: tableHost.role, detail: tableHost.whyHere }
+    : tableMembers.find((member) => member.participant_id === selectedActorId)
+      ? { ...tableMembers.find((member) => member.participant_id === selectedActorId)!, detail: '这张桌的参与者' }
+      : null
 
   useEffect(() => {
     void startLive(table.id, table.hook, initialJoined ? 'participant' : 'observer')
@@ -127,9 +148,9 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [])
 
   useEffect(() => {
-    setRuntimeInteraction(!historyOpen && !joinOpen && !menuOpen)
+    setRuntimeInteraction(!historyOpen && !joinOpen && !menuOpen && !closingCardOpen)
     return () => setRuntimeInteraction(true)
-  }, [historyOpen, joinOpen, menuOpen])
+  }, [historyOpen, joinOpen, menuOpen, closingCardOpen])
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
     const active = document.activeElement
@@ -145,36 +166,102 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setMenuOpen(false)
   }
   const openJoin = (opener: HTMLButtonElement) => {
-    if (joined) return
+    if (joined || liveViewerJoined || closeState !== 'idle') return
     joinOpenerRef.current = opener
     setJoinError(null)
     setJoinDismissed(false)
+    setActionNotice(null)
     setJoinOpen(true)
   }
 
   const confirmSeat = async () => {
+    if (joinPending) return
     if (!seatDraft.trim()) {
       setJoinError('先留下一句真实经历，再坐到桌边。')
       seatDraftRef.current?.focus({ preventScroll: true })
       return
     }
-    const result = await joinViewer(seatDraft, profileShared)
-    if (!result.ok) {
-      setJoinError(result.error)
-      return
-    }
-    experienceRef.current?.focus({ preventScroll: true })
+    setJoinPending(true)
     setJoinError(null)
-    setJoinOpen(false)
-    setJoined(true)
-    const stored = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? '{}') as Record<string, unknown>
-    sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ ...stored, joined: true }))
+    try {
+      const result = await joinViewer(seatDraft, profileShared)
+      if (!result.ok) {
+        setJoinError(result.error)
+        return
+      }
+      experienceRef.current?.focus({ preventScroll: true })
+      setJoinError(null)
+      setJoinOpen(false)
+      setJoined(true)
+      setActionNotice('你已入席，接下来可以把这段经历说给桌面听。')
+      const stored = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? '{}') as Record<string, unknown>
+      sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ ...stored, joined: true }))
+    } finally {
+      setJoinPending(false)
+    }
   }
 
   const submitMessage = (event: { preventDefault(): void }) => {
     event.preventDefault()
+    if (!hasJoined || !liveActive || closeState !== 'idle') return
     if (!sendViewerMessage(messageDraft)) return
     setMessageDraft('')
+    setActionNotice('这句话已经递到桌面上。')
+  }
+
+  const retryMessage = (messageId: string) => {
+    if (retryingMessageId) return
+    const sent = retryViewerMessage(messageId)
+    if (!sent) {
+      setActionNotice('这句话还没有重新送达，请确认实时连接后再试。')
+      return
+    }
+    setRetryingMessageId(messageId)
+    setActionNotice('正在重新送达这句话…')
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+    retryTimerRef.current = window.setTimeout(() => {
+      setRetryingMessageId((current) => current === messageId ? null : current)
+      retryTimerRef.current = null
+      setActionNotice('这句话暂时没有收到确认，可以稍后重试。')
+    }, 6000)
+  }
+
+  const requestNudgeFromUi = () => {
+    if (nudgePending || !hasJoined || !liveActive || closeState !== 'idle') return
+    const sent = requestNudge()
+    if (!sent) {
+      setActionNotice('没有连上主持席，这次请求没有送达。')
+      return
+    }
+    setNudgePending(true)
+    setActionNotice('已把你的请求递给主持人。')
+    if (nudgeTimerRef.current !== null) window.clearTimeout(nudgeTimerRef.current)
+    nudgeTimerRef.current = window.setTimeout(() => {
+      setNudgePending(false)
+      nudgeTimerRef.current = null
+    }, 2400)
+  }
+
+  const requestCloseFromUi = () => {
+    if (closePending || !hasJoined || !liveActive || closeState !== 'idle') return
+    const sent = requestClose()
+    if (!sent) {
+      setActionNotice('没有连上桌面，这次收桌请求没有送达。')
+      return
+    }
+    setClosePending(true)
+    setActionNotice('已请主持人整理这张桌的收桌卡。')
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = window.setTimeout(() => {
+      setClosePending(false)
+      setActionNotice('暂时没有收到收桌确认，可以稍后重试。')
+      closeTimerRef.current = null
+    }, 5000)
+  }
+
+  const dismissClosingCard = () => {
+    setClosingCardOpen(false)
+    window.requestAnimationFrame(() => reopenClosingCardRef.current?.focus({ preventScroll: true }))
   }
 
   const resetDiscovery = () => {
@@ -204,12 +291,71 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
 
   useEffect(() => () => {
     stopAmbient()
+    if (nudgeTimerRef.current !== null) window.clearTimeout(nudgeTimerRef.current)
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    if (!retryingMessageId) return
+    const message = liveMessages.find((item) => item.messageId === retryingMessageId)
+    if (message?.delivery === 'pending') return
+    if (message?.delivery === 'failed') setActionNotice('这句话没有送达，可以再次重试。')
+    setRetryingMessageId(null)
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+  }, [liveMessages, retryingMessageId])
+
+  useEffect(() => {
+    if (closeState === 'ready') setClosingCardOpen(true)
+    if (closeState === 'idle') setClosingCardOpen(false)
+    if (closeState !== 'idle') {
+      setClosePending(false)
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = null
+      }
+    }
+  }, [closeState])
+
+  useEffect(() => {
+    if (!liveError) return
+    setActionNotice(liveError)
+    setNudgePending(false)
+    if (nudgeTimerRef.current !== null) {
+      window.clearTimeout(nudgeTimerRef.current)
+      nudgeTimerRef.current = null
+    }
+  }, [liveError])
 
   useEffect(() => {
     if (!joinOpen) return
     const frame = window.requestAnimationFrame(() => seatDraftRef.current?.focus({ preventScroll: true }))
     return () => window.cancelAnimationFrame(frame)
+  }, [joinOpen])
+
+  useEffect(() => {
+    if (!joinOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !joinPanelRef.current) return
+      const focusable = Array.from(joinPanelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [joinOpen])
 
   useEffect(() => {
@@ -248,11 +394,12 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const hasJoined = joined || liveViewerJoined
   const listening = entryIntent === 'listen' && !hasJoined
   const liveActive = liveStatus === 'live' || liveStatus === 'mock'
+  const tableInteractive = hasJoined && liveActive && closeState === 'idle'
   const speakingTurn = liveActive && liveSpeaking ? allTurns.find((turn) => turn.id === liveSpeaking) ?? null : null
   const currentTurn = speakingTurn ?? allTurns[0]
   const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
   return (
-    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world' || historyOpen} aria-hidden={appPhase !== 'world' || historyOpen} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
+    <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world' || historyOpen || closingCardOpen} aria-hidden={appPhase !== 'world' || historyOpen || closingCardOpen} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
       <div className="world-grade" aria-hidden="true" />
 
       <header className="site-header">
@@ -286,7 +433,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         <div className="discussion-state"><i />{liveActive ? `${PHASE_LABELS[livePhase] ?? '讨论'}进行中${liveTableMode === 'sync' ? ' · 同步桌' : ''}` : '讨论正在发生'}</div>
         {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
         {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
-        {(safetyNotice || liveHost?.text || groundingCard || latestReflection || liveError) && <aside className="runtime-notice-stack" aria-live="polite">
+        {(safetyNotice || liveHost?.text || groundingCard || latestReflection || liveError || actionNotice) && <aside className="runtime-notice-stack" aria-live="polite">
+          {actionNotice && <p><b>桌边反馈</b>{actionNotice}</p>}
           {liveError && <p className="is-error"><b>桌面状态</b>{liveError}</p>}
           {safetyNotice && <p className="is-safety"><b>安全边界</b>{safetyNotice}</p>}
           {liveHost?.text && <p><b>{ACTION_LABELS[liveHost.action] ?? liveHost.action}</b>{liveHost.text}</p>}
@@ -303,7 +451,10 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
               type="button"
               data-anchor={member.participant_id}
               data-active={currentTurn.id === member.participant_id}
+              data-selected={selectedActorId === member.participant_id}
+              aria-pressed={selectedActorId === member.participant_id}
               aria-label={`查看${member.display_name}，${member.role}`}
+              onClick={() => setSelectedActorId((current) => current === member.participant_id ? null : member.participant_id)}
             >
               <i />
               <span className="actor-profile"><small>{member.role}</small><b>{member.display_name}</b><em>这张桌的参与者</em><strong>参与者 · {member.participant_id}</strong></span>
@@ -315,14 +466,21 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
             type="button"
             data-anchor="table-host"
             data-active={currentTurn.id === tableHost.id}
+            data-selected={selectedActorId === tableHost.id}
+            aria-pressed={selectedActorId === tableHost.id}
             aria-label="查看圆桌主持"
+            onClick={() => setSelectedActorId((current) => current === tableHost.id ? null : tableHost.id)}
           >
             <i />
             <span className="actor-profile"><small>第六席 · Table Host</small><b>圆桌主持</b><em>认真听，把问题递给此刻最值得说话的人。</em><strong>状态 · {currentTurn.id === tableHost.id ? 'PASS 递话' : 'SILENCE 听'}</strong></span>
           </button>
         </div>
+        {selectedActor && <aside className="actor-selection" role="status" aria-live="polite">
+          <b>{selectedActor.display_name}</b><span>{selectedActor.role} · {selectedActor.detail}</span>
+          <button type="button" onClick={() => setSelectedActorId(null)}>收起</button>
+        </aside>}
         <div className="question-card">
-          <p>{liveActive && liveSubQuestion ? liveSubQuestion : <>我们需要的是休息，<br />还是允许自己停下？</>}</p>
+          <p>{liveActive && liveSubQuestion ? liveSubQuestion : lobby?.current_subquestion ?? table.hook}</p>
         </div>
         <button className="seat-marker" type="button" data-anchor="viewer" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{hasJoined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
@@ -335,7 +493,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
                 </b>
                 “{message.text}”
                 {message.delivery === 'pending' && <small className="message-delivery">正在送达</small>}
-                {message.delivery === 'failed' && <button className="message-retry" type="button" onClick={() => message.messageId && retryViewerMessage(message.messageId)}>重试</button>}
+                {message.delivery === 'failed' && message.messageId && <button className="message-retry" type="button" disabled={retryingMessageId === message.messageId} onClick={() => retryMessage(message.messageId!)}>{retryingMessageId === message.messageId ? '发送中' : '重试'}</button>}
               </p>
             ))
           ) : (
@@ -345,33 +503,34 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
             <span><b>{lastLive ? speakerName(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined) : '等待发言'}</b>{lastLive ? ` · ${speakerRole(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}` : ''}</span>
             <i>{liveActive ? '·' : '—'}</i>
           </div>
-          {hasJoined && liveActive && (
+          {tableInteractive && (
             <form className="viewer-input" onSubmit={submitMessage}>
               <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} placeholder="把你的真实经历说给这桌听…" aria-label="对这桌发言" maxLength={140} />
               <button type="submit" disabled={!messageDraft.trim()}>说</button>
             </form>
           )}
-          {hasJoined && liveActive && <button className="nudge-button" type="button" onClick={() => requestNudge()}>请主持人递个话</button>}
+          {tableInteractive && <button className="nudge-button" type="button" disabled={nudgePending} aria-busy={nudgePending} onClick={requestNudgeFromUi}>{nudgePending ? '请求已递达，等主持人回应…' : '请主持人递个话'}</button>}
         </div>
-        {hasJoined && liveActive && closeState === 'idle' && <button className="close-table-button" type="button" onClick={() => requestClose()}>收这桌 <span>→</span></button>}
+        {tableInteractive && <button className="close-table-button" type="button" disabled={closePending} aria-busy={closePending} onClick={requestCloseFromUi}>{closePending ? '正在请主持人收桌…' : '收这桌'} <span>→</span></button>}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
-        {closeState === 'ready' && liveBaseline && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onReturn={onExit} />}
-        <DiscussionPanel open={historyOpen} tableId={currentTableId()} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
-        <button className="join-table-button" type="button" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i />{hasJoined ? '已坐到第五席' : '坐到空席'} <span>{hasJoined ? '✓' : '→'}</span></button>
+        {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onDismiss={dismissClosingCard} onReturn={onExit} />}
+        {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => setClosingCardOpen(true)}>打开收桌卡 <span>↗</span></button>}
+        <DiscussionPanel open={historyOpen} tableId={table.id} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
+        <button className="join-table-button" type="button" disabled={hasJoined || closeState !== 'idle'} onClick={(event) => openJoin(event.currentTarget)}><i />{hasJoined ? '已坐到第五席' : closeState !== 'idle' ? '这桌已收束' : '坐到空席'} <span>{hasJoined ? '✓' : '→'}</span></button>
         {hasJoined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
           <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
         </div>}
       </section>
 
-      <aside className="join-sheet" aria-hidden={!joinOpen} inert={!joinOpen}>
-        <button className="panel-close" type="button" aria-label="关闭入席邀请" onClick={closeJoin}>×</button>
+      <aside ref={joinPanelRef} className="join-sheet" aria-hidden={!joinOpen} inert={!joinOpen} role="dialog" aria-modal="true" aria-labelledby="join-sheet-title">
+        <button className="panel-close" type="button" aria-label="关闭入席邀请" onClick={closeJoin} disabled={joinPending}>×</button>
         <p className="panel-kicker">第五席 · 正在等你</p>
-        <h2>你不需要带来答案。<br />只需要带来真实经历。</h2>
-        <div className="seat-profile"><p>桌上已经有自由职业、职场压力和心理恢复的视角，但还没有一个真正尝试停下来的人。</p></div>
-        <label className="voice-preview"><span>入席后，你想先说什么？</span><textarea ref={seatDraftRef} value={seatDraft} aria-invalid={Boolean(joinError)} aria-describedby={joinError ? 'seat-draft-error' : undefined} onChange={(event) => { setSeatDraft(event.target.value); if (joinError) setJoinError(null) }} placeholder="也许是最近一次，你明明在休息却仍然感到内疚……" /></label>
+        <h2 id="join-sheet-title">你不需要带来答案。<br />只需要带来真实经历。</h2>
+        <div className="seat-profile"><p>{sentence(lobby?.missing_perspective ?? table.missingPerspective)}。这张桌现在需要你的真实经历，才能把问题继续往前推。</p></div>
+        <label className="voice-preview"><span>入席后，你想先说什么？</span><textarea ref={seatDraftRef} value={seatDraft} aria-invalid={Boolean(joinError)} aria-describedby={joinError ? 'seat-draft-error' : undefined} onChange={(event) => { setSeatDraft(event.target.value); if (joinError) setJoinError(null) }} placeholder="说说你和这道问题的真实关系……" /></label>
         <label className="consent-check"><input type="checkbox" checked={profileShared} onChange={(event) => setProfileShared(event.target.checked)} /><span>允许这张桌看见我的角色与这段经历</span></label>
         {joinError && <p id="seat-draft-error" className="join-error" role="alert">{joinError}</p>}
-        <button className="confirm-seat" type="button" onClick={confirmSeat}>以真实经历入席 <span>→</span></button>
+        <button className="confirm-seat" type="button" disabled={joinPending} aria-busy={joinPending} onClick={confirmSeat}>{joinPending ? '正在确认这一席…' : '以真实经历入席'} <span>→</span></button>
       </aside>
 
       <nav className={`table-menu ${menuOpen ? 'is-open' : ''}`} aria-label="正在发生的桌" aria-hidden={!menuOpen} inert={!menuOpen}>
@@ -386,7 +545,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         )}
       </nav>
 
-      <footer className="scene-footer"><span>瑞士山谷</span><span>01 <i /> 03</span></footer>
+      <footer className="scene-footer"><span>瑞士山谷</span><span>{String(Math.max(1, discovery.findIndex((item) => item.table_id === table.id) + 1)).padStart(2, '0')} <i /> {String(discovery.length || 1).padStart(2, '0')}</span></footer>
     </main>
   )
 }
@@ -428,18 +587,29 @@ export default function App() {
   const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(() => activeRoom?.intent ?? null)
   const transitionTimer = useRef<number | null>(null)
   const pendingRectRef = useRef<GalleryMediaRect | null>(null)
+  const discoveryRequestRef = useRef(0)
+  const lobbyRequestRef = useRef(0)
   const reducedMotion = useReducedMotion()
   const liveStatus = useLive((state) => state.status)
   const liveTableState = useLive((state) => state.tableState)
-  useEffect(() => {
+  const refreshDiscovery = () => {
+    const requestId = ++discoveryRequestRef.current
+    setDiscovery(null)
+    setDiscoveryUnavailable(false)
     void fetchDiscovery().then((items) => {
+      if (requestId !== discoveryRequestRef.current) return
       setDiscovery(items)
-      setDiscoveryUnavailable(false)
     }).catch(() => {
+      if (requestId !== discoveryRequestRef.current) return
       setDiscovery([])
       setDiscoveryUnavailable(true)
     })
+  }
+
+  useEffect(() => {
+    refreshDiscovery()
     return () => {
+      discoveryRequestRef.current += 1
       if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
       document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
     }
@@ -483,11 +653,15 @@ export default function App() {
     if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
     pendingRectRef.current = rect
     setLobbyTable(table)
+    setAppPhase('lobby')
+    loadLobbyData(table)
+  }
+  const loadLobbyData = (table: TableSummary) => {
+    const requestId = ++lobbyRequestRef.current
     setLobbyData(null)
     setLobbyFit(null)
     setLobbyError(null)
     setLobbyLoading(true)
-    setAppPhase('lobby')
     void (async () => {
       try {
         const ready = await ensureTable(table.id, table.hook)
@@ -497,17 +671,23 @@ export default function App() {
           loadLobby(ready),
           loadLobbyFit(ready, viewerSeed()),
         ])
+        if (requestId !== lobbyRequestRef.current) return
         setLobbyData(preview)
         setLobbyFit(fit)
       } catch (error) {
+        if (requestId !== lobbyRequestRef.current) return
         setLobbyError(error instanceof Error ? error.message : '暂时取不到这张桌的状态')
       } finally {
-        setLobbyLoading(false)
+        if (requestId === lobbyRequestRef.current) setLobbyLoading(false)
       }
     })()
   }
+  const retryLobby = () => {
+    if (appPhase === 'lobby' && lobbyTable) loadLobbyData(lobbyTable)
+  }
   const closeLobby = () => {
     if (appPhase !== 'lobby') return
+    lobbyRequestRef.current += 1
     setLobbyTable(null)
     setLobbyData(null)
     setLobbyFit(null)
@@ -525,6 +705,7 @@ export default function App() {
   }
   const exitTable = () => {
     if (appPhase !== 'world') return
+    lobbyRequestRef.current += 1
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setEntryIntent(null)
     sessionStorage.removeItem(ROOM_SESSION_KEY)
@@ -540,9 +721,9 @@ export default function App() {
   return (
     <>
       <TableWorld active />
-      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} discovery={discovery} backendUnavailable={discoveryUnavailable} />}
+      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
       {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={activeRoom?.joined ?? false} onExit={exitTable} />}
-      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
+      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onRetry={retryLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
     </>
   )

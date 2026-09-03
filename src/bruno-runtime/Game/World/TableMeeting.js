@@ -14,8 +14,6 @@ const SEATS = [
     { participantId: 'xu-qing', angle: Math.PI * 0.72, color: '#739d94' },
     { participantId: 'viewer', angle: Math.PI, color: '#ffd58c' },
 ]
-const FIXED_PARTICIPANT_IDS = new Set(SEATS.map((seat) => seat.participantId).filter((id) => id !== 'viewer'))
-
 const ACTION_COLORS = {
     SILENCE: '#9eb5a9',
     PASS: '#ffd58c',
@@ -49,6 +47,7 @@ export class TableMeeting
         this.currentState = null
         this.currentSpeakingId = null
         this.viewerId = null
+        this.participantSeatMap = new Map()
 
         this.addWaterCove()
         this.addTable()
@@ -267,9 +266,43 @@ export class TableMeeting
 
     participantIdForSlot(slot)
     {
-        if(slot.participantId !== 'viewer') return slot.participantId
-        if(this.viewerId && this.currentState?.participants?.[this.viewerId]) return this.viewerId
-        return Object.keys(this.currentState?.participants ?? {}).find((id) => !FIXED_PARTICIPANT_IDS.has(id)) ?? null
+        for(const [participantId, seatId] of this.participantSeatMap)
+            if(seatId === slot.participantId) return participantId
+        return null
+    }
+
+    refreshParticipantSeatMap(state)
+    {
+        this.participantSeatMap.clear()
+        if(!state?.participants) return
+
+        const participantIds = Object.keys(state.participants)
+        const occupiedSeats = new Set()
+        const assign = (participantId, seatId) =>
+        {
+            if(!participantId || !seatId || !state.participants[participantId] || occupiedSeats.has(seatId)) return false
+            this.participantSeatMap.set(participantId, seatId)
+            occupiedSeats.add(seatId)
+            return true
+        }
+
+        // Keep the authored Bruno seat identities stable when the backend has
+        // them. Any other backend participant is assigned to the next open
+        // visual seat, so public IDs never fall back to the viewer marker.
+        for(const seat of SEATS)
+            if(seat.participantId !== 'viewer') assign(seat.participantId, seat.participantId)
+
+        const viewerParticipantId = this.viewerId && state.participants[this.viewerId]
+            ? this.viewerId
+            : state.participants.viewer ? 'viewer' : null
+        assign(viewerParticipantId, 'viewer')
+
+        const freeSeatIds = SEATS
+            .map((seat) => seat.participantId)
+            .filter((seatId) => seatId !== 'viewer' && !occupiedSeats.has(seatId))
+        participantIds
+            .filter((participantId) => !this.participantSeatMap.has(participantId))
+            .forEach((participantId, index) => assign(participantId, freeSeatIds[index]))
     }
 
     participantForSlot(slot)
@@ -283,6 +316,7 @@ export class TableMeeting
         this.currentState = state
         this.currentSpeakingId = speakingId
         this.viewerId = viewerId
+        this.refreshParticipantSeatMap(state)
 
         this.seatSlots.forEach((slot) =>
         {
@@ -329,10 +363,11 @@ export class TableMeeting
     getAnchorWorld(anchorId)
     {
         let slot = null
-        if(anchorId === 'viewer') slot = this.seatSlots.find((item) => item.participantId === 'viewer')
-        else slot = this.seatSlots.find((item) => item.participantId === anchorId)
-        if(!slot && this.currentState?.participants?.[anchorId] && !FIXED_PARTICIPANT_IDS.has(anchorId))
-            slot = this.seatSlots.find((item) => item.participantId === 'viewer')
+        const mappedSeatId = anchorId === 'viewer' && this.participantSeatMap.has('viewer')
+            ? 'viewer'
+            : this.participantSeatMap.get(anchorId)
+        if(mappedSeatId) slot = this.seatSlots.find((item) => item.participantId === mappedSeatId)
+        if(!slot && anchorId === 'viewer') slot = this.seatSlots.find((item) => item.participantId === 'viewer')
         if(!slot && anchorId === 'table-host') return this.group.localToWorld(new THREE.Vector3(0, 1.62, 0))
         if(!slot) return null
         return slot.seatGroup.localToWorld(new THREE.Vector3(0.38, 1.52, 0))

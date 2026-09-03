@@ -34,6 +34,8 @@ export function attachRuntime(next: RuntimeLike) {
 export function detachRuntime(next: RuntimeLike) {
   if (runtime !== next) return
   runtime = null
+  pendingTransition?.resolve()
+  pendingTransition = null
   listeners.forEach((listener) => listener())
 }
 
@@ -45,6 +47,9 @@ export function subscribeRuntime(listener: () => void) {
 export function transitionTableCamera(options: { mode?: 'overview' | 'approach'; reducedMotion?: boolean } = {}) {
   if (runtime?.sceneBridge?.transitionToTable) return runtime.sceneBridge.transitionToTable(options)
   return new Promise<void>((resolve) => {
+    // A rapid sequence of navigation actions should never leave the first
+    // caller waiting forever while the runtime is still attaching.
+    pendingTransition?.resolve()
     pendingTransition = { options, resolve }
   })
 }

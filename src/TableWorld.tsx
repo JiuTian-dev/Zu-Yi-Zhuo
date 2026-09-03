@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useLive } from './live/store'
+import { getLiveState, useLive } from './live/store'
 import { VIEWER_ID } from './live/identity'
 import { attachRuntime, detachRuntime } from './bruno-runtime/runtimeController'
 
@@ -34,7 +34,11 @@ export default function TableWorld({ active }: { active: boolean }) {
         if (!cancelled) {
           attachRuntime(game)
           holder.current?.setAttribute('data-runtime-state', 'ready')
-          game.sceneBridge?.apply?.({ tableState, hostAction, speakingId, closeState, viewerId: VIEWER_ID })
+          // The runtime can finish loading after the first live-state update.
+          // Read the store again here so a fast REST/WS response is not lost
+          // between the React effect and the Bruno scene becoming ready.
+          const latest = getLiveState()
+          game.sceneBridge?.apply?.({ tableState: latest.tableState, hostAction: latest.hostAction, speakingId: latest.speakingId, closeState: latest.closeState, viewerId: VIEWER_ID })
         }
       } catch {
         if (!cancelled) holder.current?.setAttribute('data-runtime-state', 'error')

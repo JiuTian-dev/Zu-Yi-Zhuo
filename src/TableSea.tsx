@@ -11,6 +11,8 @@ interface TableSeaProps {
   returnFocusId: string | null
   discovery?: LobbyPreviewLike[] | null
   backendUnavailable?: boolean
+  loading?: boolean
+  onRetry?(): void
 }
 
 /**
@@ -21,11 +23,12 @@ interface TableSeaProps {
  * Bruno runtime is now persistent underneath this layer; this component is
  * deliberately DOM-only and only selects a backend table.
  */
-export default function TableSea({ onEnter, phase, returnFocusId, discovery = [], backendUnavailable = false }: TableSeaProps) {
+export default function TableSea({ onEnter, phase, returnFocusId, discovery = [], backendUnavailable = false, loading = false, onRetry }: TableSeaProps) {
   const tables = useMemo(() => {
     // PRODUCT DATA BOUNDARY — an empty successful discovery response means
     // there are no tables. Static fixtures are only allowed in the explicit
     // backend-unavailable path.
+    if (loading) return []
     if (backendUnavailable) return galleryTables
     return (discovery ?? []).map((lobby): TableSummary => {
       const common = {
@@ -41,7 +44,7 @@ export default function TableSea({ onEnter, phase, returnFocusId, discovery = []
         ? { ...common, status: 'forming', entryMode: 'preview', transitionPreset: 'cover-only' }
         : { ...common, status: 'live', entryMode: 'immersive', transitionPreset: 'valley' }
     })
-  }, [backendUnavailable, discovery])
+  }, [backendUnavailable, discovery, loading])
 
   const [activeIndex, setActiveIndex] = useState(0)
   const activeTable = tables[Math.min(activeIndex, Math.max(0, tables.length - 1))] ?? null
@@ -60,8 +63,13 @@ export default function TableSea({ onEnter, phase, returnFocusId, discovery = []
     if (index >= 0) setActiveIndex(index)
   }, [returnFocusId, tables])
 
+  useEffect(() => {
+    setActiveIndex((current) => tables.length ? Math.min(current, tables.length - 1) : 0)
+  }, [tables.length])
+
   const choose = (index: number) => setActiveIndex(index)
   const enter = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (phase !== 'gallery' || !activeTable || activeTable.entryMode !== 'immersive') return
     const rect = event.currentTarget.getBoundingClientRect()
     onEnter(activeTable, { left: rect.left, top: rect.top, width: rect.width, height: rect.height })
   }
@@ -80,9 +88,12 @@ export default function TableSea({ onEnter, phase, returnFocusId, discovery = []
       </header>
 
       <section className="sea-discovery" data-ui-interactive>
-        <p className="sea-kicker"><span>{String(activeIndex + 1).padStart(2, '0')}</span> 正在发生</p>
+        <p className="sea-kicker"><span>{tables.length ? String(activeIndex + 1).padStart(2, '0') : '—'}</span> 正在发生</p>
         <div className="sea-copy">
-          {activeTable ? <>
+          {loading ? <>
+            <h1>正在把桌单接到湖边</h1>
+            <p className="sea-missing" role="status">正在读取后端最新状态…</p>
+          </> : activeTable ? <>
             <h1>{activeTable.hook}</h1>
             <p className="sea-missing">{activeTable.missingPerspective}</p>
             {activeTable.recommendedBecause && <p className="sea-recommend">{activeTable.recommendedBecause}</p>}
@@ -106,9 +117,9 @@ export default function TableSea({ onEnter, phase, returnFocusId, discovery = []
         ))}
       </nav>
 
-      {backendUnavailable && <p className="sea-backend-note" role="status">后端暂不可用 · 当前为演示桌单</p>}
+      {backendUnavailable && <p className="sea-backend-note" role="status">后端暂不可用 · 当前为演示桌单 {onRetry && <button type="button" onClick={onRetry}>重新连接</button>}</p>}
 
-      <footer className="sea-footer"><span>湖边这桌 · 真实 3D 场景</span><span>{String(activeIndex + 1).padStart(2, '0')} <i /> {String(tables.length).padStart(2, '0')}</span></footer>
+      <footer className="sea-footer"><span>湖边这桌 · 真实 3D 场景</span><span>{tables.length ? String(activeIndex + 1).padStart(2, '0') : '—'} <i /> {String(tables.length).padStart(2, '0')}</span></footer>
     </main>
   )
 }

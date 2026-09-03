@@ -9,14 +9,18 @@ interface LobbyProps {
   onClose(): void
   onListen(): void
   onJoin(): void
+  onRetry(): void
   lobby: LobbyPreviewLike | null
   fit: LobbyFitPreviewLike | null
   loading: boolean
   error?: string | null
 }
 
-export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, loading, error = null }: LobbyProps) {
+export default function Lobby({ table, onClose, onListen, onJoin, onRetry, lobby, fit, loading, error = null }: LobbyProps) {
   const panelRef = useRef<HTMLElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const title = lobby?.core_question ?? table.hook
   const missingPerspective = lobby?.missing_perspective ?? table.missingPerspective
   // PRODUCT DATA BOUNDARY — member rows only come from the backend lobby
@@ -25,27 +29,59 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
   const members = lobby?.members ?? []
   const viewerAlreadySeated = members.some((member) => member.participant_id === VIEWER_ID)
   const hasOpenSeat = Boolean(lobby && lobby.available_seats > 0)
+  const lobbyStateLabel = loading
+    ? '正在同步'
+    : lobby?.status === 'open'
+      ? '正在发生'
+      : lobby?.status === 'soft_expired'
+        ? '已暂停'
+        : lobby?.status === 'closed'
+          ? '已收束'
+          : '等待同步'
+  const canEnter = !loading && !error && lobby?.status === 'open'
 
   useEffect(() => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     panelRef.current?.focus({ preventScroll: true })
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab' || !panelRef.current) return
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      openerRef.current?.focus({ preventScroll: true })
+    }
+  }, [])
 
   return (
     <div className="lobby-root">
-      <div className="lobby-backdrop" aria-hidden="true" onClick={onClose} />
+      <div className="lobby-backdrop" role="presentation" aria-hidden="true" onClick={onClose} />
       <section className="lobby" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`${table.hook} 的桌边预览`}>
         <button className="lobby-close" type="button" aria-label="关闭桌边预览" onClick={onClose}>×</button>
-        <p className="lobby-kicker">{worldLabel(table.worldId)} · {lobby?.status === 'open' || table.status === 'live' ? '正在发生' : '正在形成'}</p>
+        <p className="lobby-kicker">{worldLabel(table.worldId)} · {lobbyStateLabel}</p>
         <h2 className="lobby-title">{title}</h2>
 
         <div className="lobby-context" aria-live="polite">
           <span><small>现在聊到</small>{lobby?.current_subquestion ?? '问题刚刚摆上桌面'}</span>
-          <span><small>空席</small>{lobby ? `${lobby.available_seats} 个` : '1 个 · 还缺一个视角'}</span>
+            <span><small>空席</small>{loading ? '读取中…' : lobby ? `${lobby.available_seats} 个` : '—'}</span>
         </div>
 
         <div className="lobby-members" aria-label="桌上的成员">
@@ -81,11 +117,11 @@ export default function Lobby({ table, onClose, onListen, onJoin, lobby, fit, lo
         )}
 
         {loading && <p className="lobby-loading" role="status">正在把这张桌的最新状态接过来…</p>}
-        {error && <p className="lobby-error" role="alert">{error}</p>}
+        {error && <p className="lobby-error" role="alert">{error} <button type="button" onClick={onRetry}>重新读取</button></p>}
 
         <div className="lobby-actions">
-          <button className="lobby-listen" type="button" onClick={onListen} disabled={loading || Boolean(error) || !lobby || lobby.status === 'closed'}>先在旁边听听</button>
-          <button className="lobby-join" type="button" onClick={onJoin} disabled={loading || Boolean(error) || !lobby || lobby.status === 'closed' || lobby.available_seats === 0 || viewerAlreadySeated}>{viewerAlreadySeated ? '已在这一席' : '坐下来看看'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
+          <button className="lobby-listen" type="button" onClick={onListen} disabled={!canEnter}>先在旁边听听</button>
+          <button className="lobby-join" type="button" onClick={onJoin} disabled={!canEnter || !hasOpenSeat || viewerAlreadySeated}>{loading ? '正在同步…' : viewerAlreadySeated ? '已在这一席' : hasOpenSeat ? '坐下来看看' : '这桌已满'} <span>{viewerAlreadySeated ? '✓' : '→'}</span></button>
         </div>
 
       </section>

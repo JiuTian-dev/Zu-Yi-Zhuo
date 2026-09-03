@@ -320,6 +320,18 @@ input:focus-visible {
   color: #fff;
 }
 
+.sea-backend-note button,
+.lobby-error button {
+  margin-left: 8px;
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* Room HUD */
 .site-header {
   z-index: 20;
@@ -718,7 +730,7 @@ input:focus-visible {
 }
 
 .join-table-button:hover:not(:disabled),
-.close-table-button:hover {
+.close-table-button:hover:not(:disabled) {
   background: #fff;
   color: var(--ui-ink);
   transform: translateY(-3px);
@@ -745,6 +757,71 @@ input:focus-visible {
   color: var(--ui-ink);
   text-shadow: none;
   backdrop-filter: blur(16px);
+}
+
+.join-table-button:disabled,
+.close-table-button:disabled,
+.nudge-button:disabled,
+.confirm-seat:disabled {
+  cursor: wait;
+  opacity: .58;
+  transform: none;
+}
+
+.actor-hotspot[data-selected='true'] .actor-profile {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.actor-selection {
+  position: absolute;
+  z-index: 15;
+  top: 24px;
+  left: 50%;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow);
+  color: var(--ui-ink);
+  transform: translateX(-50%);
+}
+
+.actor-selection b {
+  font-size: 12px;
+}
+
+.actor-selection span {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.actor-selection button,
+.reopen-closing-card {
+  width: max-content;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-blue);
+  background: none;
+  color: var(--ui-blue-dark);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.reopen-closing-card {
+  position: absolute;
+  z-index: 14;
+  right: clamp(20px, 4vw, 68px);
+  bottom: 37px;
+  padding: 11px 2px;
+}
+
+.reopen-closing-card span {
+  margin-left: 6px;
+  color: var(--ui-blue);
 }
 
 .join-success small {
@@ -919,8 +996,13 @@ input:focus-visible {
 
 /* Lobby */
 .lobby-backdrop {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
   background: rgba(9, 12, 24, .36);
   backdrop-filter: blur(10px) saturate(90%);
+  cursor: pointer;
 }
 
 .lobby {
@@ -1657,6 +1739,44 @@ body:has(.discussion-panel-root) .valley-experience .seated-hud > :not(.discussi
 
 .discussion-close-summary p b {
   color: var(--ui-ink);
+}
+
+/* Interaction contract — the closing artifact is a modal state, not a dead
+ * overlay. It can be dismissed for read-only viewing or exited explicitly. */
+.closing-veil {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  cursor: pointer;
+}
+
+.closing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.closing-actions button {
+  white-space: nowrap;
+}
+
+.closing-actions .closing-dismiss {
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .56);
+  color: var(--ui-muted);
+}
+
+.closing-actions .closing-dismiss:hover {
+  background: #fff;
+  color: var(--ui-ink);
+}
+
+.closing-actions button:focus-visible {
+  outline: 2px solid var(--ui-blue);
+  outline-offset: 3px;
 }
 
 @media (max-width: 760px) {

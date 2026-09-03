@@ -13,6 +13,16 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
 .phase-approaching .world-grade { background:radial-gradient(circle at 65% 65%,transparent 0 17%,rgba(31,42,36,.12) 48%,rgba(25,42,40,.4) 100%); }
 .phase-seated .world-grade { background:radial-gradient(circle at 58% 55%,transparent 0 24%,rgba(28,43,39,.16) 58%,rgba(19,35,35,.55) 100%); }
 .has-join-open .world-grade { background:rgba(22,42,39,.5); backdrop-filter:blur(4px); }
+.has-join-open > .site-header,
+.has-join-open > .hero-copy,
+.has-join-open > .seat-hotspot,
+.has-join-open > .seated-hud,
+.has-join-open > .scene-footer { pointer-events:none; }
+.has-join-open > .site-header *,
+.has-join-open > .hero-copy *,
+.has-join-open > .seat-hotspot *,
+.has-join-open > .seated-hud *,
+.has-join-open > .scene-footer * { pointer-events:none!important; }
 
 .site-header { position:absolute; z-index:20; inset:0 0 auto; display:flex; justify-content:space-between; padding:clamp(23px,3.1vw,50px) clamp(24px,4vw,68px); transition:opacity .6s ease; pointer-events:none; }
 .site-header button { pointer-events:auto; }
