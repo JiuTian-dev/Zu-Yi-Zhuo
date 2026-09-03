@@ -172,7 +172,7 @@ python -m uvicorn app.main:app --reload --port 8000
 corepack pnpm dev
 ```
 
-打开 Vite 输出的地址，默认是 `http://localhost:5173/`。前端开发服务器会把 `/tables`、`/ws` 等请求代理到 `127.0.0.1:8000`。
+打开 Vite 输出的地址，默认是 `http://127.0.0.1:5174/`。前端开发服务器会把 `/tables`、`/ws` 等请求代理到 `127.0.0.1:8000`。
 
 如果后端没有启动，前端会进入 mock 演示模式；要验证真实桌状态、实时讨论和回放，需要同时启动后端。
 
