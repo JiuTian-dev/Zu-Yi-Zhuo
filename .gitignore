@@ -14,3 +14,31 @@ runtime/
 build.log
 out/
 .v2c/
+
+# Secrets and machine-local configuration.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python tooling and local virtual environments.
+.pytest_cache/
+.venv/
+venv/
+
+# Local large assets that are not part of the shipped runtime.
+3D/
+
+# Local databases and generated logs.
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+.idea/
