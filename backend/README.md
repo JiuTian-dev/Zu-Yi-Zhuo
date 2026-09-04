@@ -53,7 +53,8 @@ python -m app.cli.grounding_demo
 启动后可用：
 
 - `GET /healthz`：进程存活探针。
-- `GET /capabilities`：公开当前运行能力开关（仓储、确定性/自定义 provider、三类 source 是否注入、WebSocket 和 5 席上限）；不返回命令、模型名、token 或身份配置。
+- `GET /capabilities`：公开当前运行能力开关（仓储、确定性/自定义 provider、三类 source、OAuth 是否配置、WebSocket 和 5 席上限）；不返回命令、模型名、token 或身份配置。
+- OAuth 配置齐全时注册 `GET /auth/zhihu/start`、`GET /auth/zhihu/callback`、`GET /auth/session`、`POST /auth/logout`、`POST /auth/zhihu/disconnect`。浏览器只保存 `Secure + HttpOnly` 会话 Cookie，`SameSite` 默认是 `Lax`，跨站 Pages/API 部署可在 HTTPS 下改为 `None`；知乎 token 使用 Fernet 加密后写入 `ZHIHU_OAUTH_STORE_PATH`（未配置 OAuth 时这些路由不存在）。
 - `GET /readyz`：仓储就绪探针。
 - `GET /tables?participant_id=...&include_closed=false`：首页桌发现；默认只列出未关闭桌，并按 viewer 做隐私投影。
 - `GET /tables/discovery?limit=...`：首页批量桌卡；默认最多 20 张仍开放且未软过期桌，复用有界公开 Lobby 投影（同步桌包含 `sync_expires_at`），不返回完整 `TableState`、消息或私有资料。
@@ -137,7 +138,7 @@ $env:SHARED_RATE_LIMIT_PATH = "D:\知乎黑客松\runtime\coordination.sqlite"
 REST 收桌还会在生成收桌底稿前发送 `close_started`；若证据不足而返回 409，只保留开始提示，不会写入 `closed` 状态或发送 `table_closed`。
 同一桌的状态投影广播会在服务端串行发送，并丢弃低于最近已发送版本的过期投影；因此 REST/WS 并发写入不会让客户端回退到旧版 `TableState`。这只约束状态事件顺序，不改变仓储快照或消息事件契约。
 
-默认开发态继续使用显式 `viewer_id`/`participant_id` 自证，方便本地 Demo。生产部署可在 `create_app(..., identity_resolver=...)` 注入同步身份解析器：解析器接收 FastAPI `Request` 或 WebSocket，返回已认证的内部主体 ID；所有自作用域 REST 写入/读取和参与者 WebSocket 握手都会校验主体一致性，缺失身份返回 401，不一致返回 403。解析器负责 JWT、会话、反向代理或 OAuth 校验，后端不保存知乎 token。
+默认开发态继续使用显式 `viewer_id`/`participant_id` 自证，方便本地 Demo。生产部署可在 `create_app(..., identity_resolver=...)` 注入同步身份解析器；配置 Zhihu OAuth 四项核心变量时，`app.main` 会自动启用 `backend/app/auth/zhihu.py` 的 Cookie 会话解析器。解析器接收 FastAPI `Request` 或 WebSocket，返回已认证的内部主体 ID；所有自作用域 REST 写入/读取和参与者 WebSocket 握手都会校验主体一致性，缺失身份返回 401，不一致返回 403。OAuth token 不返回给浏览器，也不进入桌状态或回放。知乎稳定用户信息字段仍待官方确认，当前 OAuth 主体先使用服务端生成的 `session-*` participant id。
 
 WebSocket `human_message.message_id` 是单桌幂等键：网络重试时，相同 ID 和内容会返回
 `duplicate_message`，不会再次生成 turn、状态快照或主持动作；复用同一 ID 发送不同内容会被拒绝。评论促成同样按

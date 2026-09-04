@@ -37,6 +37,7 @@ export async function requestRaw(path: string, init?: RequestInit, timeoutMs = A
     return await fetch(apiUrl(path), {
       ...init,
       headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
+      credentials: 'include',
       signal: controller.signal,
     })
   } catch (error) {

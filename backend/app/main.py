@@ -17,6 +17,7 @@ import json
 from app.api.app import create_app
 from app.api.repository import JsonTableRepository
 from app.api.event_bus import SQLiteEventBus
+from app.auth.zhihu import build_zhihu_oauth_service
 from app.providers import OpenAIResponsesProvider, ProviderConfigurationError
 from app.sources import (
     CommandCandidateSource,
@@ -163,12 +164,14 @@ def _build_app():
     repository = JsonTableRepository(path) if path else None
     event_bus = _build_optional_event_bus()
     shared_ephemeral_store_path = os.environ.get("SHARED_EPHEMERAL_STORE_PATH", "").strip() or None
+    oauth_service = build_zhihu_oauth_service()
     return create_app(
         repository,
         _build_provider(),
         _build_candidate_source(),
         content_source=_build_content_source(),
         personal_context_source=_build_personal_context_source(),
+        oauth_service=oauth_service,
         source_match_preview_ttl_seconds=_build_source_match_preview_ttl(),
         sync_window_seconds=_build_sync_window(),
         event_bus=event_bus,

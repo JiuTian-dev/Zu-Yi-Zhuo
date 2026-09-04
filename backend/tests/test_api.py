@@ -788,6 +788,7 @@ def test_capabilities_describe_runtime_paths_without_secrets() -> None:
         "candidate_source_configured": False,
         "content_source_configured": False,
         "personal_context_source_configured": False,
+        "oauth_configured": False,
         "websocket_available": True,
         "max_table_participants": 5,
     }
@@ -809,6 +810,7 @@ def test_capabilities_reflect_injected_provider_sources() -> None:
         "candidate_source_configured": True,
         "content_source_configured": True,
         "personal_context_source_configured": True,
+        "oauth_configured": False,
         "websocket_available": True,
         "max_table_participants": 5,
     }

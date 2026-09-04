@@ -100,7 +100,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 ```text
 corepack pnpm check   passed
 corepack pnpm build   passed
-backend pytest        501 passed
+backend pytest        506 passed
 ```
 
 ## 下一步方向
@@ -115,7 +115,7 @@ backend pytest        501 passed
 4. **守住 Bruno 的场景质量**：不再引入定稿图、低模世界或第二个 3D 渲染器。需要改视觉时，只在 `src/bruno-runtime/` 和对应资源边界内改。
 5. **最后做生产化**：真实身份、持久化部署、WebSocket 重连、日志和 WebGPU 降级策略，优先于新增花哨玩法。
 
-当前生产化的第一优先级已经切到知乎 OAuth 与真实数据。公开搜索适配器、服务端 source 边界和 Pages 回调中继已经就位；拿到 `Access Secret` 可先联调公开信号，拿到 `app_id` / `app_key` 后再完成多用户授权会话。具体阻塞项和验收标准见 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)。
+当前生产化的第一优先级已经切到知乎 OAuth 与真实数据。公开搜索适配器、服务端 source 边界、OAuth coordinator 和 Pages 回调中继已经就位；拿到 `Access Secret` 可先联调公开信号，拿到 `app_id` / `app_key` 后即可联调授权会话。当前还缺知乎稳定用户 ID/用户信息契约、个人 OAuth source 和前端身份 hydration。具体阻塞项和验收标准见 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)。
 
 ## 代码边界
 

@@ -40,6 +40,7 @@ from app.intake import build_active_intent_preview, build_active_intent_session_
 from app.lobby import build_lobby_discovery, build_lobby_fit_preview, build_lobby_preview
 from app.recommendations import MAX_PERSONALIZED_TABLES, build_personalized_table_recommendations
 from app.comment_curation import MAX_COMMENT_PROMOTION_CANDIDATES, build_comment_promotion_candidates
+from app.auth.zhihu import ZhihuOAuthService, register_zhihu_auth_routes
 
 
 def _bounded_source_rows(rows: object, limit: int) -> list[object]:
@@ -113,6 +114,7 @@ class CapabilitiesResponse(BaseModel):
     candidate_source_configured: bool
     content_source_configured: bool
     personal_context_source_configured: bool
+    oauth_configured: bool = False
     websocket_available: bool = True
     max_table_participants: int = Field(ge=1, le=5)
 
@@ -517,6 +519,7 @@ def create_app(
     personal_context_source: PersonalContextSource | None = None,
     personal_context_source_timeout_seconds: float = 5.0,
     identity_resolver: IdentityResolver | None = None,
+    oauth_service: ZhihuOAuthService | None = None,
     moderator_resolver: ModeratorResolver | None = None,
     websocket_allowed_origins: Sequence[str] | None = None,
     websocket_max_frame_bytes: int | None = None,
@@ -593,6 +596,9 @@ def create_app(
     if max_rest_mutations_per_minute <= 0:
         raise ValueError("rest_max_mutations_per_minute must be a positive integer")
     repo = repository or InMemoryTableRepository()
+    effective_identity_resolver = identity_resolver or (
+        oauth_service.identity_resolver if oauth_service is not None else None
+    )
     configured_ephemeral_path = (
         os.getenv("SHARED_EPHEMERAL_STORE_PATH", "").strip()
         if shared_ephemeral_store_path is None
@@ -632,7 +638,8 @@ def create_app(
     api.state.source_match_tickets = source_match_tickets
     api.state.candidate_invitation_tickets = candidate_invitation_tickets
     api.state.intent_sessions = intent_sessions
-    api.state.identity_resolver = identity_resolver
+    api.state.identity_resolver = effective_identity_resolver
+    api.state.oauth_service = oauth_service
     api.state.moderator_resolver = moderator_resolver
     api.state.sync_window_seconds = sync_window_seconds
     configured_rate_limit_path = (
@@ -655,7 +662,7 @@ def create_app(
     api.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=False,
+        allow_credentials=effective_identity_resolver is not None,
         allow_methods=["DELETE", "GET", "PATCH", "POST", "PUT", "OPTIONS"],
         allow_headers=["Accept", "Authorization", "Content-Type"],
     )
@@ -678,13 +685,15 @@ def create_app(
         api,
         repo,
         provider,
-        identity_resolver,
+        effective_identity_resolver,
         allowed_websocket_origins or None,
         max_websocket_frame_bytes,
         max_websocket_events_per_minute,
         clock,
         event_bus,
     )
+    if oauth_service is not None:
+        register_zhihu_auth_routes(api, oauth_service)
 
     @api.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -699,6 +708,7 @@ def create_app(
             candidate_source_configured=candidate_source is not None,
             content_source_configured=content_source is not None,
             personal_context_source_configured=personal_context_source is not None,
+            oauth_configured=oauth_service is not None,
             websocket_available=True,
             max_table_participants=MAX_TABLE_PARTICIPANTS,
         )
