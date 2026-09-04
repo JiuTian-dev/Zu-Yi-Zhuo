@@ -2,7 +2,7 @@
  * reused Bruno world. This file owns geometry and visual state only; it never
  * reads REST/WS data directly. */
 import * as THREE from 'three/webgpu'
-import { color, float, uniform } from 'three/tsl'
+import { color, uniform } from 'three/tsl'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { Game } from '../Game.js'
 import { MeshDefaultMaterial } from '../Materials/MeshDefaultMaterial.js'
@@ -21,41 +21,6 @@ const ACTION_COLORS = {
     REFRAME: '#b6c9ff',
     GROUND: '#9ed4c1',
     CLOSE: '#f28c74',
-}
-
-// The bridge approaches the table from this local X/Z direction. The cove is
-// intentionally open there so the original Bruno landing remains a dry,
-// readable path into the product table rather than becoming a moat.
-const BRIDGE_GAP_CENTER = 2.36
-const BRIDGE_GAP_WIDTH = Math.PI * 0.54
-const COVE_ARC_START = BRIDGE_GAP_CENTER + BRIDGE_GAP_WIDTH * 0.5
-const COVE_ARC_SPAN = Math.PI * 2 - BRIDGE_GAP_WIDTH
-const COVE_SEGMENTS = 72
-
-function covePoint(angle, outer = false)
-{
-    if(!outer) return { x: Math.cos(angle) * 4.28, z: Math.sin(angle) * 3.72 }
-
-    // Keep the old irregular shoreline language without closing the bridge
-    // side: a broad ellipse with restrained, low-frequency variation reads as
-    // a natural cove while keeping the table island stable.
-    const variation = 1 + Math.sin(angle * 2.2 + 0.35) * 0.045 + Math.cos(angle * 3.1) * 0.025
-    return {
-        x: Math.cos(angle) * 10.8 * variation + Math.sin(angle * 2.4) * 0.16,
-        z: Math.sin(angle) * 8.85 * variation + Math.cos(angle * 2.1) * 0.12,
-    }
-}
-
-function addCoveArc(shape, start, span, outer)
-{
-    for(let index = 0; index <= COVE_SEGMENTS; index++)
-    {
-        const point = covePoint(start + span * (index / COVE_SEGMENTS), outer)
-        const x = point.x
-        const y = -point.z
-        if(index === 0) shape.moveTo(x, y)
-        else shape.lineTo(x, y)
-    }
 }
 
 function lathe(points, segments = 72)
@@ -84,7 +49,6 @@ export class TableMeeting
         this.viewerId = null
         this.participantSeatMap = new Map()
 
-        this.addWaterCove()
         this.addTable()
         this.addSeats()
         this.addTableLight()
@@ -97,89 +61,6 @@ export class TableMeeting
             hasWater: false,
             ...options,
         })
-    }
-
-    addWaterCove()
-    {
-        // PRODUCT 3D — the Bruno water system remains the world-scale source
-        // of truth. This small cove only restores the missing table/island
-        // composition after the vehicle was removed; it is deliberately a
-        // quiet transparent surface with the same lighting and fog pipeline.
-        //
-        // The product cove is a horseshoe, not a closed ring. Its bridge-side
-        // opening preserves the original Bruno bridge's dry landing and keeps
-        // the bridge, water and table legible as one piece of terrain.
-        const shore = new THREE.Shape()
-        addCoveArc(shore, COVE_ARC_START, COVE_ARC_SPAN, true)
-
-        const innerEnd = covePoint(COVE_ARC_START + COVE_ARC_SPAN)
-        shore.lineTo(innerEnd.x, -innerEnd.z)
-        for(let index = COVE_SEGMENTS - 1; index >= 0; index--)
-        {
-            const point = covePoint(COVE_ARC_START + COVE_ARC_SPAN * (index / COVE_SEGMENTS))
-            shore.lineTo(point.x, -point.z)
-        }
-        shore.closePath()
-
-        const coveMaterial = new MeshDefaultMaterial({
-            colorNode: color('#2c7887'),
-            alphaNode: uniform(float(0.62)),
-            transparent: true,
-            hasCoreShadows: false,
-            hasDropShadows: false,
-            hasLightBounce: false,
-            hasWater: false,
-        })
-        const cove = new THREE.Mesh(new THREE.ShapeGeometry(shore, 24), coveMaterial)
-        cove.rotation.x = -Math.PI * 0.5
-        cove.position.y = 0.018
-        cove.renderOrder = 0
-        cove.receiveShadow = true
-        cove.name = 'product-table-water-cove'
-        this.group.add(cove)
-
-        const shorelineMaterial = new MeshDefaultMaterial({
-            colorNode: color('#c8e8d5'),
-            alphaNode: uniform(float(0.4)),
-            transparent: true,
-            hasCoreShadows: false,
-            hasDropShadows: false,
-            hasLightBounce: false,
-            hasWater: false,
-        })
-        const shoreline = new THREE.Mesh(
-            new THREE.TorusGeometry(4.27, 0.065, 8, 112, COVE_ARC_SPAN),
-            shorelineMaterial,
-        )
-        shoreline.rotation.x = Math.PI * 0.5
-        shoreline.rotation.y = -COVE_ARC_START
-        shoreline.scale.z = 0.87
-        shoreline.position.y = 0.06
-        shoreline.name = 'product-table-water-shoreline'
-        this.group.add(shoreline)
-
-        const rippleMaterial = new MeshDefaultMaterial({
-            colorNode: color('#a9dcd0'),
-            alphaNode: uniform(float(0.18)),
-            transparent: true,
-            hasCoreShadows: false,
-            hasDropShadows: false,
-            hasLightBounce: false,
-            hasWater: false,
-        })
-        for(const [radius, y, scale] of [[5.4, 0.052, 0.86], [7.2, 0.048, 0.77]])
-        {
-            const ripple = new THREE.Mesh(
-                new THREE.TorusGeometry(radius, 0.026, 6, 112, COVE_ARC_SPAN),
-                rippleMaterial,
-            )
-            ripple.rotation.x = Math.PI * 0.5
-            ripple.rotation.y = -COVE_ARC_START
-            ripple.scale.z = scale
-            ripple.position.y = y
-            ripple.name = 'product-table-water-ripple'
-            this.group.add(ripple)
-        }
     }
 
     addTable()

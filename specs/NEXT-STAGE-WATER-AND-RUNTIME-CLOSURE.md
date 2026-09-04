@@ -1,6 +1,6 @@
 # 下一阶段：水景恢复与运行时收口
 
-> 状态：S1 / S3 / S4 landed；S2 水体质量重新打开；strict acceptance pending
+> 状态：S1 / S2 / S3 / S4 landed；S5 与产品视觉签收 pending
 > 制定时间：2026-09-03  
 > 上位产品文档：[`docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx`](../docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx)  
 > 视觉与技术合同：[`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)  
@@ -43,7 +43,9 @@
 - 桌边水湾位于地面附近，而原生水面位于 `Water.surfaceElevation`，两者不是同一水面，也不共享同一细节遮罩；
 - 实际结果是桌边水湾像覆盖在暖色地面上的透明塑料片，缺少原河道的深蓝水心、青色浅滩、白色泡沫和流动感。
 
-因此 S2 的构图方向保留，但当前独立水湾实现不通过视觉验收，必须接回 Bruno 原生水体管线。
+因此 S2 的构图方向保留，但原独立水湾实现不通过视觉验收，必须接回 Bruno 原生水体管线。
+本轮已完成该修复：桌边水湾现在通过 `Terrain.terrainNode()` 的项目遮罩
+进入 `Floor` 和 `WaterSurface`，`TableMeeting` 不再挂载独立水面、岸线或水纹网格。
 
 ## 3. 不可破坏的边界
 
@@ -75,7 +77,7 @@
 
 验收：水深渐变、白色岸线和动态流线重新出现；控制台没有缺失纹理、WebGPU 节点或资源错误。
 
-### S2 — 把桌子放回正确的水岸构图（重新打开）
+### S2 — 把桌子放回正确的水岸构图
 
 - 保留当前 `landing` 桌锚点、默认镜头和桥侧约 97° 的干燥开口；本轮不移动桥、桌子和相机来掩盖水体问题。
 - 删除 `TableMeeting.addWaterCove()` 中独立的 `product-table-water-cove`、`product-table-water-shoreline` 和 `product-table-water-ripple` 几何。
@@ -136,12 +138,17 @@
 5. `feat: bridge live table state into Bruno scene`
 6. `test: verify water runtime and two-client flow`
 
-每个提交保持单一目的。当前代码已完成 S1，S3、S4 已完成主链路收口；S2 因桌边水湾与 Bruno 原河道材质不一致而重新打开。S5 的双客户端、断线恢复和正式身份仍待补证，未因此宣称本阶段严格完成。
+每个提交保持单一目的。当前代码已完成 S1、S2、S3、S4；S2 的技术验收已通过，
+仍需产品方对默认构图做最终视觉签收。S5 的双客户端、断线恢复和正式身份仍待补证，
+未因此宣称本阶段严格完成。
 
 ## 7. 本次执行记录
 
 - S1：迁入 `terrain.png`，由 `Game.loadResources()` 以数据纹理方式加载；没有引入独立河道、车辆或物理依赖。
-- S2：已保留 `landing` 原锚点并将完整环改为桥侧约 97° 开口的弯月构图，但当前实现仍是独立半透明平面和静态 Torus 描边，与 Bruno 原生河道质量不一致，视觉验收失败。下一次执行按本节要求删除该几何水面，改用项目桌区遮罩扩展原生 `Terrain / Floor / WaterSurface` 管线。
+- S2：保留 `landing` 原锚点和桥侧约 97° 开口的弯月构图，删除独立半透明平面与静态
+  Torus 描边，改为 `Terrain.terrainNode()` 的项目遮罩扩展原生
+  `Terrain / Floor / WaterSurface` 管线。已在 1440×900、1920×1080、窄屏，以及左右
+  环绕和滚轮缩放后检查；桌边水面、岸线与远处河道共享同一套材质和后处理。
 - S3：统一 `requestRaw` REST 请求和可配置 API/WS origin；状态版本只接受更新版本；WS 使用有上限退避重连；消息显示 pending/failed/retry；`viewer` 集中在 `live/identity.ts`。
 - S4：新增唯一 `SceneBridge`，把服务端桌状态、当前发言者、主持动作和收桌阶段映射到 `TableMeeting`，历史继续从 `/replay` 读取。
 - S5：`pnpm check`、`pnpm build`、后端 496 项测试和一次真实后端发言→`/replay` 浏览器链路已通过；双客户端及正式身份仍是后续验收项。

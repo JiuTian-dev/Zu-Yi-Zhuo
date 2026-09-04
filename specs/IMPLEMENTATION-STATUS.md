@@ -9,11 +9,10 @@
 - Previous：Bruno 的原始 WebGPU 场景已经恢复，但桌区水岸、相机进入、旁听
   身份、回放弹窗和清理边界没有完全闭环。
 - Current：P1–P6 的代码主链已经落地；入口、预览、入席、旁听、实时讨论、回放
-  和相机交互均在同一个 Bruno Canvas 上运行。前端交互审计已完成，但最新实机截图
-  证明桌边独立水湾与 Bruno 原生河道不共用同一水面管线，P2 水体视觉验收重新打开。
-- Next：先按 [`NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](./NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md)
-  删除桌边独立几何水面，用项目遮罩扩展原生 `Terrain / Floor / WaterSurface`；随后
-  接入正式身份并用独立测试桌完成双客户端收桌/断线演练。
+  和相机交互均在同一个 Bruno Canvas 上运行。桌边水湾已删除独立几何，改为项目
+  遮罩接入 Bruno 原生 `Terrain / Floor / WaterSurface`，并通过本轮浏览器验收。
+- Next：由产品方对默认构图做最终视觉签收；随后接入正式身份，并用独立测试桌完成
+  双客户端收桌/断线演练。
 
 ## 产品与运行时不变量
 
@@ -47,13 +46,13 @@
 
 - [x] Bruno 原始地形、水面、植被、雾、灯光、材质、Bloom、景深和风场继续由原
       Runtime 驱动，没有换成低模世界或定稿图片。
-- [ ] 桌区临水半包围构图已经形成并保留桥侧开口，但当前透明水湾、岸线和两层
-      Torus 水纹是 `TableMeeting` 内的独立几何，并未共享 Bruno 原生 `WaterSurface`
-      的水深、岸线和动态细节；必须改为原生 terrain/water 遮罩后再验收。
+- [x] 桌区临水半包围构图保留桥侧开口；独立透明水湾、岸线和 Torus 水纹已删除，
+      改由项目遮罩进入 Bruno 原生 `Terrain / Floor / WaterSurface`，与远处河道共享
+      水深、岸线、动态细节、雾和后处理。
 - [x] `TableMeeting` 使用项目自有的 lathed profile、圆角座椅和细节内衬，避免裸
       Cylinder / Capsule 作为最终桌椅；水面和状态标记保持克制，不承担讨论内容。
-- [ ] 浏览器截图已确认桌区与 Bruno 环境处于同一画面，但也确认桌边水湾质量明显
-      低于远处河道；需在 1440×900 与 1920×1080 下重新做同材质对照验收。
+- [x] 浏览器截图已在 1440×900、1920×1080 和窄屏完成同材质对照，并在左右环绕、
+      最近/最远缩放后确认水体不穿过桌椅或桥；产品最终视觉签收仍待完成。
 
 涉及文件：`src/bruno-runtime/Game/Terrain.js`、`Game/World/Floor.js`、
 `Game/World/WaterSurface.js`、`Game/World/TableMeeting.js`、`Game/View.js`。

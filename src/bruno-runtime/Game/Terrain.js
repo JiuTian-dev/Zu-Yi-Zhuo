@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { Game } from './Game.js'
 import MeshGridMaterial, { MeshGridMaterialLine } from './Materials/MeshGridMaterial.js'
-import { color, Fn, mix, round, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl'
+import { color, Fn, max, mix, round, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl'
 
 export class Terrain
 {
@@ -88,10 +88,53 @@ export class Terrain
             return position.div(this.subdivision).div(1.5).add(0.5)
         })
 
+        // PRODUCT 3D — the table cove is a terrain projection, not a second
+        // water renderer. The fixed anchor keeps the mask stable while the
+        // camera orbits and the bridge-side opening remains dry.
+        this.productWaterAnchor = uniform(new THREE.Vector2(
+            this.game.view.focusPoint.position.x,
+            this.game.view.focusPoint.position.z,
+        ))
+        const coveInnerRadius = vec2(4.28, 3.72)
+        const coveOuterRadius = vec2(10.8, 8.85)
+        const bridgeDirection = vec2(Math.cos(2.36), Math.sin(2.36))
+        const productWaterCoveNode = Fn(([position]) =>
+        {
+            const local = position.sub(this.productWaterAnchor)
+            const innerDistance = local.div(coveInnerRadius).length()
+            const outerDistance = local.div(coveOuterRadius).length()
+            const shorelineNoise = texture(this.game.noises.perlin, local.mul(0.075)).r
+                .sub(0.5)
+                .mul(0.055)
+
+            // Keep a soft, irregular annulus around the table island.
+            const outerInside = smoothstep(0.87, 1.0, outerDistance.add(shorelineNoise)).oneMinus()
+            const innerOutside = smoothstep(0.94, 1.05, innerDistance.add(shorelineNoise.mul(0.6)))
+            const radialLength = local.length().max(0.001)
+            const bridgeAlignment = local.dot(bridgeDirection).div(radialLength)
+            const bridgeGap = smoothstep(0.59, 0.73, bridgeAlignment)
+            const coveMask = outerInside.mul(innerOutside).mul(bridgeGap.oneMinus())
+
+            // B is the same depth channel consumed by Floor and WaterSurface.
+            // The shallow inner edge crosses the native shore threshold, then
+            // deepens toward the outer bank without hard color bands.
+            const depthGradient = smoothstep(0.42, 0.98, outerDistance)
+            const coveDepth = mix(0.12, 0.74, depthGradient).mul(coveMask)
+
+            return vec2(coveMask, coveDepth)
+        })
+
         this.terrainNode = Fn(([position]) =>
         {
             const textureUv = worldPositionToUvNode(position)
-            const data = texture(this.game.resources.terrainTexture, textureUv)
+            const sourceData = texture(this.game.resources.terrainTexture, textureUv)
+            const data = sourceData.toVar()
+            const productWaterCove = productWaterCoveNode(position)
+
+            // Preserve the Bruno texture everywhere else. The product mask
+            // only adds water depth and removes grass inside the cove.
+            data.b.assign(max(sourceData.b, productWaterCove.y))
+            data.g.assign(sourceData.g.mul(productWaterCove.x.oneMinus()))
 
             return data
         })
