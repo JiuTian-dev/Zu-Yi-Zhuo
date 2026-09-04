@@ -23,6 +23,41 @@ const ACTION_COLORS = {
     CLOSE: '#f28c74',
 }
 
+// The bridge approaches the table from this local X/Z direction. The cove is
+// intentionally open there so the original Bruno landing remains a dry,
+// readable path into the product table rather than becoming a moat.
+const BRIDGE_GAP_CENTER = 2.36
+const BRIDGE_GAP_WIDTH = Math.PI * 0.54
+const COVE_ARC_START = BRIDGE_GAP_CENTER + BRIDGE_GAP_WIDTH * 0.5
+const COVE_ARC_SPAN = Math.PI * 2 - BRIDGE_GAP_WIDTH
+const COVE_SEGMENTS = 72
+
+function covePoint(angle, outer = false)
+{
+    if(!outer) return { x: Math.cos(angle) * 4.28, z: Math.sin(angle) * 3.72 }
+
+    // Keep the old irregular shoreline language without closing the bridge
+    // side: a broad ellipse with restrained, low-frequency variation reads as
+    // a natural cove while keeping the table island stable.
+    const variation = 1 + Math.sin(angle * 2.2 + 0.35) * 0.045 + Math.cos(angle * 3.1) * 0.025
+    return {
+        x: Math.cos(angle) * 10.8 * variation + Math.sin(angle * 2.4) * 0.16,
+        z: Math.sin(angle) * 8.85 * variation + Math.cos(angle * 2.1) * 0.12,
+    }
+}
+
+function addCoveArc(shape, start, span, outer)
+{
+    for(let index = 0; index <= COVE_SEGMENTS; index++)
+    {
+        const point = covePoint(start + span * (index / COVE_SEGMENTS), outer)
+        const x = point.x
+        const y = -point.z
+        if(index === 0) shape.moveTo(x, y)
+        else shape.lineTo(x, y)
+    }
+}
+
 function lathe(points, segments = 72)
 {
     return new THREE.LatheGeometry(points.map(([radius, height]) => new THREE.Vector2(radius, height)), segments)
@@ -70,20 +105,25 @@ export class TableMeeting
         // of truth. This small cove only restores the missing table/island
         // composition after the vehicle was removed; it is deliberately a
         // quiet transparent surface with the same lighting and fog pipeline.
+        //
+        // The product cove is a horseshoe, not a closed ring. Its bridge-side
+        // opening preserves the original Bruno bridge's dry landing and keeps
+        // the bridge, water and table legible as one piece of terrain.
         const shore = new THREE.Shape()
-        shore.moveTo(-10.8, -2.2)
-        shore.bezierCurveTo(-9.2, -7.1, -3.7, -9.4, 1.9, -8.2)
-        shore.bezierCurveTo(7.2, -7.1, 10.8, -3.4, 10.2, 1.7)
-        shore.bezierCurveTo(9.7, 6.4, 4.6, 8.9, -1.5, 8.6)
-        shore.bezierCurveTo(-7.4, 8.3, -11.4, 3.4, -10.8, -2.2)
+        addCoveArc(shore, COVE_ARC_START, COVE_ARC_SPAN, true)
 
-        const island = new THREE.Path()
-        island.absellipse(0, 0, 4.28, 3.72, 0, Math.PI * 2, false, 0)
-        shore.holes.push(island)
+        const innerEnd = covePoint(COVE_ARC_START + COVE_ARC_SPAN)
+        shore.lineTo(innerEnd.x, -innerEnd.z)
+        for(let index = COVE_SEGMENTS - 1; index >= 0; index--)
+        {
+            const point = covePoint(COVE_ARC_START + COVE_ARC_SPAN * (index / COVE_SEGMENTS))
+            shore.lineTo(point.x, -point.z)
+        }
+        shore.closePath()
 
         const coveMaterial = new MeshDefaultMaterial({
             colorNode: color('#2c7887'),
-            alphaNode: uniform(float(0.72)),
+            alphaNode: uniform(float(0.62)),
             transparent: true,
             hasCoreShadows: false,
             hasDropShadows: false,
@@ -100,15 +140,19 @@ export class TableMeeting
 
         const shorelineMaterial = new MeshDefaultMaterial({
             colorNode: color('#c8e8d5'),
-            alphaNode: uniform(float(0.62)),
+            alphaNode: uniform(float(0.4)),
             transparent: true,
             hasCoreShadows: false,
             hasDropShadows: false,
             hasLightBounce: false,
             hasWater: false,
         })
-        const shoreline = new THREE.Mesh(new THREE.TorusGeometry(4.27, 0.065, 8, 128), shorelineMaterial)
+        const shoreline = new THREE.Mesh(
+            new THREE.TorusGeometry(4.27, 0.065, 8, 112, COVE_ARC_SPAN),
+            shorelineMaterial,
+        )
         shoreline.rotation.x = Math.PI * 0.5
+        shoreline.rotation.y = -COVE_ARC_START
         shoreline.scale.z = 0.87
         shoreline.position.y = 0.06
         shoreline.name = 'product-table-water-shoreline'
@@ -116,7 +160,7 @@ export class TableMeeting
 
         const rippleMaterial = new MeshDefaultMaterial({
             colorNode: color('#a9dcd0'),
-            alphaNode: uniform(float(0.28)),
+            alphaNode: uniform(float(0.18)),
             transparent: true,
             hasCoreShadows: false,
             hasDropShadows: false,
@@ -125,8 +169,12 @@ export class TableMeeting
         })
         for(const [radius, y, scale] of [[5.4, 0.052, 0.86], [7.2, 0.048, 0.77]])
         {
-            const ripple = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.026, 6, 128), rippleMaterial)
+            const ripple = new THREE.Mesh(
+                new THREE.TorusGeometry(radius, 0.026, 6, 112, COVE_ARC_SPAN),
+                rippleMaterial,
+            )
             ripple.rotation.x = Math.PI * 0.5
+            ripple.rotation.y = -COVE_ARC_START
             ripple.scale.z = scale
             ripple.position.y = y
             ripple.name = 'product-table-water-ripple'
