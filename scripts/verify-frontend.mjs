@@ -11,6 +11,7 @@ const expect = (condition, message) => {
 
 const game = read('src/bruno-runtime/Game/Game.js')
 const app = read('src/App.tsx')
+const tableSea = read('src/TableSea.tsx')
 const lobby = read('src/Lobby.tsx')
 const replay = read('src/live/DiscussionPanel.tsx')
 const backend = read('src/live/backend.ts')
@@ -37,6 +38,9 @@ expect(tableMeeting.includes('participantSeatMap') && tableMeeting.includes('ref
 expect(mock.includes('function schedule(') && mock.includes('schedule(() => hostBeat(index)'), 'mock timers are not centrally tracked for cleanup')
 expect(tableWorld.match(/className="bruno-runtime-canvas"/g)?.length === 1, 'TableWorld must mount exactly one Bruno canvas shell')
 expect(vite.includes('strictPort: true') && vite.includes('port: 5174'), 'Vite dev server port is not fixed to 5174')
+expect(!tableSea.includes('sea-footer'), 'TableSea still renders the removed bottom scene footer')
+expect(!app.includes('scene-footer'), 'App still renders the removed bottom scene footer')
+expect(app.includes('DrawerToggle') && tableSea.includes('DrawerToggle'), 'scene cards are missing the shared drawer affordance')
 expect(existsSync(resolve(root, 'src/experience/ORIGIN.md')), 'source map is missing at the spec path src/experience/ORIGIN.md')
 expect(existsSync(resolve(root, 'src/bruno-runtime/REMOVAL-MANIFEST.md')), 'removal manifest is missing')
 

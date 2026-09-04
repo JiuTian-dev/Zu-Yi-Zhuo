@@ -14,6 +14,7 @@ import { fetchDiscovery, selectTable } from './live/api'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import TableWorld from './TableWorld'
 import { projectTableAnchor, setRuntimeInteraction, transitionTableCamera } from './bruno-runtime/runtimeController'
+import DrawerToggle from './DrawerToggle'
 
 const ACTION_LABELS: Record<string, string> = {
   SILENCE: '安静听', PASS: '递话', PROBE: '追问', REFRAME: '换个角度', GROUND: '落在桌面', CLOSE: '收束',
@@ -87,6 +88,11 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null)
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null)
   const [closingCardOpen, setClosingCardOpen] = useState(false)
+  const [heroCollapsed, setHeroCollapsed] = useState(false)
+  const [questionCollapsed, setQuestionCollapsed] = useState(false)
+  const [conversationCollapsed, setConversationCollapsed] = useState(false)
+  const [noticeCollapsed, setNoticeCollapsed] = useState(false)
+  const [joinSuccessCollapsed, setJoinSuccessCollapsed] = useState(false)
 
   const liveStatus = useLive((state) => state.status)
   const liveMessages = useLive((state) => state.messages)
@@ -272,6 +278,11 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setHistoryOpen(false)
     setMenuOpen(false)
     setJoinDismissed(false)
+    setHeroCollapsed(false)
+    setQuestionCollapsed(false)
+    setConversationCollapsed(false)
+    setNoticeCollapsed(false)
+    setJoinSuccessCollapsed(false)
     setPhase('discovering')
   }
 
@@ -414,11 +425,14 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         </div>
       </header>
 
-      <section className="hero-copy" aria-labelledby="valley-title" inert={seated || phase === 'approaching'}>
-        <p className="eyebrow">{table.worldId === 'valley' ? '瑞士山谷' : table.worldId} · {liveStatus === 'live' || liveStatus === 'mock' ? liveStatus === 'mock' ? '演示状态' : `${liveSeatCount} 人已入席` : `${table.seatedCount} 人已入席`}</p>
-        <h1 id="valley-title">{table.hook}</h1>
-        <p className="missing-line">{table.missingPerspective}</p>
-        <button className="approach-button" type="button" onClick={approachTable}><span>靠近这桌</span><span aria-hidden="true">↗</span></button>
+      <section className={`hero-copy ${heroCollapsed ? 'is-collapsed' : ''}`} aria-labelledby="valley-title" inert={seated || phase === 'approaching'}>
+        <DrawerToggle collapsed={heroCollapsed} label="主题卡" controlsId="valley-hero-content" onToggle={() => setHeroCollapsed((current) => !current)} />
+        <div id="valley-hero-content" className="drawer-card-content" aria-hidden={heroCollapsed} inert={heroCollapsed}>
+          <p className="eyebrow">{table.worldId === 'valley' ? '瑞士山谷' : table.worldId} · {liveStatus === 'live' || liveStatus === 'mock' ? liveStatus === 'mock' ? '演示状态' : `${liveSeatCount} 人已入席` : `${table.seatedCount} 人已入席`}</p>
+          <h1 id="valley-title">{table.hook}</h1>
+          <p className="missing-line">{table.missingPerspective}</p>
+          <button className="approach-button" type="button" onClick={approachTable}><span>靠近这桌</span><span aria-hidden="true">↗</span></button>
+        </div>
       </section>
 
       <button className="seat-hotspot" type="button" data-anchor="viewer" aria-label="靠近湖边的空席" onClick={approachTable} disabled={phase !== 'discovering'}>
@@ -433,13 +447,16 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         <div className="discussion-state"><i />{liveActive ? `${PHASE_LABELS[livePhase] ?? '讨论'}进行中${liveTableMode === 'sync' ? ' · 同步桌' : ''}` : '讨论正在发生'}</div>
         {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
         {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
-        {(safetyNotice || liveHost?.text || groundingCard || latestReflection || liveError || actionNotice) && <aside className="runtime-notice-stack" aria-live="polite">
-          {actionNotice && <p><b>桌边反馈</b>{actionNotice}</p>}
-          {liveError && <p className="is-error"><b>桌面状态</b>{liveError}</p>}
-          {safetyNotice && <p className="is-safety"><b>安全边界</b>{safetyNotice}</p>}
-          {liveHost?.text && <p><b>{ACTION_LABELS[liveHost.action] ?? liveHost.action}</b>{liveHost.text}</p>}
-          {groundingCard && <p><b>来源卡 · {groundingCard.title}</b>{groundingCard.excerpt}<small>{groundingCard.source_ref}</small></p>}
-          {latestReflection && <p><b>主持回响</b>{latestReflection.text}</p>}
+        {(safetyNotice || liveHost?.text || groundingCard || latestReflection || liveError || actionNotice) && <aside className={`runtime-notice-stack ${noticeCollapsed ? 'is-collapsed' : ''}`} aria-live="polite">
+          <DrawerToggle collapsed={noticeCollapsed} label="桌边提示" controlsId="runtime-notice-content" onToggle={() => setNoticeCollapsed((current) => !current)} />
+          <div id="runtime-notice-content" className="drawer-card-content" aria-hidden={noticeCollapsed} inert={noticeCollapsed}>
+            {actionNotice && <p><b>桌边反馈</b>{actionNotice}</p>}
+            {liveError && <p className="is-error"><b>桌面状态</b>{liveError}</p>}
+            {safetyNotice && <p className="is-safety"><b>安全边界</b>{safetyNotice}</p>}
+            {liveHost?.text && <p><b>{ACTION_LABELS[liveHost.action] ?? liveHost.action}</b>{liveHost.text}</p>}
+            {groundingCard && <p><b>来源卡 · {groundingCard.title}</b>{groundingCard.excerpt}<small>{groundingCard.source_ref}</small></p>}
+            {latestReflection && <p><b>主持回响</b>{latestReflection.text}</p>}
+          </div>
         </aside>}
 
         <div className="actor-hotspots" aria-label="桌上成员">
@@ -479,37 +496,43 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
           <b>{selectedActor.display_name}</b><span>{selectedActor.role} · {selectedActor.detail}</span>
           <button type="button" onClick={() => setSelectedActorId(null)}>收起</button>
         </aside>}
-        <div className="question-card">
-          <p>{liveActive && liveSubQuestion ? liveSubQuestion : lobby?.current_subquestion ?? table.hook}</p>
+        <div className={`question-card ${questionCollapsed ? 'is-collapsed' : ''}`}>
+          <DrawerToggle collapsed={questionCollapsed} label="当前问题" controlsId="question-card-content" onToggle={() => setQuestionCollapsed((current) => !current)} />
+          <div id="question-card-content" className="drawer-card-content" aria-hidden={questionCollapsed} inert={questionCollapsed}>
+            <p>{liveActive && liveSubQuestion ? liveSubQuestion : lobby?.current_subquestion ?? table.hook}</p>
+          </div>
         </div>
         <button className="seat-marker" type="button" data-anchor="viewer" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{hasJoined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
-        <div className="conversation-dock">
-          {liveActive && lastLive ? (
-            liveMessages.slice(-2).map((message, index, list) => (
-              <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
-                <b className={message.fromHost ? 'host-name' : ''}>
-                  {speakerName(message.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
-                </b>
-                “{message.text}”
-                {message.delivery === 'pending' && <small className="message-delivery">正在送达</small>}
-                {message.delivery === 'failed' && message.messageId && <button className="message-retry" type="button" disabled={retryingMessageId === message.messageId} onClick={() => retryMessage(message.messageId!)}>{retryingMessageId === message.messageId ? '发送中' : '重试'}</button>}
-              </p>
-            ))
-          ) : (
-            <p>桌面正在等下一句真实表达。</p>
-          )}
-          <div>
-            <span><b>{lastLive ? speakerName(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined) : '等待发言'}</b>{lastLive ? ` · ${speakerRole(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}` : ''}</span>
-            <i>{liveActive ? '·' : '—'}</i>
-          </div>
-          {tableInteractive && (
-            <form className="viewer-input" onSubmit={submitMessage}>
-              <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} placeholder="把你的真实经历说给这桌听…" aria-label="对这桌发言" maxLength={140} />
-              <button type="submit" disabled={!messageDraft.trim()}>说</button>
-            </form>
-          )}
-          {tableInteractive && <button className="nudge-button" type="button" disabled={nudgePending} aria-busy={nudgePending} onClick={requestNudgeFromUi}>{nudgePending ? '请求已递达，等主持人回应…' : '请主持人递个话'}</button>}
+        <div className={`conversation-dock ${conversationCollapsed ? 'is-collapsed' : ''}`}>
+          <DrawerToggle collapsed={conversationCollapsed} label="对话" controlsId="conversation-dock-content" onToggle={() => setConversationCollapsed((current) => !current)} />
+          <section id="conversation-dock-content" className="drawer-card-content" aria-hidden={conversationCollapsed} inert={conversationCollapsed}>
+            {liveActive && lastLive ? (
+              liveMessages.slice(-2).map((message, index, list) => (
+                <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
+                  <b className={message.fromHost ? 'host-name' : ''}>
+                    {speakerName(message.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
+                  </b>
+                  “{message.text}”
+                  {message.delivery === 'pending' && <small className="message-delivery">正在送达</small>}
+                  {message.delivery === 'failed' && message.messageId && <button className="message-retry" type="button" disabled={retryingMessageId === message.messageId} onClick={() => retryMessage(message.messageId!)}>{retryingMessageId === message.messageId ? '发送中' : '重试'}</button>}
+                </p>
+              ))
+            ) : (
+              <p>桌面正在等下一句真实表达。</p>
+            )}
+            <div>
+              <span><b>{lastLive ? speakerName(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined) : '等待发言'}</b>{lastLive ? ` · ${speakerRole(lastLive.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}` : ''}</span>
+              <i>{liveActive ? '·' : '—'}</i>
+            </div>
+            {tableInteractive && (
+              <form className="viewer-input" onSubmit={submitMessage}>
+                <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} placeholder="把你的真实经历说给这桌听…" aria-label="对这桌发言" maxLength={140} />
+                <button type="submit" disabled={!messageDraft.trim()}>说</button>
+              </form>
+            )}
+            {tableInteractive && <button className="nudge-button" type="button" disabled={nudgePending} aria-busy={nudgePending} onClick={requestNudgeFromUi}>{nudgePending ? '请求已递达，等主持人回应…' : '请主持人递个话'}</button>}
+          </section>
         </div>
         {tableInteractive && <button className="close-table-button" type="button" disabled={closePending} aria-busy={closePending} onClick={requestCloseFromUi}>{closePending ? '正在请主持人收桌…' : '收这桌'} <span>→</span></button>}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
@@ -517,8 +540,11 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => setClosingCardOpen(true)}>打开收桌卡 <span>↗</span></button>}
         <DiscussionPanel open={historyOpen} tableId={table.id} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
         <button className="join-table-button" type="button" disabled={hasJoined || closeState !== 'idle'} onClick={(event) => openJoin(event.currentTarget)}><i />{hasJoined ? '已坐到第五席' : closeState !== 'idle' ? '这桌已收束' : '坐到空席'} <span>{hasJoined ? '✓' : '→'}</span></button>
-        {hasJoined && <div ref={joinedStatusRef} className="join-success" role="status" tabIndex={-1} aria-live="polite" data-visible="true">
-          <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
+        {hasJoined && <div ref={joinedStatusRef} className={`join-success ${joinSuccessCollapsed ? 'is-collapsed' : ''}`} role="status" tabIndex={-1} aria-live="polite" data-visible="true">
+          <DrawerToggle collapsed={joinSuccessCollapsed} label="入席提示" controlsId="join-success-content" onToggle={() => setJoinSuccessCollapsed((current) => !current)} />
+          <div id="join-success-content" className="drawer-card-content" aria-hidden={joinSuccessCollapsed} inert={joinSuccessCollapsed}>
+            <small>第五席 · 已入席</small><span>你的真实经历，已经来到桌边。</span>
+          </div>
         </div>}
       </section>
 
@@ -545,7 +571,6 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         )}
       </nav>
 
-      <footer className="scene-footer"><span>瑞士山谷</span><span>{String(Math.max(1, discovery.findIndex((item) => item.table_id === table.id) + 1)).padStart(2, '0')} <i /> {String(discovery.length || 1).padStart(2, '0')}</span></footer>
     </main>
   )
 }

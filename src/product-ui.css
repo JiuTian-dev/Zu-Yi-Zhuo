@@ -1801,3 +1801,231 @@ body:has(.discussion-panel-root) .valley-experience .seated-hud > :not(.discussi
     margin-left: 20px;
   }
 }
+
+/* Collapsible scene cards — every persistent 2D surface leaves a small,
+ * discoverable handle when it gets out of the way. The canvas and its input
+ * remain untouched; this is strictly a product-DOM visibility state. */
+.drawer-toggle {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, .34);
+  border-radius: 999px;
+  background: rgba(246, 247, 255, .22);
+  color: var(--ui-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  transition: color .24s ease, background .24s ease, border-color .24s ease, transform .3s var(--ui-ease);
+}
+
+.drawer-toggle:hover {
+  border-color: rgba(70, 81, 255, .36);
+  background: rgba(255, 255, 255, .62);
+  color: var(--ui-ink);
+  transform: translateY(-2px);
+}
+
+.drawer-toggle:focus-visible {
+  outline: 2px solid var(--ui-blue);
+  outline-offset: 3px;
+}
+
+.drawer-toggle-mark {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(70, 81, 255, .82);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.drawer-card-content {
+  max-height: 900px;
+  overflow: hidden;
+  opacity: 1;
+  transition: max-height .42s var(--ui-ease), opacity .22s ease;
+}
+
+.question-card:not(.is-collapsed) {
+  padding: 35px 78px 17px 19px;
+}
+
+.conversation-dock:not(.is-collapsed) {
+  padding-top: 42px;
+}
+
+.join-success:not(.is-collapsed) {
+  padding-right: 96px;
+}
+
+.sea-copy > .drawer-toggle,
+.hero-copy > .drawer-toggle,
+.question-card > .drawer-toggle,
+.conversation-dock > .drawer-toggle,
+.join-success > .drawer-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.sea-copy.is-collapsed,
+.hero-copy.is-collapsed,
+.question-card.is-collapsed,
+.conversation-dock.is-collapsed,
+.join-success.is-collapsed {
+  width: max-content;
+  min-width: 0;
+  max-width: none;
+  padding: 10px;
+}
+
+.sea-copy.is-collapsed > .drawer-toggle,
+.hero-copy.is-collapsed > .drawer-toggle,
+.question-card.is-collapsed > .drawer-toggle,
+.conversation-dock.is-collapsed > .drawer-toggle,
+.join-success.is-collapsed > .drawer-toggle {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+
+.sea-copy.is-collapsed .drawer-card-content,
+.hero-copy.is-collapsed .drawer-card-content,
+.question-card.is-collapsed .drawer-card-content,
+.conversation-dock.is-collapsed .drawer-card-content,
+.join-success.is-collapsed .drawer-card-content,
+.runtime-notice-stack.is-collapsed .drawer-card-content {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  width: 0;
+}
+
+.sea-copy.is-collapsed {
+  bottom: clamp(92px, 14vh, 150px);
+}
+
+.question-card.is-collapsed {
+  border-radius: 999px;
+}
+
+.conversation-dock.is-collapsed {
+  bottom: 23px;
+  transform: translateX(-50%);
+}
+
+.join-success > .drawer-card-content {
+  display: grid;
+  gap: 3px;
+}
+
+.join-success.is-collapsed {
+  bottom: 87px;
+  border-radius: 999px;
+}
+
+.runtime-notice-stack > .drawer-toggle {
+  justify-self: end;
+  pointer-events: auto;
+}
+
+.runtime-notice-content {
+  display: grid;
+  gap: .45rem;
+}
+
+.runtime-notice-stack.is-collapsed {
+  width: max-content;
+}
+
+.sea-table-list-content {
+  display: grid;
+  gap: 4px;
+}
+
+.sea-table-list > .drawer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 8px 7px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ui-muted);
+  box-shadow: none;
+  text-align: left;
+}
+
+.sea-table-list > .drawer-toggle:hover {
+  background: rgba(255, 255, 255, .32);
+}
+
+.sea-table-list.is-collapsed {
+  width: max-content;
+  max-height: none;
+  padding: 6px;
+}
+
+.sea-table-list.is-collapsed .sea-table-list-content {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sea-table-list.is-collapsed > .drawer-toggle {
+  width: max-content;
+  padding: 5px 8px;
+}
+
+@media (max-width: 760px) {
+  .sea-copy.is-collapsed {
+    right: auto;
+    bottom: 20px;
+  }
+
+  .sea-table-list.is-collapsed {
+    top: 104px;
+    right: 20px;
+  }
+
+  .hero-copy.is-collapsed {
+    width: max-content;
+  }
+
+  .question-card.is-collapsed {
+    top: 17%;
+    right: 20px;
+  }
+
+  .question-card:not(.is-collapsed) {
+    padding: 35px 72px 17px 19px;
+  }
+
+  .conversation-dock.is-collapsed {
+    right: 19px;
+    left: auto;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-toggle,
+  .drawer-card-content {
+    transition: none;
+  }
+}

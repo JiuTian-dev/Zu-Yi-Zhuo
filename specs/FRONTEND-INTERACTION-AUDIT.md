@@ -42,6 +42,9 @@
 - `TableWorld.tsx`：修复 Runtime 加载竞态，ready 时重新读取最新 live store。
 - `TableMeeting.js`：建立后端参与者 ID 到视觉席位的稳定映射，动态成员不再与第五席
   共用锚点。
+- `DrawerToggle.tsx` / `TableSea.tsx` / `App.tsx`：为入口和桌内的持久卡片提供独立
+  抽屉收起与重新打开；收起态使用 `inert` 和 `aria-hidden` 隔离内容，不改变 3D、
+  REST 或 WS 状态；同时移除底部场景信息横框。
 - `live/backend.ts` / `live/mock.ts`：状态 mutation 强制 participant 边界；模拟定时器
   统一登记，离桌后不会继续发消息；运行时过渡请求不会留下永远 pending 的 Promise；
   回放始终使用当前桌 ID，旧 WS、重连和收桌恢复请求不能回写新桌；消息重试保持
