@@ -86,10 +86,13 @@ def _api_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_items(query: str, limit: int) -> list[dict[str, Any]]:
-    bounded_limit = max(1, min(limit, 20))
+    # The official zhihu_search contract names this parameter ``Count`` and
+    # caps one request at 10. The orchestrator may ask for more, but the
+    # adapter must not invent pagination that this endpoint does not expose.
+    bounded_limit = max(1, min(limit, 10))
     payload = _api_get(
         "/content/zhihu_search",
-        {"Query": query, "Limit": bounded_limit},
+        {"Query": query, "Count": bounded_limit},
     )
     items = ((payload.get("Data") or {}).get("Items")) or []
     return items[:bounded_limit]
@@ -229,8 +232,9 @@ def _follow_signals(items: list[dict[str, Any]], viewer_id: str) -> list[dict[st
 
 
 def _own_content_signals(items: list[dict[str, Any]], viewer_id: str) -> list[dict[str, Any]]:
-    # Defensive mapping: the response schema is unverified (the linked demo
-    # account has no own contents), unknown-shaped items are skipped.
+    # Product v1 consumes questions, answers and articles. The official API
+    # can also return video and pin items; those stay excluded until the
+    # domain contract represents them explicitly instead of mislabelling them.
     out = []
     for item in items:
         content_type = _clean(item.get("ContentType"), 20).lower()
@@ -273,9 +277,15 @@ def _personal_signals(viewer_id: str, scopes: list[str], limit: int) -> list[dic
                 payload = _api_get("/user/followees", {"Limit": per_scope_limit})
                 signals.extend(_follow_signals((payload.get("Data") or {}).get("Items") or [], viewer_id))
             elif scope == "public_content":
-                for content_type in ("article", "answer"):
-                    payload = _api_get("/user/contents", {"ContentType": content_type, "Limit": per_scope_limit})
-                    signals.extend(_own_content_signals((payload.get("Data") or {}).get("Items") or [], viewer_id))
+                payload = _api_get(
+                    "/user/contents",
+                    {"ContentType": "all", "Limit": per_scope_limit},
+                )
+                signals.extend(
+                    _own_content_signals(
+                        (payload.get("Data") or {}).get("Items") or [], viewer_id
+                    )
+                )
             else:
                 print(f"zhihu_source: scope {scope!r} has no endpoint mapping; skipped", file=sys.stderr)
         except Exception as error:  # per-scope failure; fail closed only if all fail

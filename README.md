@@ -76,7 +76,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 
 ### 当前不是最终生产版的部分
 
-- 当前使用本地 `viewer` 身份，生产环境还需要接入真实登录和身份解析。
+- 当前使用会话级 `guest-*` 身份；知乎 OAuth 申请已提交，生产身份、用户 token 托管和真实个人数据仍待官方凭据。接入清单见 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)。
 - Bruno 场景里的桌椅和席位目前是同一渲染管线下的程序化产品资产，后续可以替换成最终美术资产，但不会另起一套场景。
 - 桌面端 WebGPU 是主要体验目标，浏览器兼容性和移动端体验还需要继续打磨。
 - 本地开发时后端不可用会进入显式 mock 演示路径；真实后端可用时，数据不与 mock 混用。
@@ -100,7 +100,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 ```text
 corepack pnpm check   passed
 corepack pnpm build   passed
-backend pytest        496 passed
+backend pytest        501 passed
 ```
 
 ## 下一步方向
@@ -114,6 +114,8 @@ backend pytest        496 passed
 3. **把讨论后的回响做出来**：行动、关系记忆、再次遇见和“问题长出下一桌”要成为真实产品路径，而不是一句宣传语。
 4. **守住 Bruno 的场景质量**：不再引入定稿图、低模世界或第二个 3D 渲染器。需要改视觉时，只在 `src/bruno-runtime/` 和对应资源边界内改。
 5. **最后做生产化**：真实身份、持久化部署、WebSocket 重连、日志和 WebGPU 降级策略，优先于新增花哨玩法。
+
+当前生产化的第一优先级已经切到知乎 OAuth 与真实数据。公开搜索适配器、服务端 source 边界和 Pages 回调中继已经就位；拿到 `Access Secret` 可先联调公开信号，拿到 `app_id` / `app_key` 后再完成多用户授权会话。具体阻塞项和验收标准见 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)。
 
 ## 代码边界
 

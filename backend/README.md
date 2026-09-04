@@ -200,6 +200,18 @@ python -m uvicorn app.main:app
 
 wrapper 自己负责知乎授权和 token 管理；不要把 secret、Cookie 或 MCP 配置交给浏览器或前端。
 
+仓库内置 `backend/adapters/zhihu_source.py`，可使用知乎数据开放平台的服务端 `Access Secret` 接通公开搜索，以及在 OAuth 获批前对凭据所属单账号做本人数据 smoke。它不是多用户 OAuth 服务：`ZHIHU_PERSONAL_VIEWER_ID` 只把该凭据绑定到一个内部 viewer，其他 viewer 会返回空结果。正式多用户授权、回调、token 加密存储与会话身份按 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](../specs/ZHIHU-OAUTH-REAL-DATA.md) 实施。
+
+```powershell
+$env:ZHIHU_ACCESS_SECRET = "<server-only-secret>"
+$env:CONTENT_SIGNAL_SOURCE_COMMAND = '["python","adapters/zhihu_source.py","signals"]'
+$env:CANDIDATE_SOURCE_COMMAND = '["python","adapters/zhihu_source.py","candidates"]'
+# 仅单账号 smoke；生产多用户 OAuth 不使用这个固定绑定。
+$env:ZHIHU_PERSONAL_VIEWER_ID = "<internal-viewer-id>"
+$env:PERSONAL_CONTEXT_SOURCE_COMMAND = '["python","adapters/zhihu_source.py","personal"]'
+python -m uvicorn app.main:app
+```
+
 如果部署方有 HTTPS 的 OAuth/CLI/MCP gateway，也可以不经过子进程直接配置服务器侧 JSON source。三类 URL 使用同一份最小契约：后端 POST `{"query":"...","limit":20}`（个人上下文额外带 `viewer_id` 和 `scopes`），gateway 返回数组或带 `candidates`/`signals` 键的 JSON；响应会先限大小再逐条做 `ParticipantSeed`、`ContentSignal` 或 `PersonalContextSignal` 校验：
 
 ```powershell
