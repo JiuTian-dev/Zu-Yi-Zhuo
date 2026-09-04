@@ -1,6 +1,6 @@
 # 下一阶段：水景恢复与运行时收口
 
-> 状态：Implementation landed; strict acceptance pending
+> 状态：S1 / S3 / S4 landed；S2 水体质量重新打开；strict acceptance pending
 > 制定时间：2026-09-03  
 > 上位产品文档：[`docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx`](../docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx)  
 > 视觉与技术合同：[`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)  
@@ -36,6 +36,15 @@
 
 因此本阶段先恢复了原地形数据链路，而不是另画一条河；当前 `landing` 锚点和默认镜头已在 1440×900、1920×1080 下检查到临水构图。
 
+2026-09-04 的实机截图又确认了一个不能靠调色解决的问题：
+
+- 远处河道由 Bruno 原生 `Terrain → Floor → WaterSurface` 链路生成，拥有水深、岸线、动态水纹、屏幕模糊、雾和昼夜光照；
+- 桌边水湾目前由 `TableMeeting.addWaterCove()` 单独创建半透明 `ShapeGeometry`，并用静态 `TorusGeometry` 模拟岸线和水纹；
+- 桌边水湾位于地面附近，而原生水面位于 `Water.surfaceElevation`，两者不是同一水面，也不共享同一细节遮罩；
+- 实际结果是桌边水湾像覆盖在暖色地面上的透明塑料片，缺少原河道的深蓝水心、青色浅滩、白色泡沫和流动感。
+
+因此 S2 的构图方向保留，但当前独立水湾实现不通过视觉验收，必须接回 Bruno 原生水体管线。
+
 ## 3. 不可破坏的边界
 
 - 只保留一个 Bruno WebGPU Runtime 和一个 Canvas。
@@ -66,15 +75,17 @@
 
 验收：水深渐变、白色岸线和动态流线重新出现；控制台没有缺失纹理、WebGPU 节点或资源错误。
 
-### S2 — 把桌子放回正确的水岸构图
+### S2 — 把桌子放回正确的水岸构图（重新打开）
 
-- 枚举原 `respawnsReferences.glb` 中的候选锚点，找出能形成临水/半岛/小岛构图的位置。
-- 桌子锚点和默认镜头必须一起校准，不能只平移桌子导致镜头、雾、阴影或包裹式地表错位。
-- 至少检查默认视角、左右各一次明显环绕、最近和最远缩放。
-- 水可以包围或贴近桌区，但不能穿过桌脚、座椅或角色，也不能让 UI 的主要文字落在最杂乱的高亮区。
-- 如果现有锚点均不合适，新增项目自己的稳定桌锚点配置；不修改原地形去硬挖一条河。
+- 保留当前 `landing` 桌锚点、默认镜头和桥侧约 97° 的干燥开口；本轮不移动桥、桌子和相机来掩盖水体问题。
+- 删除 `TableMeeting.addWaterCove()` 中独立的 `product-table-water-cove`、`product-table-water-shoreline` 和 `product-table-water-ripple` 几何。
+- 新增项目自有的桌区弯月水湾遮罩，使用稳定桌锚点和程序化距离场描述内岸、外岸、桥侧开口与低频不规则边缘；不直接涂改 Bruno 原始 `terrain.png`。
+- 将该遮罩合并进 `Terrain.terrainNode()` 的运行时投影：B 通道连续表达浅滩到深水并驱动 `Floor` 下沉，水区同时抑制 G 通道草密度；桥侧开口保持原始地形数据。
+- 桌区和远处河道只由同一个 `WaterSurface` 渲染，共享 `detailsMask()`、`shoreNode`、动态 ripples、屏幕模糊、雾、光照、天气和质量档位。
+- 岸线与水纹不得再用规则 Torus 描边；它们必须从同一水深遮罩自然生成，并在桌区和原河道之间保持相同的颜色层次与运动速度。
+- 至少检查默认视角、左右各一次明显环绕、最近和最远缩放；水不能穿过桌脚、座椅、桥面或干燥落脚点。
 
-验收：在 1440×900 和 1920×1080 下，首次进入就能看见明确水景；桌子仍是第一视觉焦点，拖拽后构图不崩。
+验收：在 1440×900 和 1920×1080 下，桌边与远处河道必须表现为同一种水：都有深浅层次、动态流线、连续但不规则的亮岸线，并受同一套雾、光照、景深和后处理影响。关闭桌区遮罩后原 Bruno 河道不得发生回归；拖拽和缩放后桥侧开口仍清楚，桌子仍是第一视觉焦点。
 
 ### S3 — 收紧后端事实边界
 
@@ -120,17 +131,17 @@
 
 1. `docs: define water and runtime closure stage`
 2. `fix: restore Bruno terrain data texture`
-3. `feat: compose product table beside water`
+3. `fix: route table cove through Bruno water pipeline`
 4. `fix: harden backend state and reconnect flow`
 5. `feat: bridge live table state into Bruno scene`
 6. `test: verify water runtime and two-client flow`
 
-每个提交保持单一目的。当前代码已完成 S1、S2 的实现与本地视觉验证，S3、S4 已完成主链路收口；S5 的双客户端、断线恢复和正式身份仍待补证，未因此宣称本阶段严格完成。
+每个提交保持单一目的。当前代码已完成 S1，S3、S4 已完成主链路收口；S2 因桌边水湾与 Bruno 原河道材质不一致而重新打开。S5 的双客户端、断线恢复和正式身份仍待补证，未因此宣称本阶段严格完成。
 
 ## 7. 本次执行记录
 
 - S1：迁入 `terrain.png`，由 `Game.loadResources()` 以数据纹理方式加载；没有引入独立河道、车辆或物理依赖。
-- S2：保留 `landing` 原锚点，使用鼠标拖拽和滚轮检查默认、环绕和缩放；默认画面可见水面、深浅层次和白色岸线。本次视觉收口已将桌区项目水体由完整环改为桥侧约 97° 开口的弯月水湾，桥、桌锚点和相机不移动，岸线与水纹同步开口。
+- S2：已保留 `landing` 原锚点并将完整环改为桥侧约 97° 开口的弯月构图，但当前实现仍是独立半透明平面和静态 Torus 描边，与 Bruno 原生河道质量不一致，视觉验收失败。下一次执行按本节要求删除该几何水面，改用项目桌区遮罩扩展原生 `Terrain / Floor / WaterSurface` 管线。
 - S3：统一 `requestRaw` REST 请求和可配置 API/WS origin；状态版本只接受更新版本；WS 使用有上限退避重连；消息显示 pending/failed/retry；`viewer` 集中在 `live/identity.ts`。
 - S4：新增唯一 `SceneBridge`，把服务端桌状态、当前发言者、主持动作和收桌阶段映射到 `TableMeeting`，历史继续从 `/replay` 读取。
 - S5：`pnpm check`、`pnpm build`、后端 496 项测试和一次真实后端发言→`/replay` 浏览器链路已通过；双客户端及正式身份仍是后续验收项。
