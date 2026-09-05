@@ -1637,9 +1637,23 @@ def create_app(
             for candidate in ticket.candidates
             if candidate.participant_id in selected_ids
         ]
+        # The source preview ticket is the server-side authority for this
+        # confirmation. Preserve only the public signal IDs that the returned
+        # MatchPlan used as evidence; never copy private candidate fields or
+        # ask the client to resubmit provenance.
+        origin_signal_ids = list(dict.fromkeys(
+            signal_id
+            for reason in ticket.plan.reasons
+            for signal_id in reason.evidence_signal_ids
+        ))[:20]
         table_id = payload.table_id or uuid4().hex
         try:
-            state = repo.create(table_id, ticket.core_question, selected)
+            state = repo.create(
+                table_id,
+                ticket.core_question,
+                selected,
+                origin_signal_ids=origin_signal_ids,
+            )
         except ValueError as error:
             source_match_tickets.release(payload.preview_token)
             raise HTTPException(status_code=409, detail=str(error)) from error

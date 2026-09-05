@@ -8,6 +8,7 @@ export interface GalleryMediaRect { left: number; top: number; width: number; he
 
 interface TableSeaProps {
   onEnter(table: TableSummary, rect: GalleryMediaRect): void
+  onOpenIntent(): void
   phase: AppPhase
   returnFocusId: string | null
   discovery?: LobbyPreviewLike[] | null
@@ -24,7 +25,7 @@ interface TableSeaProps {
  * Bruno runtime is now persistent underneath this layer; this component is
  * deliberately DOM-only and only selects a backend table.
  */
-export default function TableSea({ onEnter, phase, returnFocusId, discovery = [], backendUnavailable = false, loading = false, onRetry }: TableSeaProps) {
+export default function TableSea({ onEnter, onOpenIntent, phase, returnFocusId, discovery = [], backendUnavailable = false, loading = false, onRetry }: TableSeaProps) {
   const tables = useMemo(() => {
     // PRODUCT DATA BOUNDARY — an empty successful discovery response means
     // there are no tables. Static fixtures are only allowed in the explicit
@@ -82,12 +83,15 @@ export default function TableSea({ onEnter, phase, returnFocusId, discovery = []
     <main
       className={`sea-page product-entry ${hidden ? 'is-transitioning' : ''}`}
       style={{ '--sea-accent': '#a8ce84' } as CSSProperties}
-      aria-label="正在发生的桌海"
+      aria-label="匹配页：正在发生的桌"
     >
       <div className="sea-vignette" aria-hidden="true" />
       <header className="sea-header">
         <div className="sea-brand"><b>组一桌</b><span>把值得聊的话，交给刚好在场的人</span></div>
-        <em>ZH · 2026</em>
+        <div className="sea-header-actions">
+          <button type="button" onClick={onOpenIntent}>我想找一桌 <span>→</span></button>
+          <em>ZH · 2026</em>
+        </div>
       </header>
 
       <section className="sea-discovery" data-ui-interactive>

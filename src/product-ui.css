@@ -1066,6 +1066,24 @@ input:focus-visible {
   transform: translateY(-3px);
 }
 
+.lobby-save {
+  flex: 0 0 auto;
+  min-width: 88px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, .38);
+  color: var(--ui-ink);
+}
+
+.lobby-save:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .72);
+}
+
+.lobby-save-error {
+  margin: 8px 0 0;
+  color: var(--ui-warning);
+  font-size: 10px;
+}
+
 .lobby-listen {
   border-color: var(--ui-line);
   background: rgba(255, 255, 255, .52);
@@ -1347,6 +1365,7 @@ input:focus-visible {
 .lobby-recommend,
 .voice-preview textarea,
 .lobby-member,
+.lobby-save,
 .lobby-listen,
 .discussion-panel-aside,
 .discussion-panel-close,
@@ -2026,6 +2045,650 @@ body:has(.discussion-panel-root) .valley-experience .seated-hud > :not(.discussi
 @media (prefers-reduced-motion: reduce) {
   .drawer-toggle,
   .drawer-card-content {
+    transition: none;
+  }
+}
+
+/* P0–P2 product surfaces. These are DOM-only sheets; the Bruno canvas stays
+ * mounted underneath and remains the visual source of truth. */
+.sea-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sea-header-actions button {
+  padding: 10px 15px;
+  border: 1px solid rgba(255, 255, 255, .34);
+  border-radius: 999px;
+  background: rgba(246, 247, 255, .18);
+  color: rgba(246, 238, 218, .86);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: .08em;
+  cursor: pointer;
+  backdrop-filter: blur(15px) saturate(120%);
+  transition: transform .25s var(--ui-ease), background .25s ease, border-color .25s ease;
+}
+
+.sea-header-actions button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(168, 206, 132, .7);
+  background: rgba(255, 255, 255, .3);
+}
+
+.sea-header-actions button span {
+  margin-left: 7px;
+  color: var(--sea-accent, #a8ce84);
+}
+
+.sea-header-actions em {
+  margin-left: 4px;
+}
+
+.intent-root,
+.relationship-root {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ui-ink);
+}
+
+.intent-veil {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(7, 10, 23, .38);
+  cursor: pointer;
+  backdrop-filter: blur(10px) saturate(80%);
+}
+
+.intent-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 42px));
+  max-height: min(860px, calc(100svh - 42px));
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(247, 249, 255, .82), rgba(220, 226, 255, .66));
+  box-shadow: 0 34px 120px rgba(4, 8, 24, .35), inset 0 1px 0 rgba(255, 255, 255, .88);
+  backdrop-filter: blur(30px) saturate(125%);
+  animation: product-panel-in .5s var(--ui-ease) both;
+}
+
+@keyframes product-panel-in {
+  from { opacity: 0; transform: translateY(16px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.intent-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px 31px 20px;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.intent-kicker {
+  margin: 0 0 9px;
+  color: var(--ui-blue-dark);
+  font-size: 10px;
+  letter-spacing: .14em;
+}
+
+.intent-header h2 {
+  margin: 0;
+  color: var(--ui-ink);
+  font-family: 'Noto Serif SC', serif;
+  font-size: clamp(26px, 4vw, 42px);
+  font-weight: 400;
+  line-height: 1.16;
+}
+
+.intent-close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--ui-line);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .4);
+  color: var(--ui-ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.intent-close:hover {
+  background: #fff;
+  color: var(--ui-blue-dark);
+}
+
+.intent-body,
+.relationship-body {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  padding: 22px 31px 28px;
+}
+
+.intent-form {
+  display: grid;
+  gap: 10px;
+}
+
+.intent-form > label {
+  color: var(--ui-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.intent-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 7px;
+  border: 1px solid rgba(91, 102, 180, .24);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .44);
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+
+.intent-form textarea {
+  min-height: 112px;
+  resize: vertical;
+  padding: 14px 15px;
+}
+
+.intent-form textarea:focus {
+  border-color: rgba(70, 81, 255, .68);
+  background: rgba(255, 255, 255, .7);
+  box-shadow: 0 0 0 3px rgba(70, 81, 255, .1);
+}
+
+.intent-form-footer,
+.relationship-footer,
+.relationship-actions,
+.intent-new-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.intent-form-footer small,
+.relationship-footer span,
+.relationship-muted {
+  color: var(--ui-faint);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.intent-form-footer button,
+.intent-primary,
+.relationship-item > button,
+.intent-new-actions button,
+.intent-plan button {
+  padding: 10px 15px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .46);
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .25s var(--ui-ease), background .25s ease, color .25s ease;
+}
+
+.intent-form-footer button:hover:not(:disabled),
+.intent-primary:hover:not(:disabled),
+.relationship-item > button:hover:not(:disabled),
+.intent-new-actions button:hover:not(:disabled),
+.intent-plan button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.intent-form-footer button,
+.intent-primary {
+  border-color: rgba(70, 81, 255, .65);
+  background: rgba(70, 81, 255, .82);
+  color: #fff;
+}
+
+.intent-form-footer button span,
+.intent-primary span,
+.relationship-item > button span {
+  margin-left: 7px;
+}
+
+.intent-form-footer button:disabled,
+.intent-primary:disabled,
+.relationship-item > button:disabled,
+.intent-new-actions button:disabled,
+.intent-plan button:disabled {
+  cursor: wait;
+  opacity: .5;
+}
+
+.intent-result,
+.intent-new-table,
+.intent-plan,
+.relationship-section {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  border: 1px solid rgba(91, 102, 180, .18);
+  border-radius: 19px;
+  background: rgba(255, 255, 255, .27);
+}
+
+.intent-result-heading,
+.relationship-section-title,
+.relationship-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.intent-result-heading small,
+.relationship-section-title small,
+.intent-plan > small {
+  color: var(--ui-blue-dark);
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+
+.intent-result-heading h3,
+.relationship-section-title span {
+  margin: 4px 0 0;
+  color: var(--ui-ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.intent-result-heading > span {
+  max-width: 46%;
+  color: var(--ui-muted);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.intent-clarify,
+.intent-new-table > p,
+.intent-plan p,
+.relationship-empty {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.intent-candidates,
+.relationship-body {
+  display: grid;
+  gap: 10px;
+}
+
+.intent-candidate,
+.relationship-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(91, 102, 180, .16);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .27);
+}
+
+.intent-candidate h4,
+.relationship-item h3 {
+  margin: 4px 0;
+  color: var(--ui-ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.intent-candidate p,
+.relationship-item p,
+.relationship-item em {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.55;
+}
+
+.intent-candidate small,
+.relationship-item small {
+  color: var(--ui-faint);
+  font-size: 9px;
+}
+
+.intent-candidate > button,
+.relationship-item > button {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.intent-new-actions {
+  justify-content: flex-start;
+}
+
+.intent-plan {
+  margin-top: 5px;
+}
+
+.intent-plan p {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.intent-plan p b {
+  display: block;
+  color: var(--ui-ink);
+}
+
+.intent-plan button {
+  justify-self: start;
+}
+
+.intent-history {
+  display: grid;
+  gap: 5px;
+  color: var(--ui-faint);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.intent-error,
+.intent-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--ui-warning);
+  border-radius: 0 12px 12px 0;
+  background: rgba(189, 94, 67, .08);
+  color: var(--ui-warning);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.intent-notice {
+  border-left-color: #4f977d;
+  background: rgba(79, 151, 125, .1);
+  color: #3a755f;
+}
+
+.intent-error button {
+  border: 0;
+  background: transparent;
+  color: var(--ui-blue-dark);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.intent-handoff-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.intent-handoff-recovery button {
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(255, 255, 255, .42);
+  color: var(--ui-blue-dark);
+  cursor: pointer;
+}
+
+.relationship-panel {
+  width: min(790px, calc(100vw - 42px));
+}
+
+.relationship-section-title {
+  justify-content: flex-start;
+}
+
+.relationship-section-title span {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.relationship-section-title small {
+  color: var(--ui-faint);
+  letter-spacing: 0;
+}
+
+.relationship-item > div {
+  min-width: 0;
+}
+
+.relationship-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.relationship-actions button:first-child {
+  padding: 10px 13px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .34);
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.relationship-footer {
+  padding: 13px 31px 17px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.relationship-footer button {
+  border: 0;
+  background: transparent;
+  color: var(--ui-blue-dark);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.closing-relationship {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ui-line);
+}
+
+.closing-relationship:last-of-type {
+  border-bottom: 0;
+}
+
+.closing-relationship button {
+  justify-self: start;
+  padding: 5px 9px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .38);
+  color: var(--ui-blue-dark);
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.closing-relationship button:disabled {
+  cursor: default;
+  opacity: .62;
+}
+
+.closing-inline-error {
+  display: block;
+  color: var(--ui-warning);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.home-context-error {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 11px 13px 11px 17px;
+  border: 1px solid rgba(255, 255, 255, .48);
+  border-radius: 999px;
+  background: rgba(19, 22, 34, .64);
+  color: rgba(255, 255, 255, .88);
+  box-shadow: 0 16px 34px rgba(7, 9, 18, .2);
+  font-size: 12px;
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.home-context-error button {
+  flex: 0 0 auto;
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 255, 255, .36);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.closing-action-echoes {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--ui-line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .34);
+}
+
+.closing-action-echoes-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.closing-action-echoes-heading small,
+.closing-action-echo small {
+  color: var(--ui-blue-dark);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.closing-action-echoes-heading span {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.closing-action-echo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-line);
+}
+
+.closing-action-echo p {
+  margin: 5px 0 0;
+  color: var(--ui-ink);
+  font-size: 13px;
+}
+
+.closing-action-echo > span {
+  max-width: 36%;
+  color: var(--ui-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .sea-header-actions {
+    gap: 5px;
+  }
+
+  .sea-header-actions button {
+    padding: 8px 9px;
+    font-size: 9px;
+  }
+
+  .sea-header-actions em {
+    display: none;
+  }
+
+  .intent-panel {
+    width: calc(100vw - 20px);
+    max-height: calc(100svh - 20px);
+    border-radius: 23px;
+  }
+
+  .intent-header {
+    padding: 22px 20px 17px;
+  }
+
+  .intent-body,
+  .relationship-body {
+    padding: 17px 20px 22px;
+  }
+
+  .intent-result-heading,
+  .intent-candidate,
+  .relationship-item {
+    display: grid;
+  }
+
+  .intent-result-heading > span {
+    max-width: none;
+    text-align: left;
+  }
+
+  .intent-candidate > button,
+  .relationship-item > button {
+    justify-self: start;
+  }
+
+  .relationship-footer {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intent-panel,
+  .sea-header-actions button,
+  .intent-form-footer button,
+  .intent-primary,
+  .relationship-item > button {
+    animation: none;
     transition: none;
   }
 }

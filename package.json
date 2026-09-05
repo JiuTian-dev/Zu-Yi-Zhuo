@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "check": "tsc -b",
-    "verify:frontend": "node scripts/verify-frontend.mjs"
+    "verify:frontend": "node scripts/verify-frontend.mjs",
+    "verify:p0-p2": "node scripts/verify-p0-p2.mjs"
   },
   "dependencies": {
     "gsap": "^3.13.0",

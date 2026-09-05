@@ -5,7 +5,7 @@
 
 当前仓库是一个可以本地运行的前后端产品原型。前端主场景使用 Bruno Simon `folio-2025` 的实时 WebGPU / Three.js Runtime；产品交互和讨论状态由组一桌自己的 React、REST 和 WebSocket 层负责。
 
-产品方向以 2026-08-26 的[《完整产品沉淀与调研文档 v1.3》](docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx)为准。本文记录这份产品计划在当前代码里的落地情况；`specs/bruno-runtime-product-integration-v2.md` 是实现约束，不替代产品定义。
+产品方向仍以 2026-08-26 定稿的[《完整产品沉淀与调研文档 v1.3》](docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx)为上位基线；本次代码对齐更新见[《完整产品沉淀与调研文档 v1.4》](docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.4_代码对齐更新.docx)。本文记录产品计划在当前代码里的落地情况；`specs/bruno-runtime-product-integration-v2.md` 是实现约束，不替代产品定义。
 
 ## 产品计划（上位方向）
 
@@ -44,10 +44,11 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 
 ## 项目现状
 
-截至 2026-09-03，主流程已经打通：
+截至 2026-09-05，主流程已经打通：
 
 ```text
-入口选桌
+队友首页交接
+  → 匹配页选桌
   → 桌边预览
   → 进入同一套实时 3D 场景
   → 入席与资料授权
@@ -56,7 +57,10 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
   → 收桌卡与回放
 ```
 
-这对应产品计划里的“主入口 + 第一桌闭环”。它已经可以跑通，但还不是整份产品计划的全部实现；主动需求入口、完整的知乎公开信号发现和讨论后的关系/行动回响，当前主要还是后端能力和后续前端工作的范围。
+当前 checkout 主要对应队友首页之后的“匹配页 + 桌内”工作线：最终首页、首页 Gallery、
+手动建桌和邀请入口由队友负责，通过 `docs/HOME-INTEGRATION-CONTRACT.md` 与本项目汇合。
+
+这对应产品计划里的“主入口 + 第一桌闭环”。主动需求入口、当前桌关系保存和行动回响已经接入匹配页/桌内；完整的知乎公开信号配置、跨桌账户总览、最终首页汇合和正式身份仍未完成。
 
 ### 前端
 
@@ -92,28 +96,32 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 - [x] 实现鼠标环绕、滚轮缩放，并把相机状态和后端桌状态隔离。
 - [x] 在同一 3D 场景上完成桌发现、Lobby、入席、实时讨论和历史弹窗。
 - [x] 接通桌状态、成员、授权、主持动作、安全事件、收桌卡和 `/replay`。
+- [x] 接入三轮主动需求澄清、无候选回首页草稿、首页上下文接收和真实行动回响。
+- [x] 关系保存只在收桌后按真实成员和 `table_id` 触发，不在前端伪造关系结果。
 - [x] 清理旧的 R3F / 低模桌海、定稿背景图和本地大模型；当前发布树只保留 Bruno Runtime 资源。
 - [x] 前端 `check`、生产构建和后端测试通过。
 
 最近一次验证结果：
 
 ```text
-corepack pnpm check   passed
-corepack pnpm build   passed
-backend pytest        506 passed
+corepack pnpm check          passed
+corepack pnpm build          passed
+corepack pnpm verify:frontend passed
+corepack pnpm verify:p0-p2   passed
+backend pytest               507 passed
 ```
 
 ## 下一步方向
 
 接下来沿着产品计划继续，把“坐下来和刚好在场的人聊一会儿”做完整，而不是再做一个游戏或作品集网站。
 
-当前阶段按 [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md) 已恢复 Bruno 水景并收紧数据一致性；双客户端、正式身份和最终桌椅美术签收仍在收口。下一步沿产品计划进入以下扩展：
+当前阶段按 [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md) 已恢复 Bruno 水景并收紧数据一致性；双客户端传输和断线恢复已有可重复验收，正式身份、队友首页汇合和最终桌椅美术签收仍未完成。下一步沿产品计划进入以下扩展：
 
-1. **补主动需求入口**：用户可以直接说想聊什么或想一起做什么，经过澄清后进入已有桌或创建新桌。
-2. **让匹配理由可理解**：不只告诉用户“推荐了这桌”，还要说清楚共同问题、互补经历和当前缺口。
-3. **把讨论后的回响做出来**：行动、关系记忆、再次遇见和“问题长出下一桌”要成为真实产品路径，而不是一句宣传语。
+1. **完成首页汇合**：接入推荐桌、手动建桌、邀请和 `OpenTableContext`，不让匹配页重新承担首页职责。
+2. **补真实候选 source**：有授权 source 后，完成 `MatchPlan` 预览、明确确认和公开来源验收。
+3. **继续做跨桌延续**：再次遇见、再次邀桌和“问题长出下一桌”由首页承载总览，桌内只保留当前桌真实结果。
 4. **守住 Bruno 的场景质量**：不再引入定稿图、低模世界或第二个 3D 渲染器。需要改视觉时，只在 `src/bruno-runtime/` 和对应资源边界内改。
-5. **最后做生产化**：真实身份、持久化部署、WebSocket 重连、日志和 WebGPU 降级策略，优先于新增花哨玩法。
+5. **最后做生产化**：真实身份、持久化部署、WebSocket 故障演练、日志和 WebGPU 降级策略，优先于新增花哨玩法。
 
 当前生产化的第一优先级已经切到知乎 OAuth 与真实数据。公开搜索适配器、服务端 source 边界、OAuth coordinator 和 Pages 回调中继已经就位；拿到 `Access Secret` 可先联调公开信号，拿到 `app_id` / `app_key` 后即可联调授权会话。当前还缺知乎稳定用户 ID/用户信息契约、个人 OAuth source 和前端身份 hydration。具体阻塞项和验收标准见 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)。
 
@@ -187,6 +195,8 @@ corepack pnpm dev
 ```powershell
 corepack pnpm check
 corepack pnpm build
+corepack pnpm verify:frontend
+corepack pnpm verify:p0-p2   # 需要同时启动前后端
 
 cd backend
 pytest

@@ -88,6 +88,24 @@ def test_active_intent_does_not_recommend_full_tables() -> None:
     assert response.json()["candidates"] == []
 
 
+def test_active_intent_does_not_match_on_generic_experience_phrasing() -> None:
+    repository = InMemoryTableRepository()
+    repository.create(
+        "ai-table",
+        "为什么 AI 产品试点总停在演示阶段？",
+        [_seed("p1", "产品")],
+    )
+    client = TestClient(create_app(repository))
+
+    response = client.post("/intents/preview", json={
+        "message": "我想找做过线下社区养老的人，讨论独居老人如何建立互助关系",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["route"] == "new_table"
+    assert response.json()["candidates"] == []
+
+
 def test_active_intent_candidate_carries_public_origin_signal_ids() -> None:
     repository = InMemoryTableRepository()
     participant = _seed("p1", "产品").model_copy(update={"public_signal_ids": ["signal-1"]})

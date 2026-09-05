@@ -224,10 +224,13 @@ async def _send_error(
     detail: str,
     *,
     retry_after_seconds: int | None = None,
+    message_id: str | None = None,
 ) -> None:
     payload = {"type": "error", "code": code, "detail": detail}
     if retry_after_seconds is not None:
         payload["retry_after_seconds"] = retry_after_seconds
+    if message_id is not None:
+        payload["message_id"] = message_id
     await websocket.send_json(payload)
 
 
@@ -652,6 +655,7 @@ def register_websocket_routes(
                                 websocket,
                                 "duplicate_message",
                                 "message_id is already committed for this table",
+                                message_id=event.message_id,
                             )
                             continue
                         reflected = _reflect_latest_intervention(repository, table_id, state)

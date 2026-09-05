@@ -1,19 +1,28 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { PersonalCardLike, SharedBaselineLike } from './contract'
+import { fetchActionEchoes, saveRelationship } from './api'
+import type { ActionEchoEntryLike, PersonalCardLike, SharedBaselineLike } from './contract'
 
 interface ClosingCardProps {
+  tableId: string
+  participantId: string
   baseline: SharedBaselineLike
   personalCard: PersonalCardLike | null
   onDismiss(): void
   onReturn(): void
 }
 
-export default function ClosingCard({ baseline, personalCard, onDismiss, onReturn }: ClosingCardProps) {
+export default function ClosingCard({ tableId, participantId, baseline, personalCard, onDismiss, onReturn }: ClosingCardProps) {
   const panelRef = useRef<HTMLElement>(null)
   const dismissButtonRef = useRef<HTMLButtonElement>(null)
   const onDismissRef = useRef(onDismiss)
   onDismissRef.current = onDismiss
+  const [savedRelationships, setSavedRelationships] = useState<string[]>([])
+  const [savingRelationship, setSavingRelationship] = useState<string | null>(null)
+  const [relationshipError, setRelationshipError] = useState<string | null>(null)
+  const [actionEchoes, setActionEchoes] = useState<ActionEchoEntryLike[]>([])
+  const [actionEchoLoading, setActionEchoLoading] = useState(true)
+  const [actionEchoError, setActionEchoError] = useState<string | null>(null)
 
   useEffect(() => {
     dismissButtonRef.current?.focus({ preventScroll: true })
@@ -42,6 +51,45 @@ export default function ClosingCard({ baseline, personalCard, onDismiss, onRetur
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    setActionEchoLoading(true)
+    setActionEchoError(null)
+    void fetchActionEchoes(participantId).then((items) => {
+      if (!active) return
+      setActionEchoes(items.filter((item) => item.table_id === tableId))
+    }).catch((reason) => {
+      if (!active) return
+      setActionEchoes([])
+      setActionEchoError(reason instanceof Error ? reason.message : '暂时取不到这张桌的行动回响')
+    }).finally(() => {
+      if (active) setActionEchoLoading(false)
+    })
+    return () => { active = false }
+  }, [participantId, tableId])
+
+  const savePerson = async (relatedParticipantId: string) => {
+    if (savingRelationship || savedRelationships.includes(relatedParticipantId)) return
+    setSavingRelationship(relatedParticipantId)
+    setRelationshipError(null)
+    try {
+      await saveRelationship(tableId, relatedParticipantId, participantId)
+      setSavedRelationships((current) => [...current, relatedParticipantId])
+    } catch (reason) {
+      setRelationshipError(reason instanceof Error ? reason.message : '这段关系没有保存成功')
+    } finally {
+      setSavingRelationship(null)
+    }
+  }
+
+  const actionStatusLabel = (status: ActionEchoEntryLike['status']) => {
+    if (status === 'completed') return '已完成'
+    if (status === 'in_progress') return '进行中'
+    if (status === 'blocked') return '遇到阻碍'
+    if (status === 'dismissed') return '已搁置'
+    return '尚未回报'
+  }
 
   if (typeof document === 'undefined') return null
 
@@ -100,8 +148,12 @@ export default function ClosingCard({ baseline, personalCard, onDismiss, onRetur
                 <div className="closing-block">
                   <small>值得继续聊的人</small>
                   {personalCard.worth_continuing_with.map((item) => (
-                    <p key={item.participant_id}>{item.reason}</p>
+                    <div className="closing-relationship" key={item.participant_id}>
+                      <p>{item.reason}</p>
+                      <button type="button" disabled={Boolean(savingRelationship) || savedRelationships.includes(item.participant_id)} onClick={() => void savePerson(item.participant_id)}>{savedRelationships.includes(item.participant_id) ? '已记住' : savingRelationship === item.participant_id ? '正在保存…' : '记住这个人'}</button>
+                    </div>
                   ))}
+                  {relationshipError && <em className="closing-inline-error" role="alert">{relationshipError}</em>}
                 </div>
               )}
               {personalCard.suggested_next_actions.length > 0 && (
@@ -113,6 +165,22 @@ export default function ClosingCard({ baseline, personalCard, onDismiss, onRetur
             </div>
           </div>
         )}
+
+        <div className="closing-action-echoes">
+          <div className="closing-action-echoes-heading">
+            <small>行动回响</small>
+            <span>只显示这张桌留下的真实行动项</span>
+          </div>
+          {actionEchoLoading && <p className="closing-empty" role="status">正在读取行动回响…</p>}
+          {!actionEchoLoading && actionEchoError && <p className="closing-empty" role="alert">{actionEchoError}</p>}
+          {!actionEchoLoading && !actionEchoError && actionEchoes.length === 0 && <p className="closing-empty">这张桌暂时没有需要跟进的行动项。</p>}
+          {!actionEchoLoading && !actionEchoError && actionEchoes.map((item) => (
+            <div className="closing-action-echo" key={`${item.table_id}:${item.follow_up_index}`}>
+              <div><small>{item.item_type === 'commitment' ? '承诺' : '建议'} · {actionStatusLabel(item.status)}</small><p>{item.text}</p></div>
+              {item.note && <span>{item.note}</span>}
+            </div>
+          ))}
+        </div>
 
         <div className="closing-echo">
           <span>这道问题长出了下一桌。</span>

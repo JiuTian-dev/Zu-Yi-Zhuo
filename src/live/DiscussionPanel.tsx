@@ -40,7 +40,7 @@ function speakerName(participantId: string, members: DiscussionPanelProps['membe
 }
 
 function signalTitle(signal: ReplaySourceSignalLike) {
-  return signal.title ?? signal.summary ?? signal.excerpt ?? signal.signal_id ?? '桌面来源信号'
+  return signal.title || signal.excerpt || signal.signal_id || '桌面来源信号'
 }
 
 export default function DiscussionPanel({

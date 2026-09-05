@@ -34,6 +34,7 @@ class _CandidateSource:
                 "role": "实践者",
                 "declared_position": "私有立场",
                 "relevant_experience": [{"text": "私有经历", "source_ref": "auth"}],
+                "public_signal_ids": ["source-signal-1"],
             },
             {
                 "participant_id": "source-2",
@@ -41,6 +42,7 @@ class _CandidateSource:
                 "role": "专业者",
                 "declared_position": "私有立场",
                 "relevant_experience": [{"text": "私有经历", "source_ref": "auth"}],
+                "public_signal_ids": ["source-signal-2"],
             },
         ][:limit]
 
@@ -162,6 +164,10 @@ def test_new_table_intent_hands_off_to_authorized_candidate_preview_and_ticket()
     )
     assert confirmed.status_code == 201
     assert confirmed.json()["state"]["table_id"] == "intent-source-table"
+    assert set(confirmed.json()["state"]["origin_signal_ids"]) == {
+        "source-signal-1",
+        "source-signal-2",
+    }
     assert source.calls == [("城市徒步路线和装备选择", 2)]
 
 

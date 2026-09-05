@@ -8,9 +8,11 @@ import { joinViewer, requestClose, requestNudge, retryViewerMessage, sendViewerM
 import { VIEWER_ID } from './live/identity'
 import ClosingCard from './live/ClosingCard'
 import DiscussionPanel from './live/DiscussionPanel'
-import type { LobbyFitPreviewLike, LobbyPreviewLike } from './live/contract'
+import IntentPanel from './live/IntentPanel'
+import type { HomeToMatchContextLike, LobbyFitPreviewLike, LobbyPreviewLike, MatchToHomeDraftLike, OpenTableContextLike } from './live/contract'
 import { loadLobby, loadLobbyFit, ensureTable } from './live/backend'
-import { fetchDiscovery, selectTable } from './live/api'
+import { fetchDiscovery, fetchLobby, leaveTable, selectTable } from './live/api'
+import { clearHomeContext, clearOpenTableContext, handoffMatchDraft, HOME_TO_MATCH_CONTEXT_EVENT, normalizeHomeToMatchContext, normalizeOpenTableContext, OPEN_TABLE_CONTEXT_EVENT, readHomeContext, readOpenTableContext } from './live/handoff'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import TableWorld from './TableWorld'
 import { projectTableAnchor, setRuntimeInteraction, transitionTableCamera } from './bruno-runtime/runtimeController'
@@ -25,6 +27,21 @@ const PHASE_LABELS: Record<string, string> = {
 }
 
 type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
+
+function tableSummaryFromLobby(lobby: LobbyPreviewLike): TableSummary {
+  return {
+    id: lobby.table_id,
+    worldId: 'valley',
+    hook: lobby.core_question,
+    seatedCount: lobby.participant_count,
+    missingPerspective: lobby.missing_perspective,
+    recommendedBecause: lobby.role_gaps.length ? `这桌正在寻找：${lobby.role_gaps.join('、')}` : undefined,
+    previewLines: lobby.members.slice(0, 3).map((member) => `${member.display_name} · ${member.role}`),
+    status: lobby.status === 'open' ? 'live' : 'forming',
+    entryMode: lobby.status === 'open' ? 'immersive' : 'preview',
+    transitionPreset: lobby.status === 'open' ? 'valley' : 'cover-only',
+  }
+}
 function speakerName(participantId: string, members: Array<{ participant_id: string; display_name: string }>, viewerParticipantId?: string): string {
   if (participantId === 'table-host') return '圆桌主持'
   if (participantId === viewerParticipantId) return '你'
@@ -62,7 +79,6 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [joinOpen, setJoinOpen] = useState(false)
-  const [joined, setJoined] = useState(initialJoined)
   const [seatDraft, setSeatDraft] = useState('')
   const [joinError, setJoinError] = useState<string | null>(null)
   const [joinDismissed, setJoinDismissed] = useState(false)
@@ -172,7 +188,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setMenuOpen(false)
   }
   const openJoin = (opener: HTMLButtonElement) => {
-    if (joined || liveViewerJoined || closeState !== 'idle') return
+    if (liveViewerJoined || closeState !== 'idle') return
     joinOpenerRef.current = opener
     setJoinError(null)
     setJoinDismissed(false)
@@ -196,9 +212,12 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         return
       }
       experienceRef.current?.focus({ preventScroll: true })
+      // Keep the auto-open effect from racing the live store update. The
+      // backend has already confirmed membership; this flag only closes the
+      // current invitation surface and is reset when returning to discovery.
+      setJoinDismissed(true)
       setJoinError(null)
       setJoinOpen(false)
-      setJoined(true)
       setActionNotice('你已入席，接下来可以把这段经历说给桌面听。')
       const stored = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? '{}') as Record<string, unknown>
       sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ ...stored, joined: true }))
@@ -370,8 +389,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [joinOpen])
 
   useEffect(() => {
-    if (joined) joinedStatusRef.current?.focus({ preventScroll: true })
-  }, [joined])
+    if (liveViewerJoined) joinedStatusRef.current?.focus({ preventScroll: true })
+  }, [liveViewerJoined])
 
   useEffect(() => {
     if (appPhase === 'world') experienceRef.current.focus({ preventScroll: true })
@@ -391,18 +410,25 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       return
     }
     if (phase !== 'seated') return
-    if (joined || liveViewerJoined || joinOpen || joinDismissed) return
+    // Wait for the requested participant/observer hydration to settle. If a
+    // stale room session says "joined", opening the sheet before the backend
+    // answers can race the real membership state and leave a false prompt.
+    if (liveStatus !== 'live' && liveStatus !== 'mock') return
+    if (liveViewerJoined || joinOpen || joinDismissed) return
     setJoinError(null)
     setJoinOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appPhase, entryIntent, phase, reducedMotion, liveViewerJoined, joinOpen, joinDismissed, joined])
+  }, [appPhase, entryIntent, phase, reducedMotion, liveStatus, liveViewerJoined, joinOpen, joinDismissed])
 
   const approachTable = () => {
     beginApproach()
   }
 
   const seated = phase === 'seated'
-  const hasJoined = joined || liveViewerJoined
+  // PRODUCT DATA BOUNDARY — cached room intent may request participant
+  // hydration, but only the backend-confirmed live flag grants participant
+  // controls. A stale session value must never reveal input or close actions.
+  const hasJoined = liveViewerJoined
   const listening = entryIntent === 'listen' && !hasJoined
   const liveActive = liveStatus === 'live' || liveStatus === 'mock'
   const tableInteractive = hasJoined && liveActive && closeState === 'idle'
@@ -536,7 +562,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         </div>
         {tableInteractive && <button className="close-table-button" type="button" disabled={closePending} aria-busy={closePending} onClick={requestCloseFromUi}>{closePending ? '正在请主持人收桌…' : '收这桌'} <span>→</span></button>}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
-        {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard baseline={liveBaseline} personalCard={livePersonalCard} onDismiss={dismissClosingCard} onReturn={onExit} />}
+        {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard tableId={table.id} participantId={VIEWER_ID} baseline={liveBaseline} personalCard={livePersonalCard} onDismiss={dismissClosingCard} onReturn={onExit} />}
         {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => setClosingCardOpen(true)}>打开收桌卡 <span>↗</span></button>}
         <DiscussionPanel open={historyOpen} tableId={table.id} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
         <button className="join-table-button" type="button" disabled={hasJoined || closeState !== 'idle'} onClick={(event) => openJoin(event.currentTarget)}><i />{hasJoined ? '已坐到第五席' : closeState !== 'idle' ? '这桌已收束' : '坐到空席'} <span>{hasJoined ? '✓' : '→'}</span></button>
@@ -609,6 +635,12 @@ export default function App() {
   const [lobbyError, setLobbyError] = useState<string | null>(null)
   const [discovery, setDiscovery] = useState<LobbyPreviewLike[] | null>(null)
   const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false)
+  const [intentOpen, setIntentOpen] = useState(false)
+  const [intentInitialQuestion, setIntentInitialQuestion] = useState('')
+  const [homeContext, setHomeContext] = useState<HomeToMatchContextLike | null>(() => readHomeContext())
+  const [openTableContext, setOpenTableContext] = useState<OpenTableContextLike | null>(() => readOpenTableContext())
+  const [homeContextError, setHomeContextError] = useState<string | null>(null)
+  const [lobbyInitialJoined, setLobbyInitialJoined] = useState(false)
   const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(() => activeRoom?.intent ?? null)
   const transitionTimer = useRef<number | null>(null)
   const pendingRectRef = useRef<GalleryMediaRect | null>(null)
@@ -637,6 +669,31 @@ export default function App() {
       discoveryRequestRef.current += 1
       if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
       document.documentElement.classList.remove('js-has-global-canvas', 'js-global-canvas-error')
+    }
+  }, [])
+
+  useEffect(() => {
+    const onHomeContext = (event: Event) => {
+      const context = normalizeHomeToMatchContext((event as CustomEvent<unknown>).detail)
+      if (context) {
+        setOpenTableContext(null)
+        clearOpenTableContext()
+        setHomeContext(context)
+      }
+    }
+    const onOpenTableContext = (event: Event) => {
+      const context = normalizeOpenTableContext((event as CustomEvent<unknown>).detail)
+      if (context) {
+        setHomeContext(null)
+        clearHomeContext()
+        setOpenTableContext(context)
+      }
+    }
+    window.addEventListener(HOME_TO_MATCH_CONTEXT_EVENT, onHomeContext)
+    window.addEventListener(OPEN_TABLE_CONTEXT_EVENT, onOpenTableContext)
+    return () => {
+      window.removeEventListener(HOME_TO_MATCH_CONTEXT_EVENT, onHomeContext)
+      window.removeEventListener(OPEN_TABLE_CONTEXT_EVENT, onOpenTableContext)
     }
   }, [])
 
@@ -674,13 +731,67 @@ export default function App() {
       transitionTimer.current = null
     }, delay)
   }
-  const openLobby = (table: TableSummary, rect: GalleryMediaRect) => {
+  const openLobby = (table: TableSummary, rect: GalleryMediaRect, initiallyJoined = false) => {
     if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
     pendingRectRef.current = rect
     setLobbyTable(table)
+    setLobbyInitialJoined(initiallyJoined)
     setAppPhase('lobby')
     loadLobbyData(table)
   }
+  const openLobbyById = async (tableId: string, initiallyJoined = false) => {
+    const preview = await fetchLobby(tableId)
+    if (preview.status !== 'open') throw new Error(preview.status === 'closed' ? '这张桌已经收束，暂时不能再次入席。' : '这张桌暂时暂停接收新席位。')
+    openLobby(tableSummaryFromLobby(preview), { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }, initiallyJoined)
+  }
+  const openIntentTable = async (tableId: string) => {
+    await openLobbyById(tableId)
+    setIntentOpen(false)
+    setIntentInitialQuestion('')
+  }
+  const openMatchedTable = async (tableId: string, initiallyJoined = false) => {
+    await openLobbyById(tableId, initiallyJoined)
+    setIntentOpen(false)
+    setIntentInitialQuestion('')
+  }
+  useEffect(() => {
+    if (!homeContext || appPhase !== 'gallery') return
+    const context = homeContext
+    setHomeContext(null)
+    clearHomeContext()
+    setHomeContextError(null)
+    if (context.initial_question) setIntentInitialQuestion(context.initial_question)
+    if (context.recommended_table_id) {
+      void openLobbyById(context.recommended_table_id).catch((error) => {
+        setHomeContextError(error instanceof Error ? error.message : '首页推荐的这张桌暂时无法打开')
+      })
+      return
+    }
+    if (context.initial_question) setIntentOpen(true)
+  }, [appPhase, homeContext])
+  useEffect(() => {
+    if (!openTableContext || appPhase !== 'gallery') return
+    const context = openTableContext
+    setOpenTableContext(null)
+    clearOpenTableContext()
+    setHomeContextError(null)
+    void openLobbyById(context.table_id).catch((error) => {
+      setHomeContextError(error instanceof Error ? error.message : '这张桌暂时无法打开')
+    })
+  }, [appPhase, openTableContext])
+  const returnMatchDraftToHome = (draft: MatchToHomeDraftLike): boolean => {
+    const handedOff = handoffMatchDraft(draft)
+    if (handedOff) {
+      setIntentOpen(false)
+      setIntentInitialQuestion('')
+    }
+    return handedOff
+  }
+  const closeIntent = () => {
+    setIntentOpen(false)
+    setIntentInitialQuestion('')
+  }
+  const dismissHomeContextError = () => setHomeContextError(null)
   const loadLobbyData = (table: TableSummary) => {
     const requestId = ++lobbyRequestRef.current
     setLobbyData(null)
@@ -717,12 +828,13 @@ export default function App() {
     setLobbyData(null)
     setLobbyFit(null)
     setLobbyError(null)
+    setLobbyInitialJoined(false)
     setAppPhase('gallery')
   }
-  const startWorld = (intent: 'listen' | 'join') => {
+  const startWorld = (intent: 'listen' | 'join', initiallyJoined = lobbyInitialJoined) => {
     if (appPhase !== 'lobby' || !lobbyTable) return
     setEntryIntent(intent)
-    sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ table: lobbyTable, intent, joined: false }))
+    sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ table: lobbyTable, intent, joined: initiallyJoined }))
     const viewportRect: GalleryMediaRect = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
     setTransition({ table: lobbyTable, rect: pendingRectRef.current ?? viewportRect })
     setAppPhase('expanding')
@@ -730,6 +842,9 @@ export default function App() {
   }
   const exitTable = () => {
     if (appPhase !== 'world') return
+    if (lobbyTable && liveTableState?.participants[VIEWER_ID] && !liveTableState.conversation.closed) {
+      void leaveTable(lobbyTable.id, VIEWER_ID).catch(() => undefined)
+    }
     lobbyRequestRef.current += 1
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setEntryIntent(null)
@@ -738,6 +853,7 @@ export default function App() {
     setLobbyData(null)
     setLobbyFit(null)
     setLobbyError(null)
+    setLobbyInitialJoined(false)
     setAppPhase('collapsing')
     schedulePhase('gallery', reducedMotion ? 160 : 450)
   }
@@ -746,10 +862,12 @@ export default function App() {
   return (
     <>
       <TableWorld active />
-      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
-      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={activeRoom?.joined ?? false} onExit={exitTable} />}
-      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onRetry={retryLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join')} />}
+      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} onOpenIntent={() => { setIntentInitialQuestion(''); setIntentOpen(true) }} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
+      {homeContextError && <aside className="home-context-error" role="alert"><span>{homeContextError}</span><button type="button" onClick={dismissHomeContextError}>知道了</button></aside>}
+      {showWorld && lobbyTable && <ValleyExperience table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={lobbyInitialJoined || (activeRoom?.joined ?? false)} onExit={exitTable} />}
+      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onRetry={retryLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join', lobbyInitialJoined || Boolean(lobbyData?.members.some((member) => member.participant_id === VIEWER_ID)))} />}
       {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
+      <IntentPanel open={intentOpen} initialQuestion={intentInitialQuestion} onClose={closeIntent} onSelectTable={openIntentTable} onMatchConfirmed={(tableId) => openMatchedTable(tableId)} onReturnToHomeDraft={returnMatchDraftToHome} />
     </>
   )
 }

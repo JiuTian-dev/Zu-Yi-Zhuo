@@ -22,6 +22,7 @@ const runtime = {
   seenActionKeys: new Set<string>(),
   latestStateVersion: -1,
   reconnectAttempt: 0,
+  openingMessageSent: false,
   reconnectTimer: null as number | null,
   intentionalCloses: new WeakSet<WebSocket>(),
 }
@@ -110,7 +111,11 @@ function handleServerEvent(event: ServerEvent) {
       if (acceptStateVersion(event.state.version)) setLive({ tableState: event.state, phase: event.state.phase, subQuestion: event.state.current_subquestion, seatCount: Object.keys(event.state.participants).length, safetyNotice: event.decision.reason })
       break
     case 'error':
-      setLive({ lastError: publicServerError(event.detail) })
+      if (event.code === 'duplicate_message' && event.message_id) {
+        void reconcileMessageFromReplay(event.message_id)
+      } else {
+        setLive({ lastError: publicServerError(event.detail) })
+      }
       break
     case 'participant_consent_changed':
       {
@@ -238,12 +243,59 @@ async function hydrateAfterReconnect(generation = liveGeneration) {
     // The replay endpoint is the recovery boundary for history. The panel
     // fetches it on demand; this request warms the same server-side path after
     // a reconnect and lets a closed table restore its artifacts immediately.
-    await fetchReplay(tableId, participantId)
+    const replay = await fetchReplay(tableId, participantId)
     if (generation !== liveGeneration || tableId !== currentTableId()) return
+    reconcilePendingMessages(replay)
     if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(tableId, VIEWER_ID, generation)
   } catch (error) {
     if (generation !== liveGeneration || tableId !== currentTableId()) return
     setLive({ lastError: error instanceof Error ? error.message : '重连后的桌状态恢复失败' })
+  }
+}
+
+function reconcilePendingMessages(replay: ReplayResponseLike) {
+  const committedById = new Map(
+    replay.messages
+      .filter((message) => Boolean(message.message_id))
+      .map((message) => [message.message_id as string, message]),
+  )
+  for (const message of getLiveState().messages) {
+    if (!message.messageId || message.delivery !== 'pending') continue
+    const committed = committedById.get(message.messageId)
+    if (committed) {
+      runtime.seenMessageIds.add(message.messageId)
+      commitMessage(message.messageId, {
+        participantId: committed.participant_id,
+        text: committed.text,
+        fromHost: false,
+        action: null,
+      })
+    } else {
+      markMessageFailed(message.messageId)
+    }
+  }
+}
+
+async function reconcileMessageFromReplay(messageId: string, generation = liveGeneration) {
+  try {
+    const replay = await fetchReplay(currentTableId(), VIEWER_ID)
+    if (generation !== liveGeneration) return
+    const committed = replay.messages.find((message) => message.message_id === messageId)
+    if (committed) {
+      runtime.seenMessageIds.add(messageId)
+      commitMessage(messageId, {
+        participantId: committed.participant_id,
+        text: committed.text,
+        fromHost: false,
+        action: null,
+      })
+      return
+    }
+    markMessageFailed(messageId)
+    setLive({ lastError: '这句话没有在回放中找到，可以再次重试。' })
+  } catch (error) {
+    if (generation !== liveGeneration) return
+    setLive({ lastError: error instanceof Error ? error.message : '消息状态恢复失败，请稍后重试。' })
   }
 }
 
@@ -265,6 +317,7 @@ function resetEventDedupe() {
   runtime.seenActionKeys.clear()
   runtime.latestStateVersion = -1
   runtime.reconnectAttempt = 0
+  runtime.openingMessageSent = false
 }
 
 function acceptStateVersion(version: number): boolean {
@@ -386,15 +439,36 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   }
 }
 
-export async function joinViewer(openingText = '', profileShared = false): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (runtime.viewerJoined) return { ok: true }
+export async function joinViewer(openingText = '', profileShared = false): Promise<{ ok: true } | { ok: false; error: string; joined?: boolean }> {
   const generation = liveGeneration
+  if (runtime.viewerJoined) {
+    if (profileShared) {
+      try {
+        const state = await setProfileConsent(currentTableId(), VIEWER_ID, true)
+        if (generation === liveGeneration) applyTableState(state)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '资料授权没有保存成功'
+        setLive({ lastError: message })
+        return { ok: false, error: message, joined: true }
+      }
+    }
+    if (openingText.trim() && !runtime.openingMessageSent) {
+      if (!sendViewerMessage(openingText.trim())) {
+        return { ok: false, error: '入席表达暂时没有送达，请稍后重试。', joined: true }
+      }
+      runtime.openingMessageSent = true
+    }
+    return { ok: true }
+  }
   const tableId = currentTableId()
   if (getLiveState().status === 'mock') {
     if (generation !== liveGeneration) return { ok: false, error: '这张桌已经离开，请重新进入。' }
     runtime.viewerJoined = true
     setLive({ seatCount: 5, viewerJoined: true })
-    if (openingText.trim()) mock.sendViewerMessage(openingText.trim())
+    if (openingText.trim()) {
+      mock.sendViewerMessage(openingText.trim())
+      runtime.openingMessageSent = true
+    }
     return { ok: true }
   }
   try {
@@ -430,16 +504,20 @@ export async function joinViewer(openingText = '', profileShared = false): Promi
     // The participant socket remains the authoritative source if this refresh races it.
   }
   if (profileShared) {
-    void setProfileConsent(tableId, VIEWER_ID, true)
-      .then((state) => {
-        if (generation === liveGeneration && tableId === currentTableId()) applyTableState(state)
-      })
-      .catch((error) => {
-        if (generation === liveGeneration && tableId === currentTableId()) setLive({ lastError: error instanceof Error ? error.message : '资料授权没有保存成功' })
-      })
+    try {
+      const state = await setProfileConsent(tableId, VIEWER_ID, true)
+      if (generation === liveGeneration && tableId === currentTableId()) applyTableState(state)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '资料授权没有保存成功'
+      if (generation === liveGeneration && tableId === currentTableId()) setLive({ lastError: message })
+      return { ok: false, error: message, joined: true }
+    }
   }
   if (openingText.trim()) {
-    sendViewerMessage(openingText.trim())
+    if (!sendViewerMessage(openingText.trim())) {
+      return { ok: false, error: '入席表达暂时没有送达，请稍后重试。', joined: true }
+    }
+    runtime.openingMessageSent = true
   }
   return { ok: true }
 }

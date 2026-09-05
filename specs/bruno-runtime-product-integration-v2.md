@@ -4,11 +4,15 @@
 >
 > Confirmed by product: 2026-09-02
 >
+> Product direction updated: 2026-09-05
+>
 > Visual baseline: `D:\folio-2025` at commit `41046b5`
 >
 > Product repository: `D:\知乎黑客松` / `codex/frontend-v2`
 
 > Execution record: [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md)
+>
+> Product task list: [`P0-P2-PRODUCT-TASKS.md`](./P0-P2-PRODUCT-TASKS.md)
 >
 > Supersedes: `table-runtime-spec.md`、`vision-alignment-v2.md`、`zuoyizhuo-worlds.md` 与 `HANDOFF-2026-09-02.md` 中所有相冲突的视觉和运行时结论
 
@@ -33,11 +37,12 @@
 
 ## 1. 目标与完成结果
 
-用户最终应经历一条连续产品路径：
+用户最终应经历一条连续产品路径。这里的“首页”由队友负责，当前仓库已经存在的桌单/需求界面按产品定义属于“匹配页”，不得再把二者混称：
 
 ```text
-入口选桌
-  → 桌边预览（成员、空席、为什么想到你）
+队友首页（发现入口 / 手动建桌入口）
+  → 匹配页（AI 推荐 / 主动需求 / 为什么想到你）
+  → 桌边预览（成员、空席、匹配理由）
   → 在同一 Bruno 3D 世界中靠近所选桌
   → 入席与资料授权
   → WebSocket 实时讨论和主持
@@ -53,6 +58,79 @@
 4. 3D 是持续存在的沉浸式底座；DOM 是清楚、可访问的产品交互层。
 5. 后端是桌和讨论的唯一事实来源；前端不伪造真实会话状态。
 6. 代码能一眼区分上游复用、项目新增、适配层和被移除能力。
+
+### 1.1 产品主轴与入口优先级
+
+产品始终围绕“问题 → 桌 → 人”组织关系，不做随机陌生人速配，也不退回传统房间大厅。
+用户选择的是一张正在发生的桌，不是先选择一个世界或场景皮肤。
+
+| 优先级 | 产品入口 / 延续路径 | 当前决定 |
+|---|---|---|
+| P0 | 首页进入 AI 推荐桌 | 首页入口由队友实现；当前工作线承接匹配结果，解释为什么想到你，再进入一张完整桌 |
+| P0 | 一张桌完整闭环 | 发现 → 靠近 → 入席 → 讨论 → Agent 介入 → 收桌 → 回放，必须先稳定完成 |
+| P1 | 匹配页和 Agent 说需求 | 经有限轮澄清后推荐现有桌，或展示后端真实生成的匹配方案；不得静默自动建桌或入席 |
+| P1 | 收桌后的关系延续 | 先完成保存关系、再次遇见、再次邀桌和问题长出下一桌；这是一次相遇继续产生价值的最小闭环 |
+| P2 | 首页手动创建一桌 | 选题、填写邀请对象和创建确认均属于队友负责的首页；本工作线只提供建桌/邀请合同，并承接创建后的桌内页 |
+| P2 | 完整好友与私聊 | 好友申请、接受、列表、私聊和关系图谱属于比赛后扩展，不阻塞第一桌交付 |
+
+因此：
+
+- 不新增“大厅 → 世界 → Lobby → 桌”的多层页面；发现、靠近和入席继续发生在同一 Bruno 3D Runtime 中。
+- 不使用“快速匹配”作为核心文案或逻辑；需要快速入口时表达为“给我找一桌”。
+- 不把当前匹配页包装成最终首页，也不在匹配页放置手动建桌表单、任意邀请对象编辑器或账户级邀请中心。
+- 匹配页可以确认后端返回的真实 `MatchPlan`；这属于 AI 匹配结果确认，不等于用户在首页手动创建一桌。
+- 当没有现有桌、也没有可确认的真实候选方案时，匹配页只展示诚实空态，并把问题草稿交还首页的手动创建入口；不得自行 `POST /tables` 造一张只有当前用户的桌。
+- 不恢复定稿图片、2.5D 场景或低模桌阵。Lusion 只作为 DOM 排版和动效节奏参考，Bruno 实时 3D Runtime 仍是唯一视觉底座。
+- 关系延续进入正式产品规划，但第一阶段不为了“好友系统”打断一张桌的完整闭环。
+
+### 1.2 团队分工与合并边界
+
+两条工作线必须保持分开开发，在稳定合同处汇合。不要让同一名执行者同时重写产品语义、
+后端状态机和 3D 美术表现。
+
+| 工作线 | 负责人 | 主要职责 | 不越过的边界 |
+|---|---|---|---|
+| 产品逻辑、匹配页与桌内线 | 用户本人 | 匹配页、桌边预览、入席/旁听、桌内聊天、历史/收桌、Conversation Orchestrator、Table State、REST/WS、身份隐私、关系延续和端到端验收 | 不实现最终首页或首页手动建桌 UI；不替队友重做 Agent IP、3D 资产、镜头表演或环境美术 |
+| 首页与 Creative Frontend / 3D 线 | 队友 | 最终首页、首页 Gallery/入口、首页手动建桌与邀请表单、Bruno 场景细化、最终桌椅与人物资产、圆桌 Agent IP、六动作动画、进入转场、Camera choreography、材质与视觉动效 | 不自行改变 Table State、REST/WS 语义、身份权限、匹配规则、产品优先级或后端事实来源 |
+
+双方只在以下合同处对接：
+
+1. 后端输出 `TableState`、`AgentActionEvent`、`visual_hint`、replay 和 close artifacts；产品层负责把它们整理为稳定前端投影。
+2. `SceneBridge` 把稳定投影转换为 3D 指令；3D 层不直接发业务 REST/WS，也不自行判断主持动作。
+3. 六种动作的语义由后端线定义，动作的镜头、角色、光效和材质表现由队友实现。
+4. `App.tsx`、`product-ui.css`、`SceneBridge.js`、`TableMeeting.js` 等共享边界文件同一阶段只设一个修改负责人；另一方通过小提交或明确 diff 交接，避免覆盖。
+5. 汇合验收同时要求：后端契约测试通过、前端 check/build 通过、真实浏览器路径通过，并且没有把视觉状态写回后端。
+6. 首页负责发起导航，匹配页和桌内页只消费明确的入口上下文；双方不得通过读取对方 DOM、全局临时变量或伪造后端状态完成跳转。
+
+分工不是把前后端做成两套产品。最终仍在“一张完整桌”汇合：队友让智能在场景里可见，
+用户本人保证智能、状态和产品关系真实存在。
+
+### 1.3 页面所有权与跳转合同
+
+| 页面 / 表面 | 负责人 | 可以做 | 不可以做 |
+|---|---|---|---|
+| 最终首页 | 队友 | 展示产品入口、Gallery、发起 AI 找桌、打开手动建桌、显示账户级邀请/回访入口 | 直接操作 TableState、伪造匹配理由或在未确认时自动入席 |
+| 匹配页 | 用户本人 | 接收首页需求、最多三轮澄清、展示真实候选桌/`MatchPlan`、解释匹配、进入桌边预览 | 承担最终首页；展示手动建桌表单；无候选时自动创建桌 |
+| 桌边与桌内页 | 用户本人 | Lobby、旁听、入席、授权、实时讨论、主持动作、历史、收桌卡、关系保存 | 回退成首页账户中心；让 3D 直接写业务状态 |
+| 3D 视觉运行时 | 队友主责，双方按桥接合同汇合 | 表现相机、桌、席位、Agent 和 `visual_hint` | 决定匹配、成员权限、主持语义或收桌状态 |
+
+稳定交接只包含以下三类上下文；具体路由形式可由合并时决定，但语义不得漂移：
+
+1. `HomeToMatchContext`：可选的用户需求、首页推荐桌 ID、来源标记和返回首页地址；不得把私密画像写入 URL。
+2. `MatchToHomeDraft`：匹配页在无真实候选时返回的题目草稿、已完成的澄清摘要和原因；首页由用户再次确认后才允许创建。当前实现通过 `src/live/handoff.ts` 写入短期 `sessionStorage` 并派发 `zuoyizhuo:match-to-home-draft`；存储失败时保留当前面板上下文，提供复制和重试，不静默丢失。
+3. `OpenTableContext`：真实 `table_id`、进入来源（匹配 / 首页创建 / 邀请）和期望身份（旁听 / 入席）；桌内页仍以 REST 返回纠正本地期望。
+
+手动创建的标准路径固定为：
+
+```text
+队友首页打开创建表单
+  → 用户确认题目与邀请对象
+  → 调用本工作线维护的 POST /tables 与 invitation 合同
+  → 后端返回真实 table_id
+  → 首页使用 OpenTableContext 进入本工作线的桌边/桌内页
+```
+
+因此，后端保留创建、邀请、申请入桌和确认能力；“不在匹配页做手动建桌”不是删除能力，而是把 UI 放回正确页面。
 
 ## 2. P0 产品不变量
 
@@ -158,7 +236,8 @@
 
 ```text
 React Product Shell
-├── Discovery / Lobby / Seat / Discussion / History / Close DOM
+├── Match / Lobby / Seat / Discussion / History / Close DOM（本工作线）
+├── Home handoff boundary（队友首页通过稳定上下文接入）
 ├── ProductState（路由、弹窗、相机意图；非桌事实）
 └── BackendGateway（REST + WS + reconnect + replay）
              │ typed events / commands
@@ -217,27 +296,37 @@ React Strict Mode 下重复 mount/unmount 不得产生第二个循环、重复 W
 产品导航状态与后端讨论阶段必须分离。
 
 ```text
-DISCOVERY
+HOME（队友页面；不由本状态机实现）
+  ├─ find-table(context) → MATCH
+  └─ create-confirmed(tableId) → LOBBY
+
+MATCH
   └─ select(tableId) → LOBBY
-       ├─ back → DISCOVERY
+       ├─ back → MATCH / HOME（按入口上下文）
        ├─ listen → ENTERING → TABLE_OBSERVER
        └─ join → ENTERING → SEAT_CONSENT → TABLE_PARTICIPANT
+
+MATCH
+  ├─ no-real-candidate → EMPTY_RESULT
+  └─ return-draft → HOME_CREATE（队友页面；只交接草稿，不在此创建）
 
 TABLE_OBSERVER / TABLE_PARTICIPANT
   ├─ history.open → HISTORY_OVERLAY（正交覆盖态）
   ├─ backend close_started → CLOSING
   ├─ close_artifact_ready → CLOSED_ARTIFACT
-  └─ exit → DISCOVERY
+  └─ exit → MATCH / HOME（按入口上下文）
 ```
 
 后端 `opening | explore | tension | deepen | close` 只描述讨论进程，不得被复用为页面路由。
 
-### 7.1 入口选桌与预览
+### 7.1 匹配页选桌与预览
 
-- `GET /tables/discovery` 提供桌卡事实；本地只保存 loading / error / selected ID。
+- `GET /tables/discovery` 提供匹配页桌卡事实；当前页面是首页之后的匹配表面，不得以最终首页名义继续扩张入口功能。
 - 桌卡显示问题、成员数、空席、阶段和缺失视角；不伪造成员。
 - 选桌后调用 `GET /tables/{id}/lobby`。
-- “为什么想到你”调用 `POST /tables/{id}/lobby-fit`；若从全局匹配创建桌，则使用 `POST /matches/preview` → `POST /matches/confirm` 流程。
+- “为什么想到你”调用 `POST /tables/{id}/lobby-fit`；若从全局匹配创建桌，则使用 `POST /matches/preview` → `POST /matches/confirm` 流程。若是主动需求且后端返回了真实候选人 source plan，则匹配页使用 `POST /matches/source-preview` → 用户明确确认后 `POST /matches/source-confirm`；`preview_token` 只能在确认时消费。
+- `POST /matches/confirm` 只确认后端给出的真实候选方案；主动需求的 `source-confirm` 同样只确认后端返回的真实 source plan。自由填写题目和邀请对象的手动创建流程只能从首页发起。
+- 无现有桌且无真实候选方案时，显示空态并允许返回首页携带 `MatchToHomeDraft`，不在匹配页直接调用 `POST /tables`。
 - Bruno Runtime 始终挂载；选桌和桌边预览是镜头状态，可访问选择控件仍是 DOM。
 
 ### 7.2 入席与讨论
@@ -253,11 +342,12 @@ TABLE_OBSERVER / TABLE_PARTICIPANT
 
 | 产品能力 | 权威契约 | 前端必须实现 |
 |---|---|---|
-| 发现桌 | `GET /tables/discovery` | loading / empty / error / refresh，使用公共投影 |
+| 匹配页发现桌 | `GET /tables/discovery` | loading / empty / error / refresh，使用公共投影；不把本页当首页账户中心 |
 | 桌边预览 | `GET /tables/{id}/lobby` | 成员、空席、子问题、缺失视角、状态 |
 | 为什么想到你 | `POST /tables/{id}/lobby-fit?participant_id=...` | 展示 `eligible`、`matched_role_gap`、`reason` |
-| 匹配建桌 | `POST /matches/preview` → `POST /matches/confirm` | 若入口提供“为我组桌”，完整呈现和确认匹配方案 |
-| 创建桌 | `POST /tables` | 只用于真实创建或明确开发种子，不把 404 静默伪装成新桌 |
+| AI 匹配成桌 | `POST /matches/preview` → `POST /matches/confirm` | 匹配页完整呈现并确认真实匹配方案；不可退化为单人手动建桌 |
+| 首页手动创建桌 | `POST /tables` | 接口由本工作线维护，调用 UI 属于队友首页；只用于用户明确确认后的真实创建或明确开发种子 |
+| 首页发出邀请 | `POST /tables/{id}/invitations` | 接口由本工作线维护，创建/账户级邀请 UI 属于队友首页；桌内只承接接受邀请后的真实身份 |
 | 恢复桌状态 | `GET /tables/{id}?participant_id=...` | 首次进入、刷新和重连后恢复隐私投影 |
 | 入席 | `POST /tables/{id}/participants` | 冲突、满席、身份失败可恢复 |
 | 资料授权 | `POST /tables/{id}/participants/{pid}/consent?viewer_id=...` | 当前授权状态与服务端一致 |
@@ -370,7 +460,7 @@ MIT License、`Copyright (c) 2025 Bruno Simon`、上游 commit 和文件来源�
 - 完成 discovery、lobby、fit、恢复桌、入席、consent。
 - DOM 与 3D 席位一致；真实后端错误不静默转 mock。
 
-**Gate:** 真实后端走通入口选桌 → 预览 → 入席，刷新可恢复。
+**Gate:** 真实后端走通匹配页选桌 → 预览 → 入席，刷新可恢复。
 
 ### M5 — WS 实时讨论
 
@@ -408,7 +498,7 @@ MIT License、`Copyright (c) 2025 Bruno Simon`、上游 commit 和文件来源�
 
 固定捕获 1440×900、1920×1080 桌面和 390×844 窄屏；覆盖入口远景、预览、入席默认构图、拖拽后构图、历史、六种主持动作和收桌卡，并保留原 Bruno 基准、去车后、产品桌完成后三组并排图。
 
-通过标准：场景不是静态背景图；地形、水、植被、光、雾、材质、景深和环境动画均实际运行；去车和加桌未造成空洞、廉价几何感或光照割裂；DOM 不遮核心桌景。视觉方向经用户确认后再进入大规模后端 UI 收尾。
+通过标准：场景不是静态背景图；地形、水、植被、光、雾、材质、景深和环境动画均实际运行；去车和加桌未造成空洞、廉价几何感或光照割裂；DOM 不遮核心桌景。当前代码已完成运行时级别的对照和回归，用户最终视觉签收仍是独立 Gate，不与代码已完成项混写。
 
 ### 15.3 运行时
 
@@ -420,28 +510,30 @@ MIT License、`Copyright (c) 2025 Bruno Simon`、上游 commit 和文件来源�
 
 ## 16. Definition of Done
 
+> 2026-09-05 对齐说明：以下勾选只表示已有代码、测试或真实浏览器证据支持；未勾选项不是遗忘，而是仍需正式签收、生产配置或独立演练。
+
 ### 视觉与场景
 
-- [ ] 主场景由 Bruno 原实时 3D Runtime 驱动，不是图片或低模重搭。
+- [x] 主场景由 Bruno 原实时 3D Runtime 驱动，不是图片或低模重搭。
 - [ ] 原构图、地形、水、光、材质、景深、后处理、动画和氛围通过对比验收。
-- [ ] 车辆、驾驶、角色移动、游戏机制和可见 Bruno 品牌全部消失。
+- [x] 车辆、驾驶、角色移动、游戏机制和可见 Bruno 品牌全部消失。
 - [ ] 产品桌、座椅、参与者和主持人达到同场景美术质量。
-- [ ] 全流程只有一个持续挂载的 3D Runtime。
+- [x] 全流程只有一个持续挂载的 3D Runtime。
 
 ### 产品与后端
 
-- [ ] 真实后端走通选桌、预览、匹配理由、入席、授权和恢复。
-- [ ] WS 发言、幂等、重连、安全事件和六种主持动作完整落地。
-- [ ] 历史弹窗覆盖当前 3D，内容以 `/replay` 为准。
-- [ ] 收桌、个人卡、公共底稿及 `/close-artifacts` 恢复完整。
-- [ ] mock 只在后端不可达时隔离启用，并有醒目标记。
-- [ ] 隐私投影和 identity 边界经双用户测试验证。
+- [x] 真实后端走通选桌、预览、匹配理由、入席、授权和恢复。
+- [x] WS 发言、幂等、重连、安全事件和六种主持动作完整落地。
+- [x] 历史弹窗覆盖当前 3D，内容以 `/replay` 为准。
+- [x] 收桌、个人卡、公共底稿及 `/close-artifacts` 恢复已在独立测试桌完成；双客户端传输、重复消息拒绝、回放对账和断线恢复已有独立浏览器与黑盒脚本证据。六动作的最终角色/镜头/光效表现仍由队友视觉线签收。
+- [x] mock 只在后端不可达时隔离启用，并有醒目标记。
+- [x] 隐私投影和 identity 边界经双用户测试验证。
 
 ### 工程质量
 
-- [ ] `ORIGIN.md` 和第三方 MIT 声明完整。
-- [ ] 生产路径无失败方案、重复 renderer 和游戏死代码。
-- [ ] check、build、后端测试、集成测试和 E2E 全绿。
+- [x] `ORIGIN.md` 和第三方 MIT 声明完整。
+- [x] 生产路径无失败方案、重复 renderer 和游戏死代码。
+- [x] check、build、后端测试和可重复双客户端 E2E 已通过；跨首页汇合验收仍未完成。
 - [ ] 视觉、性能、资源释放、窄屏与 reduced-motion 回归通过。
 - [ ] Git 工作树清楚；每阶段有可回退的独立提交和验证证据。
 
@@ -470,10 +562,18 @@ MIT License、`Copyright (c) 2025 Bruno Simon`、上游 commit 和文件来源�
 - 不把全部后端管理端能力塞进桌内；“完整落地”指第 8 节的用户产品闭环。
 - 不以“build 通过”替代真实浏览器、真实后端和视觉验收。
 
-## 19. 当前仓库事实（spec 创建时）
+## 19. 当前仓库事实（2026-09-05 对齐）
 
 - 原主路径 `ValleyScene/Diorama + valley-world-clean.png` 已移除；当前由 Bruno Runtime 作为唯一渲染底座。
 - `TableWorld.tsx` 只负责生命周期；旧 `table-engine` 与低模桌海已移除。
-- REST、WS、历史和收桌已有部分适配代码，可按契约复用，但必须重新验证 identity、重连、隐私和 mock 隔离。
+- P1–P6 已完成一轮代码主链和真实浏览器验收：入口、预览、靠近、入席、旁听、实时讨论、回放、相机交互、抽屉层和透明 2D 层在同一 Canvas 上运行。
+- REST、WS、历史、收桌产物、身份/隐私和 mock 隔离已有对应适配与测试证据；共享开发桌未主动执行收桌，完整收桌已在独立测试桌演练，断线恢复另有浏览器故障注入和 `pnpm verify:p0-p2` 证据。
+- 后端已补充 `backend/ARCHITECTURE.md`，明确 FastAPI、TableState 仓储、Observer/Gate/Router/Host/Reflection、source adapter 和 OAuth coordinator 的边界。
+- 公开内容 source 的规范化适配和服务端 OAuth coordinator 已具备接入位置，但知乎真实 app 凭据、正式网关、稳定用户字段和个人 OAuth source 尚未配置；不能把个人真实数据写成已上线能力。
+- 当前可见桌单/需求界面是匹配页，不是队友尚未完成的最终首页；后续文档、代码命名和验收均按此边界解释。
+- 匹配页中的手动建桌表单和账户级邀请入口已解除挂载；后端建桌、邀请、申请入桌合同保留给队友首页接入，不能把后端能力误写成匹配页 UI 已完成。
+- 匹配页已实现 `HomeToMatchContext` 接收：推荐桌 ID 进入真实 Lobby，主动需求进入主动找桌面板；首页发送端和创建成功后的 `OpenTableContext` 汇合仍待队友接入。
+- `specs/P0-P2-PRODUCT-TASKS.md` 是当前产品 P0–P2 的执行清单；本文件的 Runtime P1–P6 只保留场景融合、运行时边界和跨线验收基线。
+- 主动需求匹配、当前桌关系保存和行动回响已接入本工作线；跨桌账户总览、首页手动建桌 UI、账户级邀请入口和最终首页 Gallery 属于队友阶段；完整好友申请/列表/私聊和关系图谱仍是比赛后扩展。
 - 最近“approved valley scene”类提交不代表当前产品批准；本 spec 已明确推翻该结论。
 - 用户已有的 `3D/` 和 DOCX 是工作区素材，不属于本次 spec 提交。

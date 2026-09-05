@@ -218,6 +218,7 @@ def test_duplicate_message_id_is_rejected_without_replaying_the_turn() -> None:
             "type": "error",
             "code": "duplicate_message",
             "detail": "message_id is already committed for this table",
+            "message_id": "retry-1",
         }
         websocket.send_json({"type": "request_debug_state"})
         debug = websocket.receive_json()

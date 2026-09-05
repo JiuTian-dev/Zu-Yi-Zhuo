@@ -32,6 +32,12 @@ _STOP_TERMS = {
     "我想",
     "希望",
     "最近",
+    # Common relationship/experience wording is not enough to establish that
+    # two questions are about the same table. Keeping these out of the CJK
+    # bigram set prevents "做过…的人" from matching unrelated topics.
+    "做过",
+    "的人",
+    "真正",
 }
 _PREFIXES = (
     "我想找人聊聊",
