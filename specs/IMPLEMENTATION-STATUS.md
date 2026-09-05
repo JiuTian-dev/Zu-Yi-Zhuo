@@ -35,6 +35,8 @@
   写入新桌的 `TableState`；客户端不需要、也不能重新提交候选私有资料。
 - 页面交接的事件与 `sessionStorage` 现在按“任一路径成功即可交接”判定结果；存储受限时同壳
   事件仍会成功，事件异常时已写入的短期上下文仍可被目标页面恢复。
+- 首页 REST 合同新增可重复验收脚本 `corepack pnpm verify:home-contract`，覆盖建桌幂等、
+  invitation pending 不占席、接受后成员同步和版本推进；该脚本不冒充队友首页 UI 验收。
 
 后续产品任务以 [`P0-P2-PRODUCT-TASKS.md`](./P0-P2-PRODUCT-TASKS.md) 为准；本文件其余
 P1–P6 仍只记录 Bruno Runtime 融合阶段，不与产品优先级 P0–P2 混为同一套编号。

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "check": "tsc -b",
     "verify:frontend": "node scripts/verify-frontend.mjs",
-    "verify:p0-p2": "node scripts/verify-p0-p2.mjs"
+    "verify:p0-p2": "node scripts/verify-p0-p2.mjs",
+    "verify:home-contract": "node scripts/verify-home-contract.mjs"
   },
   "dependencies": {
     "gsap": "^3.13.0",

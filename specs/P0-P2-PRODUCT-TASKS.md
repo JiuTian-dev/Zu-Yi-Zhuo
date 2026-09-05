@@ -204,6 +204,7 @@ P2 不是在当前匹配页新增页面，而是把已经具备的后端能力�
 - 桌内上下文接收确认：`home_create` 事件携带真实 `table_id` 后打开后端 Lobby，成员和空席来自真实投影；消费后 `open-table-context` key 被清理，未直接授予入席权限。
 - 断线故障演练：隔离浏览器主动关闭参与者 WS，客户端在退避后重新建立连接；回放中的测试消息保持 1 条，桌内参与者保持 2 个，状态版本未回退。
 - 可重复传输验收：`corepack pnpm verify:p0-p2` 通过，覆盖两个真实参与者 WS、重复消息 ID、回放对账和重连恢复。
+- 首页合同验收：`corepack pnpm verify:home-contract` 通过，覆盖重复建桌拒绝、邀请 pending 不占席、收件箱响应、接受后成员同步和状态版本推进；真实首页 UI 仍留 P2.2/P2.3。
 - 资源生命周期回归：独立浏览器会话完成历史、入席、桌单抽屉开合和两次进出桌；全程 `canvas=1`，桌内单 WS、离开后 WS 为 closed、再次进入无并发旧连接，RAF 为匹配页 1 / 桌内 2，应用 `console error=0`。
 - 代码检查：`corepack pnpm check`、`corepack pnpm build`、`corepack pnpm verify:frontend`、`git diff --check`；后端 `python -m pytest -q`：`507 passed`；在 Vite 代理与后端同时运行时 `corepack pnpm verify:p0-p2` 通过。
 - 仍未勾选的项目是有意保留的真实缺口：队友首页尚未接入、OAuth 开放后的正式身份替换、最终视觉动作签收，以及首页汇合 E2E。双客户端传输、重复消息拒绝、回放对账、断线恢复和资源生命周期已有证据。
