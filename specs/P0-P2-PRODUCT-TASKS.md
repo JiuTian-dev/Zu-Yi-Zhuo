@@ -201,7 +201,7 @@ P2 不是在当前匹配页新增页面，而是把已经具备的后端能力�
 - 窄屏确认：390×844 匹配页主动找桌以及桌内历史/收桌卡均通过，`scrollWidth === innerWidth`，无可见按钮越界。
 - 首页上下文接收确认：独立浏览器会话通过 `home_intent` sessionStorage 和 `home_return` 自定义事件分别打开主动找桌面板并预填问题；上下文消费后 sessionStorage 被清理。
 - 推荐桌上下文确认：注入 `HomeToMatchContext.recommended_table_id` 后，匹配页真实请求 `/tables/{id}/lobby` 与 `/tables/{id}/lobby-fit`，展示后端成员、空席和“为什么想到你”；请求均返回 200，消费后不把推荐卡直接当作已入席。
-- 桌内上下文接收确认：`home_create` 事件携带真实 `table_id` 后打开后端 Lobby，成员和空席来自真实投影；消费后 `open-table-context` key 被清理，未直接授予入席权限。
+- 桌内上下文接收确认：`home_create` 事件或 sessionStorage 携带真实 `table_id` 后打开后端 Lobby，成员和空席来自真实投影；消费后 `open-table-context` key 被清理，未直接授予入席权限。本次 `p0home` 浏览器复核继续验证了“先在旁边听听 → 同一桌内”：旁听状态可见、`canvasCount=1`、返回桌单后无 console error。
 - 断线故障演练：隔离浏览器主动关闭参与者 WS，客户端在退避后重新建立连接；回放中的测试消息保持 1 条，桌内参与者保持 2 个，状态版本未回退。
 - 可重复传输验收：`corepack pnpm verify:p0-p2` 通过，覆盖两个真实参与者 WS、重复消息 ID、回放对账和重连恢复。
 - 首页合同验收：`corepack pnpm verify:home-contract` 通过，覆盖重复建桌拒绝、邀请 pending 不占席、收件箱响应、接受后成员同步和状态版本推进；真实首页 UI 仍留 P2.2/P2.3。
