@@ -23,7 +23,8 @@ export class Trees
         this.visual = visual
         // Product furniture occupies the old landing. Relocate only trees whose
         // roots intersect the seating disk, as complete trunk + crown units.
-        this.references = references.map((source) => {
+        this.references = references.filter(source => new URLSearchParams(location.search).get('landscape') === 'alpine'
+            || Math.hypot(source.position.x - TABLE_ANCHORS.valley.x, source.position.z - TABLE_ANCHORS.valley.z) < 36).map((source) => {
             const anchor = TABLE_ANCHORS.valley
             const dx = source.position.x - anchor.x
             const dz = source.position.z - anchor.z

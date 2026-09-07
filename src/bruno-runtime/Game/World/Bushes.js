@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu'
 import { color, uniform } from 'three/tsl'
 import { Foliage } from './Foliage.js'
 import { Game } from '../Game.js'
+import { TABLE_ANCHORS } from '../tableAnchors.js'
 
 export class Bushes
 {
@@ -11,7 +12,11 @@ export class Bushes
 
         this.colorANode = uniform(color('#b4b536'))
         this.colorBNode = uniform(color('#d8cf3b'))
-        this.foliage = new Foliage(this.game.resources.bushesReferences.scene.children, this.colorANode, this.colorBNode)
+        const anchor = TABLE_ANCHORS.valley
+        const references = this.game.resources.bushesReferences.scene.children.filter(source =>
+            new URLSearchParams(location.search).get('landscape') === 'alpine'
+            || Math.hypot(source.position.x - anchor.x, source.position.z - anchor.z) < 36)
+        this.foliage = new Foliage(references, this.colorANode, this.colorBNode)
 
         // Debug
         if(this.game.debug.active)

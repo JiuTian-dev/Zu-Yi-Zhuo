@@ -1,6 +1,7 @@
 /** @origin ZUOYIZHUO-SCENE — mouse-only camera input; never writes table state. */
 import * as THREE from 'three/webgpu'
-import { CAMERA_PRESETS } from './tableAnchors.js'
+import { CAMERA_PRESETS, TABLE_ANCHORS } from './tableAnchors.js'
+import { LANDSCAPE } from './landscapeLayout.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -14,7 +15,7 @@ export class CameraOrbit
         this.goalTarget = target.clone()
         this.domElement = game.domElement
         this.azimuth = 0.62
-        this.elevation = 0.42
+        this.elevation = CAMERA_PRESETS.overview.elevation
         this.radius = CAMERA_PRESETS.overview.radius
         this.goalAzimuth = this.azimuth
         this.goalElevation = this.elevation
@@ -114,9 +115,31 @@ export class CameraOrbit
             this.elevation = THREE.MathUtils.lerp(this.elevation, this.goalElevation, easing)
             this.radius = THREE.MathUtils.lerp(this.radius, this.goalRadius, easing)
         }
-        // A fixed user-controlled elevation avoids discontinuous canopy-solver
-        // targets when rotating past overlapping crowns.
-        const clearElevation = this.elevation
+        // Continuous angular clearance, no discrete collision/search steps.
+        // Keep complete assets visible while lifting the sightline over them.
+        let clearElevation = this.elevation
+        const anchor = TABLE_ANCHORS.valley
+        if(!this.obstacles && this.game.world?.cherryTrees)
+        {
+            this.obstacles = [{ ...LANDSCAPE.landmarks.waterfall, width: 5, height: 7 }]
+            for(const trees of [this.game.world.cherryTrees, this.game.world.birchTrees, this.game.world.oakTrees])
+                for(const tree of trees.references)
+                    this.obstacles.push({ x: tree.position.x - anchor.x, z: tree.position.z - anchor.z,
+                        width: 3, height: 7 })
+        }
+        for(const obstacle of this.obstacles ?? [])
+        {
+            const dx = anchor.x + obstacle.x - this.target.x
+            const dz = anchor.z + obstacle.z - this.target.z
+            const along = dx * Math.sin(this.azimuth) + dz * Math.cos(this.azimuth)
+            const across = Math.abs(dx * Math.cos(this.azimuth) - dz * Math.sin(this.azimuth))
+            if(along <= 0) continue
+            const weight = 1 - THREE.MathUtils.smoothstep(across, obstacle.width, obstacle.width + 3)
+            const reach = 1 - THREE.MathUtils.smoothstep(along, this.radius, this.radius + 4)
+            const required = Math.min(0.72, Math.atan2(obstacle.height, Math.max(2, along - 1.5)))
+            clearElevation = Math.max(clearElevation,
+                THREE.MathUtils.lerp(this.elevation, Math.max(this.elevation, required), weight * reach))
+        }
         this.renderElevation = THREE.MathUtils.lerp(this.renderElevation, clearElevation,
             1 - Math.exp(-6 * Math.min(delta || 0.016, 0.1)))
         const horizontal = Math.cos(this.renderElevation) * this.radius

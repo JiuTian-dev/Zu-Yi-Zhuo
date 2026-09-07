@@ -103,7 +103,11 @@ export class Terrain
             const distance = local.dot(vec2(LANDSCAPE.seaDirection.x, LANDSCAPE.seaDirection.z))
                 .add(local.x.mul(0.12).sin().mul(2.1))
                 .add(local.y.mul(0.21).sin().mul(1.2))
-            return smoothstep(LANDSCAPE.coastStart, LANDSCAPE.coastDeep, distance).mul(0.94)
+            const islandDistance = local.length()
+                .add(local.x.mul(0.14).sin().mul(2.5))
+                .add(local.y.mul(0.19).sin().mul(1.8))
+            return max(smoothstep(LANDSCAPE.coastStart, LANDSCAPE.coastDeep, distance),
+                smoothstep(38, 49, islandDistance)).mul(0.94)
         })
         const productWaterCoveNode = Fn(([position]) =>
         {
@@ -137,12 +141,20 @@ export class Terrain
             const streamWidth = bankNoise.mul(0.65).add(ALPINE_STREAM.width)
             const streamEnds = local.y.smoothstep(ALPINE_STREAM.startZ, ALPINE_STREAM.startZ + 8)
                 .mul(local.y.smoothstep(ALPINE_STREAM.endZ - 3, ALPINE_STREAM.endZ).oneMinus())
+            const alpineEnabled = new URLSearchParams(location.search).get('landscape') === 'alpine'
             const streamDepth = streamDistance.div(streamWidth).smoothstep(0.12, 1).oneMinus()
-                .mul(streamEnds).mul(0.5)
+                .mul(streamEnds).mul(alpineEnabled ? 0.5 : 0)
             // A soft vegetated bank replaces paving beside the tributary.
             // Fade before its mouth to preserve the existing table/bridge bank.
             const streamBank = streamDistance.div(streamWidth.add(3)).smoothstep(0.45, 1).oneMinus()
-                .mul(streamEnds).mul(local.y.smoothstep(-22, -13).oneMinus())
+                .mul(streamEnds).mul(local.y.smoothstep(-22, -13).oneMinus()).mul(alpineEnabled ? 1 : 0)
+            // Short tributary beside the ruin; tapers into the existing cove.
+            const creekT = local.y.smoothstep(-18, -8)
+            const creekX = creekT.mul(6).sub(6).add(creekT.mul(Math.PI * 2).sin().mul(1.2))
+            const creekDistance = local.x.sub(creekX).abs()
+            const creekEnds = local.y.smoothstep(-19, -16)
+                .mul(local.y.smoothstep(-9, -7).oneMinus())
+            const creekDepth = creekDistance.smoothstep(0.25, 1.4).oneMinus().mul(creekEnds).mul(0.55)
             // Keep the recovered landmark footprints clear of grass, including their steps.
             const landmarkMask = (landmark, width, depth) =>
             {
@@ -159,9 +171,9 @@ export class Terrain
 
             // Preserve the Bruno texture everywhere else. The product mask
             // only adds water depth and removes grass inside the cove.
-            data.b.assign(max(sourceData.b, productWaterCove.y, seaDepth, streamDepth))
+            data.b.assign(max(sourceData.b, productWaterCove.y, seaDepth, streamDepth, creekDepth))
             data.g.assign(max(sourceData.g, streamBank.mul(0.85)).mul(productWaterCove.x.oneMinus())
-                .mul(smoothstep(0, 0.04, max(seaDepth, streamDepth)).oneMinus()).mul(landmarkClear))
+                .mul(smoothstep(0, 0.04, max(seaDepth, streamDepth, creekDepth)).oneMinus()).mul(landmarkClear))
             // Paving ends on the dry bank; the riverbed must not look flooded.
             data.r.assign(sourceData.r.mul(smoothstep(0.015, 0.12, data.b).oneMinus())
                 .mul(streamBank.oneMinus()))

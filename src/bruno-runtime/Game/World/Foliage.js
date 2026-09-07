@@ -150,7 +150,7 @@ export class Foliage
             return mix(this.colorANode, this.colorBNode, mixStrength)
         })()
         this.material.instance = new MeshDefaultMaterial({
-            side: this.canopy ? THREE.DoubleSide : THREE.FrontSide,
+            side: THREE.DoubleSide,
             // shadowSide: THREE.FrontSide,
             colorNode: colorNode,
             alphaNode: alphaNode,

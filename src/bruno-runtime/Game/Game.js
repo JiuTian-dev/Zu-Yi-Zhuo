@@ -156,6 +156,7 @@ export class Game
     async loadResources()
     {
         const base = '/assets/bruno-runtime/'
+        const alpineEnabled = new URLSearchParams(location.search).get('landscape') === 'alpine'
         const [
             paletteTexture,
             floorSlabsTexture,
@@ -202,10 +203,10 @@ export class Game
             this.loadGLTF(`${base}benches/benches.glb`),
             this.loadGLTF(`${base}bricks/bricks.glb`),
             this.loadGLTF(`${base}areas/areas-compressed.glb`),
-            this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-compressed.glb`),
-            this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-lod-compressed.glb`),
-            this.loadTexture(`${base}alpine/snow-02-2k/snow_02_diff_2k.jpg`, { colorSpace: THREE.SRGBColorSpace, repeat: true, mipmaps: true }),
-            this.loadTexture(`${base}alpine/snow-02-2k/snow_02_nor_gl_2k.jpg`, { repeat: true, mipmaps: true }),
+            alpineEnabled ? this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-compressed.glb`) : null,
+            alpineEnabled ? this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-lod-compressed.glb`) : null,
+            alpineEnabled ? this.loadTexture(`${base}alpine/snow-02-2k/snow_02_diff_2k.jpg`, { colorSpace: THREE.SRGBColorSpace, repeat: true, mipmaps: true }) : null,
+            alpineEnabled ? this.loadTexture(`${base}alpine/snow-02-2k/snow_02_nor_gl_2k.jpg`, { repeat: true, mipmaps: true }) : null,
         ])
 
         return {

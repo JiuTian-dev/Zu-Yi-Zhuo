@@ -36,6 +36,7 @@ export class Materials
     createPalette()
     {
         const material = new MeshDefaultMaterial({
+            side: THREE.DoubleSide,
             colorNode: texture(this.game.resources.paletteTexture).rgb
         })
         
@@ -326,6 +327,7 @@ export class Materials
 
             // Material
             const material = new MeshDefaultMaterial({
+                side: THREE.DoubleSide,
                 colorNode: baseColor,
                 alphaNode: alphaNode,
                 hasCoreShadows: true,

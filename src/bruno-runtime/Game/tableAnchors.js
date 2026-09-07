@@ -8,7 +8,7 @@ export const TABLE_ANCHORS = Object.freeze({
 })
 
 export const CAMERA_PRESETS = Object.freeze({
-    overview: Object.freeze({ azimuth: 0.62, elevation: 0.42, radius: 16.8 }),
+    overview: Object.freeze({ azimuth: 0.62, elevation: 0.45, radius: 20 }),
     approach: Object.freeze({ azimuth: 0.62, elevation: 0.36, radius: 10.6 }),
 })
 

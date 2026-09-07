@@ -113,7 +113,10 @@ export class InstancedGroup
 
         if(updated)
             for(const instancedMesh of this.meshes)
+            {
                 instancedMesh.instance.instanceMatrix.needsUpdate = true
+                instancedMesh.instance.computeBoundingSphere()
+            }
 
         this.needsUpdate = false
     }
