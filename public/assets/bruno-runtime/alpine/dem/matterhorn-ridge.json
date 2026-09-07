@@ -1,0 +1,17 @@
+{
+  "source": "AWS elevation-tiles-prod/skadi HGT tiles",
+  "bounds": {
+    "latMin": 45.78,
+    "latMax": 46.05,
+    "lonMin": 7.45,
+    "lonMax": 7.92
+  },
+  "minElevation": 783.9176470588523,
+  "maxElevation": 4539.406221127242,
+  "grid": [
+    256,
+    192
+  ],
+  "triangles": 97410,
+  "output": "matterhorn-ridge.glb"
+}

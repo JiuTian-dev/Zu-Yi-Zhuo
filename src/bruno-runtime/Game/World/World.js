@@ -15,6 +15,8 @@ import { PoleLights } from './PoleLights.js'
 import { Lanterns } from './Lanterns.js'
 import { Scenery } from './Scenery.js'
 import { TableMeeting } from './TableMeeting.js'
+import { DistantLandscape } from './DistantLandscape.js'
+import { BrunoLandmarks } from './BrunoLandmarks.js'
 
 export class World
 {
@@ -40,6 +42,8 @@ export class World
         this.poleLights = new PoleLights()
         this.lanterns = new Lanterns()
         this.scenery = new Scenery()
+        this.distantLandscape = new DistantLandscape(this.flowers)
+        this.landmarks = new BrunoLandmarks()
         // Product table asset: static scene geometry only; participant state
         // and seat availability are rendered by the DOM/backend bridge.
         this.tableMeeting = new TableMeeting()

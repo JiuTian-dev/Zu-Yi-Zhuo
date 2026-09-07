@@ -10,7 +10,7 @@ const rng = new alea('foliage')
 
 export class Foliage
 {
-    constructor(references, colorANode, colorBNode, seeThrough = false)
+    constructor(references, colorANode, colorBNode, seeThrough = false, canopy = false)
     {
         this.game = Game.getInstance()
 
@@ -18,6 +18,7 @@ export class Foliage
         this.colorANode = colorANode
         this.colorBNode = colorBNode
         this.seeThrough = seeThrough
+        this.canopy = canopy
         this.seeThroughMultiplier = 1
 
         this.setGeometry()
@@ -33,7 +34,7 @@ export class Foliage
 
     setGeometry()
     {
-        const count = 80
+        const count = this.canopy ? 112 : 80
         const planes = []
 
         for(let i = 0; i < count; i++)
@@ -49,7 +50,12 @@ export class Foliage
             const position = new THREE.Vector3().setFromSpherical(spherical)
 
             plane.rotateZ(rng() * 9999)
-            plane.rotateY(0)
+            // BRUNO-ADAPTED: a volumetric crown must survive a full camera orbit.
+            if(this.canopy)
+            {
+                plane.rotateY((i % 3) * Math.PI / 3)
+                plane.rotateX(((i % 5) - 2) * 0.24)
+            }
             plane.translate(
                 position.x,
                 position.y,
@@ -84,6 +90,7 @@ export class Foliage
 
         // Merge all planes
         this.geometry = mergeGeometries(planes)
+        planes.forEach((plane) => plane.dispose())
     }
 
     setMaterial()
@@ -143,6 +150,7 @@ export class Foliage
             return mix(this.colorANode, this.colorBNode, mixStrength)
         })()
         this.material.instance = new MeshDefaultMaterial({
+            side: this.canopy ? THREE.DoubleSide : THREE.FrontSide,
             // shadowSide: THREE.FrontSide,
             colorNode: colorNode,
             alphaNode: alphaNode,

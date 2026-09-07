@@ -21,6 +21,7 @@ export class CameraOrbit
         this.goalRadius = this.radius
         this.transition = null
         this.enabled = true
+        this.renderElevation = this.elevation
         this.dragging = false
         this.pointerId = null
         this.lastX = 0
@@ -84,7 +85,7 @@ export class CameraOrbit
     {
         if(!this.enabled || this.isUiTarget(event.target)) return
         event.preventDefault()
-        this.goalRadius = clamp(this.goalRadius + event.deltaY * 0.008, 7.2, 20)
+        this.goalRadius = clamp(this.goalRadius + event.deltaY * 0.008, 7.2, 34)
     }
 
     update(delta = 0.016)
@@ -113,16 +114,22 @@ export class CameraOrbit
             this.elevation = THREE.MathUtils.lerp(this.elevation, this.goalElevation, easing)
             this.radius = THREE.MathUtils.lerp(this.radius, this.goalRadius, easing)
         }
-        const horizontal = Math.cos(this.elevation) * this.radius
+        // A fixed user-controlled elevation avoids discontinuous canopy-solver
+        // targets when rotating past overlapping crowns.
+        const clearElevation = this.elevation
+        this.renderElevation = THREE.MathUtils.lerp(this.renderElevation, clearElevation,
+            1 - Math.exp(-6 * Math.min(delta || 0.016, 0.1)))
+        const horizontal = Math.cos(this.renderElevation) * this.radius
         this.camera.position.set(
             this.target.x + Math.sin(this.azimuth) * horizontal,
-            this.target.y + Math.sin(this.elevation) * this.radius,
+            this.target.y + Math.sin(this.renderElevation) * this.radius,
             this.target.z + Math.cos(this.azimuth) * horizontal,
         )
         this.camera.lookAt(this.target)
         this.game.view.spherical.offset.copy(this.camera.position).sub(this.target)
         this.game.view.spherical.radius.current = this.radius
     }
+
 
     reset()
     {

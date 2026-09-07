@@ -1,0 +1,17 @@
+{
+  "source": "AWS elevation-tiles-prod/skadi HGT tiles",
+  "bounds": {
+    "latMin": 46.34,
+    "latMax": 46.78,
+    "lonMin": 7.6,
+    "lonMax": 8.26
+  },
+  "minElevation": 551.0000000000041,
+  "maxElevation": 4092.6363033569824,
+  "grid": [
+    128,
+    96
+  ],
+  "triangles": 24130,
+  "output": "eiger-ridge-lod.glb"
+}

@@ -22,6 +22,7 @@ import { Quality } from './Quality.js'
 import { World } from './World/World.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 import { CameraOrbit } from './CameraOrbit.js'
 import { SceneBridge } from '../SceneBridge.js'
 
@@ -63,6 +64,13 @@ export class Game
         if(this.destroyed)
             return
 
+        // BRUNO ASSET PIPELINE — areas-compressed.glb uses KTX2/Basis textures.
+        // Keep the decoder local to the runtime; no product state or gameplay
+        // dependency is introduced by this asset compatibility layer.
+        this.ktx2Loader = new KTX2Loader()
+        this.ktx2Loader.setTranscoderPath('/assets/bruno-runtime/basis/')
+        this.ktx2Loader.detectSupport(this.rendering.renderer)
+
         this.resources = await this.loadResources()
         if(this.destroyed)
         {
@@ -101,16 +109,17 @@ export class Game
         this.domElement.dataset.runtimeState = 'ready'
     }
 
-    loadTexture(path, { colorSpace = THREE.NoColorSpace, repeat = false, flipY = true } = {})
+    loadTexture(path, { colorSpace = THREE.NoColorSpace, repeat = false, flipY = true, mipmaps = false } = {})
     {
         return new Promise((resolve, reject) =>
         {
             new THREE.TextureLoader().load(path, (texture) =>
             {
                 texture.colorSpace = colorSpace
-                texture.minFilter = THREE.LinearFilter
+                texture.minFilter = mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter
                 texture.magFilter = THREE.LinearFilter
-                texture.generateMipmaps = false
+                texture.generateMipmaps = mipmaps
+                texture.anisotropy = mipmaps ? 4 : 1
                 texture.flipY = flipY
                 if(repeat)
                 {
@@ -131,6 +140,7 @@ export class Game
             const draco = new DRACOLoader()
             draco.setDecoderPath('/assets/bruno-runtime/draco/')
             loader.setDRACOLoader(draco)
+            loader.setKTX2Loader(this.ktx2Loader)
             loader.load(path, (gltf) =>
             {
                 draco.dispose()
@@ -166,6 +176,11 @@ export class Game
             fencesModel,
             benchesModel,
             bricksModel,
+            areasModel,
+            alpineModel,
+            alpineLodModel,
+            alpineSnowTexture,
+            alpineSnowNormal,
         ] = await Promise.all([
             this.loadTexture(`${base}palette.png`, { colorSpace: THREE.SRGBColorSpace }),
             this.loadTexture(`${base}floor/slabs.png`, { colorSpace: THREE.SRGBColorSpace, repeat: true }),
@@ -186,6 +201,11 @@ export class Game
             this.loadGLTF(`${base}fences/fences.glb`),
             this.loadGLTF(`${base}benches/benches.glb`),
             this.loadGLTF(`${base}bricks/bricks.glb`),
+            this.loadGLTF(`${base}areas/areas-compressed.glb`),
+            this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-compressed.glb`),
+            this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-lod-compressed.glb`),
+            this.loadTexture(`${base}alpine/snow-02-2k/snow_02_diff_2k.jpg`, { colorSpace: THREE.SRGBColorSpace, repeat: true, mipmaps: true }),
+            this.loadTexture(`${base}alpine/snow-02-2k/snow_02_nor_gl_2k.jpg`, { repeat: true, mipmaps: true }),
         ])
 
         return {
@@ -208,6 +228,11 @@ export class Game
             fencesModel,
             benchesModel,
             bricksModel,
+            areasModel,
+            alpineModel,
+            alpineLodModel,
+            alpineSnowTexture,
+            alpineSnowNormal,
         }
     }
 
@@ -236,6 +261,7 @@ export class Game
         this.view?.destroy?.()
         this.viewport?.destroy?.()
         this.rendering?.destroy?.()
+        this.world?.distantLandscape?.destroy?.()
         this.scene?.traverse((object) =>
         {
             object.geometry?.dispose?.()

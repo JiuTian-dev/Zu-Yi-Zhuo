@@ -52,6 +52,7 @@ export class TableMeeting
         this.addTable()
         this.addSeats()
         this.addTableLight()
+        this.addTableDetails()
     }
 
     material(hex, options = {})
@@ -117,7 +118,8 @@ export class TableMeeting
             const detailMaterial = this.material('#f2c88f')
             const seatGroup = new THREE.Group()
             seatGroup.position.set(x, 0, z)
-            seatGroup.rotation.y = Math.PI * 0.25 - seat.angle
+            // Local +Z is the chair back; point it away from the table.
+            seatGroup.rotation.y = Math.PI * 0.5 - seat.angle
             seatGroup.name = `product-seat-${seat.participantId}`
 
             const pedestal = new THREE.Mesh(lathe([
@@ -140,15 +142,15 @@ export class TableMeeting
             seatGroup.add(cushionInset)
 
             const backrest = new THREE.Mesh(roundedSeat(0.98, 0.86, 0.18, 0.16), chairMaterial)
-            backrest.position.set(0.38, 0.99, 0)
-            backrest.rotation.z = -0.1
+            backrest.position.set(0, 0.99, 0.38)
+            backrest.rotation.x = 0.1
             backrest.castShadow = true
             backrest.receiveShadow = true
             seatGroup.add(backrest)
 
             const backInset = new THREE.Mesh(roundedSeat(0.7, 0.58, 0.045, 0.06), detailMaterial)
-            backInset.position.set(0.28, 1.0, 0)
-            backInset.rotation.z = -0.1
+            backInset.position.set(0, 1.0, 0.28)
+            backInset.rotation.x = 0.1
             seatGroup.add(backInset)
 
             const haloColor = uniform(color(seat.color))
@@ -165,7 +167,7 @@ export class TableMeeting
                 new THREE.SphereGeometry(0.105, 16, 12),
                 new MeshDefaultMaterial({ colorNode: haloColor, hasWater: false }),
             )
-            marker.position.set(0.38, 1.55, 0)
+            marker.position.set(0, 1.55, 0.38)
             marker.visible = false
             seatGroup.add(marker)
 
@@ -191,6 +193,44 @@ export class TableMeeting
         this.actionMarker.position.y = 1.39
         this.actionMarker.visible = false
         this.group.add(this.actionMarker)
+    }
+
+    addTableDetails()
+    {
+        // Shared, neutral table setting: decorative objects never imply occupancy.
+        const ceramic = this.material('#ddd1b5')
+        const tea = this.material('#614835')
+        const paper = this.material('#e4d8b7')
+        const cover = this.material('#597b78')
+        const cupGeometry = lathe([[0, 0], [0.1, 0], [0.13, 0.03],
+            [0.145, 0.22], [0.125, 0.23], [0.105, 0.04], [0, 0.04]], 24)
+        const coasterGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.022, 24)
+        for(const [x, z] of [[-0.82, 0.64], [0.72, -0.58]])
+        {
+            const coaster = new THREE.Mesh(coasterGeometry, cover)
+            coaster.position.set(x, 1.351, z)
+            const cup = new THREE.Mesh(cupGeometry, ceramic)
+            cup.position.set(x, 1.362, z)
+            const liquid = new THREE.Mesh(new THREE.CircleGeometry(0.113, 24), tea)
+            liquid.rotation.x = -Math.PI / 2
+            liquid.position.set(x, 1.54, z)
+            for(const mesh of [coaster, cup, liquid])
+            {
+                mesh.castShadow = mesh !== liquid
+                mesh.receiveShadow = true
+                this.group.add(mesh)
+            }
+        }
+        const notebook = new THREE.Group()
+        notebook.position.set(0.8, 1.34, 0.7)
+        notebook.rotation.y = -0.25
+        const binding = new THREE.Mesh(roundedSeat(0.48, 0.025, 0.64, 0.012), cover)
+        binding.position.y = 0.014
+        const pages = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.025, 0.59), paper)
+        pages.position.y = 0.039
+        binding.castShadow = pages.castShadow = true
+        notebook.add(binding, pages)
+        this.group.add(notebook)
     }
 
     participantIdForSlot(slot)

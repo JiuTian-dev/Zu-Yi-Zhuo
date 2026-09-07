@@ -29,9 +29,10 @@ export class Floor
 
     setVisual()
     {
-        this.size = Math.round(this.game.view.optimalArea.radius * 2) + 1
+        this.size = Math.round(this.game.view.optimalArea.surfaceRadius * 2) + 1
         this.halfSize = this.size * 0.5
-        this.cellSize = 1.5
+        // Narrow stream banks need enough vertices to avoid triangular shore steps.
+        this.cellSize = this.game.quality.level === 0 ? 0.75 : 1
         this.subdivisions = this.size / this.cellSize
 
         // Geometry
@@ -69,9 +70,17 @@ export class Floor
             normalNode: vec3(0, 1, 0),
             shadowNode: terrainData.g,
             hasWater: false,
+            hasFog: false,
             hasLightBounce: false,
             wireframe: false
         })
+        // Offshore fog continues gradually to the horizon. Near-ground fog
+        // stays exactly on the original day-cycle curve.
+        const litFloor = material.outputNode
+        const sea = this.game.terrain.seaDepthNode(positionWorld.xz).smoothstep(0.1, 0.8)
+        const distance = positionWorld.xz.sub(this.game.terrain.productWaterAnchor).length()
+        const fog = mix(this.game.fog.strength, distance.smoothstep(40, 170), sea)
+        material.outputNode = vec4(mix(litFloor.rgb, this.game.fog.color, fog), litFloor.a)
         // Displacement
         material.positionNode = Fn(() =>
         {
@@ -92,9 +101,9 @@ export class Floor
         // Resize
         this.game.viewport.events.on('throttleChange', () =>
         {
-            this.size = Math.round(this.game.view.optimalArea.radius * 2) + 1
+            this.size = Math.round(this.game.view.optimalArea.surfaceRadius * 2) + 1
             this.halfSize = this.size * 0.5
-            this.subdivisions = this.size
+            this.subdivisions = this.size / this.cellSize
             
             geometry.dispose()
             

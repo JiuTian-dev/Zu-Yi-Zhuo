@@ -11,7 +11,7 @@ export class View
         this.game = Game.getInstance()
         this.events = new Events()
         this.delta = new THREE.Vector3()
-        this.camera = new THREE.PerspectiveCamera(38, this.game.viewport.ratio, 0.1, 220)
+        this.camera = new THREE.PerspectiveCamera(38, this.game.viewport.ratio, 0.1, 320)
         const focus = cloneTableAnchor('valley')
         focus.y = 0.35
         this.focusPoint = {
@@ -21,8 +21,9 @@ export class View
         this.optimalArea = {
             needsUpdate: false,
             radius: 18,
+            surfaceRadius: 140,
             nearDistance: 7,
-            farDistance: 42,
+            farDistance: 118,
             position: this.focusPoint.position,
         }
         this.spherical = {

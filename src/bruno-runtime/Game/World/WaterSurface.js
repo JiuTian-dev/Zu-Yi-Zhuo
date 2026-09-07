@@ -379,7 +379,7 @@ export class WaterSurface
     {
         this.mesh = new THREE.Mesh(this.geometry, this.material)
         
-        const halfExtent = this.game.view.optimalArea.radius
+        const halfExtent = this.game.view.optimalArea.surfaceRadius
         this.mesh.scale.setScalar(halfExtent * 2)
 
         this.mesh.position.y = this.game.water.surfaceElevation
@@ -390,7 +390,7 @@ export class WaterSurface
 
         this.game.viewport.events.on('throttleChange', () =>
         {
-            const halfExtent = this.game.view.optimalArea.radius
+            const halfExtent = this.game.view.optimalArea.surfaceRadius
             this.mesh.scale.setScalar(halfExtent * 2)
         }, 2)
     }

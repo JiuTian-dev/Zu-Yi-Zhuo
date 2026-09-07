@@ -1,7 +1,9 @@
 import * as THREE from 'three/webgpu'
 import { Game } from './Game.js'
 import MeshGridMaterial, { MeshGridMaterialLine } from './Materials/MeshGridMaterial.js'
-import { color, Fn, max, mix, round, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl'
+import { color, Fn, max, min, mix, round, smoothstep, texture, uniform, uv, vec2 } from 'three/tsl'
+import { LANDSCAPE } from './landscapeLayout.js'
+import { ALPINE_STREAM } from './alpineStream.js'
 
 export class Terrain
 {
@@ -95,31 +97,27 @@ export class Terrain
             this.game.view.focusPoint.position.x,
             this.game.view.focusPoint.position.z,
         ))
-        const coveInnerRadius = vec2(4.28, 3.72)
-        const coveOuterRadius = vec2(10.8, 8.85)
-        const bridgeDirection = vec2(Math.cos(2.36), Math.sin(2.36))
+        this.seaDepthNode = Fn(([position]) =>
+        {
+            const local = position.sub(this.productWaterAnchor)
+            const distance = local.dot(vec2(LANDSCAPE.seaDirection.x, LANDSCAPE.seaDirection.z))
+                .add(local.x.mul(0.12).sin().mul(2.1))
+                .add(local.y.mul(0.21).sin().mul(1.2))
+            return smoothstep(LANDSCAPE.coastStart, LANDSCAPE.coastDeep, distance).mul(0.94)
+        })
         const productWaterCoveNode = Fn(([position]) =>
         {
             const local = position.sub(this.productWaterAnchor)
-            const innerDistance = local.div(coveInnerRadius).length()
-            const outerDistance = local.div(coveOuterRadius).length()
+            // A lateral inlet joins the original river. The foreground and
+            // bridge approach remain a broad connected peninsula, not an island.
+            const inlet = local.sub(vec2(1.5, -8.8))
+            const bend = inlet.x.mul(0.22).sin().mul(0.65)
+            const distance = vec2(inlet.x, inlet.y.add(bend)).div(vec2(8.4, 3.4)).length()
             const shorelineNoise = texture(this.game.noises.perlin, local.mul(0.075)).r
                 .sub(0.5)
-                .mul(0.055)
-
-            // Keep a soft, irregular annulus around the table island.
-            const outerInside = smoothstep(0.87, 1.0, outerDistance.add(shorelineNoise)).oneMinus()
-            const innerOutside = smoothstep(0.94, 1.05, innerDistance.add(shorelineNoise.mul(0.6)))
-            const radialLength = local.length().max(0.001)
-            const bridgeAlignment = local.dot(bridgeDirection).div(radialLength)
-            const bridgeGap = smoothstep(0.59, 0.73, bridgeAlignment)
-            const coveMask = outerInside.mul(innerOutside).mul(bridgeGap.oneMinus())
-
-            // B is the same depth channel consumed by Floor and WaterSurface.
-            // The shallow inner edge crosses the native shore threshold, then
-            // deepens toward the outer bank without hard color bands.
-            const depthGradient = smoothstep(0.42, 0.98, outerDistance)
-            const coveDepth = mix(0.12, 0.74, depthGradient).mul(coveMask)
+                .mul(0.09)
+            const coveMask = smoothstep(0.86, 1.0, distance.add(shorelineNoise)).oneMinus()
+            const coveDepth = smoothstep(0.45, 1.0, distance.add(shorelineNoise)).oneMinus().mul(0.72)
 
             return vec2(coveMask, coveDepth)
         })
@@ -130,11 +128,43 @@ export class Terrain
             const sourceData = texture(this.game.resources.terrainTexture, textureUv)
             const data = sourceData.toVar()
             const productWaterCove = productWaterCoveNode(position)
+            const local = position.sub(this.productWaterAnchor)
+            const seaDepth = this.seaDepthNode(position)
+            const streamX = local.y.negate().sub(9).smoothstep(0, 25).mul(-20).sub(15)
+                .add(local.y.add(9).mul(0.13).sin().mul(4))
+            const streamDistance = local.x.sub(streamX).abs()
+            const bankNoise = texture(this.game.noises.perlin, local.mul(0.16)).r
+            const streamWidth = bankNoise.mul(0.65).add(ALPINE_STREAM.width)
+            const streamEnds = local.y.smoothstep(ALPINE_STREAM.startZ, ALPINE_STREAM.startZ + 8)
+                .mul(local.y.smoothstep(ALPINE_STREAM.endZ - 3, ALPINE_STREAM.endZ).oneMinus())
+            const streamDepth = streamDistance.div(streamWidth).smoothstep(0.12, 1).oneMinus()
+                .mul(streamEnds).mul(0.5)
+            // A soft vegetated bank replaces paving beside the tributary.
+            // Fade before its mouth to preserve the existing table/bridge bank.
+            const streamBank = streamDistance.div(streamWidth.add(3)).smoothstep(0.45, 1).oneMinus()
+                .mul(streamEnds).mul(local.y.smoothstep(-22, -13).oneMinus())
+            // Keep the recovered landmark footprints clear of grass, including their steps.
+            const landmarkMask = (landmark, width, depth) =>
+            {
+                const offset = local.sub(vec2(landmark.x, landmark.z))
+                const cos = Math.cos(landmark.rotation), sin = Math.sin(landmark.rotation)
+                const localBox = vec2(offset.x.mul(cos).sub(offset.y.mul(sin)),
+                    offset.x.mul(sin).add(offset.y.mul(cos))).abs()
+                return max(localBox.x.div(width), localBox.y.div(depth)).smoothstep(0.9, 1.12)
+            }
+            const landmarkClear = min(
+                landmarkMask(LANDSCAPE.landmarks.waterfall, 4.5, 6.0),
+                landmarkMask(LANDSCAPE.landmarks.bar, 3.2, 2.2),
+            )
 
             // Preserve the Bruno texture everywhere else. The product mask
             // only adds water depth and removes grass inside the cove.
-            data.b.assign(max(sourceData.b, productWaterCove.y))
-            data.g.assign(sourceData.g.mul(productWaterCove.x.oneMinus()))
+            data.b.assign(max(sourceData.b, productWaterCove.y, seaDepth, streamDepth))
+            data.g.assign(max(sourceData.g, streamBank.mul(0.85)).mul(productWaterCove.x.oneMinus())
+                .mul(smoothstep(0, 0.04, max(seaDepth, streamDepth)).oneMinus()).mul(landmarkClear))
+            // Paving ends on the dry bank; the riverbed must not look flooded.
+            data.r.assign(sourceData.r.mul(smoothstep(0.015, 0.12, data.b).oneMinus())
+                .mul(streamBank.oneMinus()))
 
             return data
         })

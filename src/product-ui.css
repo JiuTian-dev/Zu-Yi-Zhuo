@@ -994,6 +994,148 @@ input:focus-visible {
   color: var(--ui-faint);
 }
 
+/* Scene settings stay light enough to keep the Bruno world visible behind
+ * them, while the three time choices remain readable and keyboard-friendly. */
+.scene-settings {
+  position: absolute;
+  z-index: 23;
+  top: 98px;
+  right: clamp(24px, 4vw, 68px);
+  width: min(320px, calc(100vw - 40px));
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, .42);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(250, 251, 255, .62), rgba(228, 232, 255, .38));
+  box-shadow: 0 24px 70px rgba(7, 9, 18, .18), inset 0 1px 0 rgba(255, 255, 255, .42);
+  color: var(--ui-ink);
+  backdrop-filter: blur(28px) saturate(120%);
+  opacity: 0;
+  transform: translateY(-10px) scale(.97);
+  transform-origin: top right;
+  transition: opacity .28s ease, transform .28s var(--ui-ease), visibility .28s ease;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.scene-settings::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 88px;
+  height: 4px;
+  border-radius: 0 0 8px 0;
+  background: var(--ui-blue);
+  content: '';
+}
+
+.scene-settings.is-open {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.scene-settings-close {
+  position: absolute;
+  top: 15px;
+  right: 17px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .3);
+  color: var(--ui-muted);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.scene-settings-kicker {
+  margin: 0 0 9px;
+  color: var(--ui-blue-dark);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+
+.scene-settings h2 {
+  margin: 0;
+  color: var(--ui-ink);
+  font-family: 'Manrope', 'Noto Sans SC', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -.05em;
+}
+
+.scene-settings-intro {
+  margin: 9px 0 17px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.scene-time-options {
+  display: grid;
+  gap: 8px;
+}
+
+.scene-time-options button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, .42);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .2);
+  color: var(--ui-ink);
+  text-align: left;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+
+.scene-time-options button:hover,
+.scene-time-options button.is-selected {
+  border-color: rgba(70, 81, 255, .48);
+  background: rgba(255, 255, 255, .5);
+  transform: translateY(-1px);
+}
+
+.scene-time-options button > span {
+  display: grid;
+  gap: 3px;
+}
+
+.scene-time-options b {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.scene-time-options small {
+  color: var(--ui-muted);
+  font-size: 9px;
+}
+
+.scene-time-options i {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--ui-blue);
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7);
+}
+
+.scene-time-options button.is-selected i {
+  background: var(--ui-blue);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7), 0 0 12px rgba(70, 81, 255, .42);
+}
+
+@media (max-width: 760px) {
+  .scene-settings {
+    top: 74px;
+    right: 19px;
+    width: min(320px, calc(100vw - 38px));
+  }
+}
+
 /* Lobby */
 .lobby-backdrop {
   width: 100%;

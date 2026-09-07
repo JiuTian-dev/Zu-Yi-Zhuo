@@ -15,7 +15,7 @@ import { fetchDiscovery, fetchLobby, leaveTable, selectTable } from './live/api'
 import { clearHomeContext, clearOpenTableContext, handoffMatchDraft, HOME_TO_MATCH_CONTEXT_EVENT, normalizeHomeToMatchContext, normalizeOpenTableContext, OPEN_TABLE_CONTEXT_EVENT, readHomeContext, readOpenTableContext } from './live/handoff'
 import { setAmbient, stopAmbient } from './audio/ambient'
 import TableWorld from './TableWorld'
-import { projectTableAnchor, setRuntimeInteraction, transitionTableCamera } from './bruno-runtime/runtimeController'
+import { projectTableAnchor, setDayCycleMode, setRuntimeInteraction, transitionTableCamera, type DayCycleMode } from './bruno-runtime/runtimeController'
 import DrawerToggle from './DrawerToggle'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -27,6 +27,17 @@ const PHASE_LABELS: Record<string, string> = {
 }
 
 type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
+
+const DAY_CYCLE_MODE_KEY = 'zuoyizhuo.scene-time-mode'
+
+function readDayCycleMode(): DayCycleMode {
+  try {
+    const value = localStorage.getItem(DAY_CYCLE_MODE_KEY)
+    return value === 'day' || value === 'night' ? value : 'auto'
+  } catch {
+    return 'auto'
+  }
+}
 
 function tableSummaryFromLobby(lobby: LobbyPreviewLike): TableSummary {
   return {
@@ -75,6 +86,10 @@ function SoundIcon({ muted }: { muted: boolean }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12 1c1 1.2 1 2.8 0 4m2-7c2.8 2.8 2.8 7.2 0 10" className={muted ? 'muted-wave' : ''} />{muted && <path d="m17 10 4 4m0-4-4 4" />}</svg>
 }
 
+function SettingsIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Zm8 3.8-2-.7a6.2 6.2 0 0 0-.6-1.5l.9-1.9-1.8-1.8-1.9.9a6.2 6.2 0 0 0-1.5-.6l-.7-2h-2.6l-.7 2a6.2 6.2 0 0 0-1.5.6l-1.9-.9L4.9 7.9l.9 1.9a6.2 6.2 0 0 0-.6 1.5l-2 .7v2.6l2 .7c.1.5.3 1 .6 1.5l-.9 1.9 1.8 1.8 1.9-.9c.5.3 1 .5 1.5.6l.7 2h2.6l.7-2c.5-.1 1-.3 1.5-.6l1.9.9 1.8-1.8-.9-1.9c.3-.5.5-1 .6-1.5l2-.7v-2.6Z" /></svg>
+}
+
 function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discovery, initialJoined = false }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; lobby: LobbyPreviewLike | null; discovery: LobbyPreviewLike[]; initialJoined?: boolean }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
@@ -84,6 +99,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const [joinDismissed, setJoinDismissed] = useState(false)
   const [profileShared, setProfileShared] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [dayCycleMode, setDayCycleModeState] = useState<DayCycleMode>(readDayCycleMode)
   const [soundOn, setSoundOn] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const experienceRef = useRef<HTMLElement>(null!)
@@ -170,9 +187,9 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [])
 
   useEffect(() => {
-    setRuntimeInteraction(!historyOpen && !joinOpen && !menuOpen && !closingCardOpen)
+    setRuntimeInteraction(!historyOpen && !joinOpen && !menuOpen && !settingsOpen && !closingCardOpen)
     return () => setRuntimeInteraction(true)
-  }, [historyOpen, joinOpen, menuOpen, closingCardOpen])
+  }, [historyOpen, joinOpen, menuOpen, settingsOpen, closingCardOpen])
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
     const active = document.activeElement
@@ -187,6 +204,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     focusOpenerFrom('.table-menu', menuButtonRef.current)
     setMenuOpen(false)
   }
+  const closeSettings = () => setSettingsOpen(false)
   const openJoin = (opener: HTMLButtonElement) => {
     if (liveViewerJoined || closeState !== 'idle') return
     joinOpenerRef.current = opener
@@ -296,6 +314,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setJoinOpen(false)
     setHistoryOpen(false)
     setMenuOpen(false)
+    setSettingsOpen(false)
     setJoinDismissed(false)
     setHeroCollapsed(false)
     setQuestionCollapsed(false)
@@ -311,13 +330,23 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       if (historyOpen) setHistoryOpen(false)
       else if (joinOpen) closeJoin()
       else if (menuOpen) closeMenu()
+      else if (settingsOpen) closeSettings()
       else resetDiscovery()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [historyOpen, joinOpen, menuOpen])
+  }, [historyOpen, joinOpen, menuOpen, settingsOpen])
+
+  useEffect(() => {
+    setDayCycleMode(dayCycleMode)
+    try {
+      localStorage.setItem(DAY_CYCLE_MODE_KEY, dayCycleMode)
+    } catch {
+      // The control remains usable when browser storage is unavailable.
+    }
+  }, [dayCycleMode])
 
   useEffect(() => () => {
     stopAmbient()
@@ -447,9 +476,30 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
           <button className={`icon-button ${soundOn ? '' : 'sound-unavailable'}`} type="button" aria-pressed={soundOn} aria-label={soundOn ? '关闭环境音' : '开启环境音'} title={soundOn ? '关闭环境音' : '开启环境音'} onClick={() => { const next = !soundOn; setSoundOn(next); setAmbient(next, 'valley') }}>
             <SoundIcon muted={!soundOn} />
           </button>
+          <button className="icon-button settings-button" type="button" aria-label={settingsOpen ? '关闭场景设置' : '打开场景设置'} aria-expanded={settingsOpen} title="场景设置" onClick={() => { setSettingsOpen((current) => !current); setMenuOpen(false) }}>
+            <SettingsIcon />
+          </button>
           <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label={menuOpen ? '关闭桌单' : '打开桌单'} aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span /><span /></button>
         </div>
       </header>
+
+      <aside className={`scene-settings ${settingsOpen ? 'is-open' : ''}`} aria-hidden={!settingsOpen} inert={!settingsOpen} role="dialog" aria-label="场景设置">
+        <button className="scene-settings-close" type="button" aria-label="关闭场景设置" onClick={closeSettings}>×</button>
+        <p className="scene-settings-kicker">SCENE SETTINGS</p>
+        <h2>时间氛围</h2>
+        <p className="scene-settings-intro">选择这一桌的光线。自动变化会在约 8 分钟内完成一轮昼夜。</p>
+        <div className="scene-time-options" role="radiogroup" aria-label="昼夜模式">
+          {([
+            ['auto', '自动变化', '保留昼夜流动'],
+            ['day', '一直白天', '清晰、温暖的山谷光'],
+            ['night', '一直黑夜', '蓝紫色的夜间光'],
+          ] as Array<[DayCycleMode, string, string]>).map(([value, label, detail]) => (
+            <button key={value} type="button" role="radio" aria-checked={dayCycleMode === value} className={dayCycleMode === value ? 'is-selected' : ''} onClick={() => setDayCycleModeState(value)}>
+              <span><b>{label}</b><small>{detail}</small></span><i aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </aside>
 
       <section className={`hero-copy ${heroCollapsed ? 'is-collapsed' : ''}`} aria-labelledby="valley-title" inert={seated || phase === 'approaching'}>
         <DrawerToggle collapsed={heroCollapsed} label="主题卡" controlsId="valley-hero-content" onToggle={() => setHeroCollapsed((current) => !current)} />

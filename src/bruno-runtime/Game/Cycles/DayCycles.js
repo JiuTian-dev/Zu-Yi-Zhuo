@@ -13,12 +13,33 @@ export class DayCycles extends Cycles
     constructor()
     {
         const forcedProgress = import.meta.env.VITE_DAY_CYCLE_PROGRESS ? parseFloat(import.meta.env.VITE_DAY_CYCLE_PROGRESS) : null
-        super('🕜 Day Cycles', 4 * 60, forcedProgress, false)
+        // Give the product scene more time to breathe before dusk and night.
+        super('🕜 Day Cycles', 8 * 60, forcedProgress, false)
+        this.mode = forcedProgress === null ? 'auto' : 'custom'
     }
 
     get presets()
     {
         return presets
+    }
+
+    setMode(mode = 'auto')
+    {
+        if(!['auto', 'day', 'night'].includes(mode)) return
+
+        this.mode = mode
+        if(mode === 'auto')
+        {
+            this.forcedProgress = null
+            this.newAbsoluteProgress = this.getClockProgress()
+        }
+        else
+        {
+            // Stay inside the stable day/night plateaus, away from dusk/dawn.
+            this.forcedProgress = mode === 'day' ? 0.08 : 0.47
+            this.newAbsoluteProgress = this.forcedProgress
+        }
+        this.update()
     }
 
     getKeyframesDescriptions()

@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu'
 import { Game } from '../Game.js'
 import { Foliage } from './Foliage.js'
 import { color, uniform } from 'three/tsl'
+import { TABLE_ANCHORS } from '../tableAnchors.js'
+import { LANDSCAPE } from '../landscapeLayout.js'
 
 export class Trees
 {
@@ -19,7 +21,41 @@ export class Trees
         }
 
         this.visual = visual
-        this.references = references
+        // Product furniture occupies the old landing. Relocate only trees whose
+        // roots intersect the seating disk, as complete trunk + crown units.
+        this.references = references.map((source) => {
+            const anchor = TABLE_ANCHORS.valley
+            const dx = source.position.x - anchor.x
+            const dz = source.position.z - anchor.z
+            const ruin = LANDSCAPE.landmarks.waterfall
+            if(Math.abs(dx - ruin.x) < 5 && Math.abs(dz - ruin.z) < 7)
+            {
+                const reference = source.clone(false)
+                reference.position.x = anchor.x + ruin.x + (dx < ruin.x ? -7 : 7)
+                reference.updateMatrix()
+                reference.updateMatrixWorld(true)
+                return reference
+            }
+            if(Math.hypot(dx, dz) >= 4.8) return source
+            const reference = source.clone(false)
+            // Restore the original near-table cherry, keeping its full asset.
+            // Apply before instancing so trunks, leaves and camera bounds agree.
+            if(name === 'Cherry Tree')
+            {
+                reference.position.x = anchor.x + LANDSCAPE.cherry.x
+                reference.position.z = anchor.z + LANDSCAPE.cherry.z
+                reference.updateMatrix()
+                reference.updateMatrixWorld(true)
+                return reference
+            }
+            let angle = Math.atan2(dz, dx)
+            if(Math.cos(angle - 2.36) > 0.5) angle += 1.1
+            reference.position.x = anchor.x + Math.cos(angle) * 12
+            reference.position.z = anchor.z + Math.sin(angle) * 12
+            reference.updateMatrix()
+            reference.updateMatrixWorld(true)
+            return reference
+        })
         this.colorA = colorA
         this.colorB = colorB
 
@@ -82,7 +118,9 @@ export class Trees
 
         const leavesColorANode = uniform(color(this.colorA))
         const leavesColorBNode = uniform(color(this.colorB))
-        this.leaves = new Foliage(references, leavesColorANode, leavesColorBNode, true)
+        // BRUNO-ADAPTED: free orbit replaces the driving camera. Do not erase
+        // any tree crossing the screen centre; retain its full crown instead.
+        this.leaves = new Foliage(references, leavesColorANode, leavesColorBNode, false, true)
 
         // Debug
         if(this.game.debug.active)

@@ -28,6 +28,11 @@ export class SceneBridge
         })
     }
 
+    setDayCycleMode(mode = 'auto')
+    {
+        this.game.dayCycles?.setMode?.(mode)
+    }
+
     projectAnchor(anchorId)
     {
         const tableMeeting = this.game.world?.tableMeeting
