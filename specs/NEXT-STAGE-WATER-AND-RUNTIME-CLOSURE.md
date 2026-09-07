@@ -1,8 +1,8 @@
 # 下一阶段：水景恢复与运行时收口
 
-2026-09-05 后续场景优化见 [树冠与世界纵深](./TREE-CANOPY-AND-WORLD-DEPTH.md)：自由旋转树冠修复、增密与远山层次。
+2026-09-08 最终场景收尾见 [树冠与世界纵深](./TREE-CANOPY-AND-WORLD-DEPTH.md) 第十四轮：默认改为临海小岛，完成镜头、水系与遮挡验收后冻结 3D 前端。
 
-> 状态：S1 / S2 / S3 / S4 landed；S5 与产品视觉签收 pending
+> 状态：S1 / S2 / S3 / S4 landed；S5 以“临海小岛”最终方案执行，产品视觉签收 pending
 > 制定时间：2026-09-03  
 > 上位产品文档：[`docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx`](../docs/组一桌_知乎赛道一_完整产品沉淀文档_v1.3_最终排版.docx)  
 > 视觉与技术合同：[`bruno-runtime-product-integration-v2.md`](./bruno-runtime-product-integration-v2.md)  
