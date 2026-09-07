@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { Game } from './Game.js'
+import { TABLE_ANCHORS } from './tableAnchors.js'
 
 export class InstancedGroup
 {
@@ -58,6 +59,8 @@ export class InstancedGroup
         
         for(const child of children)
         {
+            const anchor = TABLE_ANCHORS.valley
+            if(Math.hypot(child.position.x - anchor.x, child.position.z - anchor.z) > 36) continue
             const reference = new THREE.Object3D()
             reference.position.copy(child.position)
             reference.rotation.copy(child.rotation)

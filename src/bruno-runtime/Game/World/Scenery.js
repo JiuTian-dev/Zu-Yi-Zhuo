@@ -2,6 +2,8 @@ import { color, float, Fn, max, PI, positionWorld, texture, uniform, uv, vec3 } 
 import { Game } from '../Game.js'
 import { References } from '../References.js'
 import { MeshDefaultMaterial } from '../Materials/MeshDefaultMaterial.js'
+import * as THREE from 'three/webgpu'
+import { TABLE_ANCHORS } from '../tableAnchors.js'
 
 export class Scenery
 {
@@ -11,8 +13,15 @@ export class Scenery
 
         this.references = new References()
         const model = [...this.game.resources.sceneryModel.scene.children]
+        const island = true
+        const anchor = TABLE_ANCHORS.valley
+        const centre = new THREE.Vector3(anchor.x, 0, anchor.z)
         for(const child of model)
         {
+            // The original racing loop and offshore road dressing are separate
+            // meshes: changing Terrain water depth does not remove them.
+            if(island && (child.name === 'refRoad'
+                || new THREE.Box3().setFromObject(child).distanceToPoint(centre) > 38)) continue
             // Add
             if(typeof child.userData.prevent === 'undefined' || child.userData.prevent === false)
             {
@@ -29,7 +38,7 @@ export class Scenery
             this.references.parse(child)
         }
 
-        this.setRoad()
+        if(!island) this.setRoad()
 
         this.game.ticker.events.on('tick', () =>
         {
@@ -105,6 +114,7 @@ export class Scenery
 
     update()
     {
-        this.road.glitterVariation.value += this.game.ticker.deltaScaled * 0.004 + this.game.view.delta.length() * 0.004
+        if(this.road)
+            this.road.glitterVariation.value += this.game.ticker.deltaScaled * 0.004 + this.game.view.delta.length() * 0.004
     }
 }

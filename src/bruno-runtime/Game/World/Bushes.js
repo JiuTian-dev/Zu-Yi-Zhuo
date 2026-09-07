@@ -14,8 +14,7 @@ export class Bushes
         this.colorBNode = uniform(color('#d8cf3b'))
         const anchor = TABLE_ANCHORS.valley
         const references = this.game.resources.bushesReferences.scene.children.filter(source =>
-            new URLSearchParams(location.search).get('landscape') === 'alpine'
-            || Math.hypot(source.position.x - anchor.x, source.position.z - anchor.z) < 36)
+            Math.hypot(source.position.x - anchor.x, source.position.z - anchor.z) < 36)
         this.foliage = new Foliage(references, this.colorANode, this.colorBNode)
 
         // Debug

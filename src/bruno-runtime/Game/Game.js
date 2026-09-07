@@ -156,7 +156,10 @@ export class Game
     async loadResources()
     {
         const base = '/assets/bruno-runtime/'
-        const alpineEnabled = new URLSearchParams(location.search).get('landscape') === 'alpine'
+        // The shipped product is island-only. Keep the archived alpine slots
+        // in the resource contract so old scene code remains easy to remove,
+        // but never expose a runtime switch or request those assets.
+        const alpineEnabled = false
         const [
             paletteTexture,
             floorSlabsTexture,
@@ -203,8 +206,8 @@ export class Game
             this.loadGLTF(`${base}benches/benches.glb`),
             this.loadGLTF(`${base}bricks/bricks.glb`),
             this.loadGLTF(`${base}areas/areas-compressed.glb`),
-            alpineEnabled ? this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-compressed.glb`) : null,
-            alpineEnabled ? this.loadGLTF(`${base}alpine/dem/${new URLSearchParams(location.search).get('alpine') === 'matterhorn' ? 'matterhorn' : 'eiger'}-ridge-lod-compressed.glb`) : null,
+            alpineEnabled ? this.loadGLTF(`${base}alpine/dem/eiger-ridge-compressed.glb`) : null,
+            alpineEnabled ? this.loadGLTF(`${base}alpine/dem/eiger-ridge-lod-compressed.glb`) : null,
             alpineEnabled ? this.loadTexture(`${base}alpine/snow-02-2k/snow_02_diff_2k.jpg`, { colorSpace: THREE.SRGBColorSpace, repeat: true, mipmaps: true }) : null,
             alpineEnabled ? this.loadTexture(`${base}alpine/snow-02-2k/snow_02_nor_gl_2k.jpg`, { repeat: true, mipmaps: true }) : null,
         ])

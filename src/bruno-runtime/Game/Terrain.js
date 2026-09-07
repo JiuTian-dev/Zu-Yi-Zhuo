@@ -141,13 +141,12 @@ export class Terrain
             const streamWidth = bankNoise.mul(0.65).add(ALPINE_STREAM.width)
             const streamEnds = local.y.smoothstep(ALPINE_STREAM.startZ, ALPINE_STREAM.startZ + 8)
                 .mul(local.y.smoothstep(ALPINE_STREAM.endZ - 3, ALPINE_STREAM.endZ).oneMinus())
-            const alpineEnabled = new URLSearchParams(location.search).get('landscape') === 'alpine'
             const streamDepth = streamDistance.div(streamWidth).smoothstep(0.12, 1).oneMinus()
-                .mul(streamEnds).mul(alpineEnabled ? 0.5 : 0)
+                .mul(streamEnds).mul(0)
             // A soft vegetated bank replaces paving beside the tributary.
             // Fade before its mouth to preserve the existing table/bridge bank.
             const streamBank = streamDistance.div(streamWidth.add(3)).smoothstep(0.45, 1).oneMinus()
-                .mul(streamEnds).mul(local.y.smoothstep(-22, -13).oneMinus()).mul(alpineEnabled ? 1 : 0)
+                .mul(streamEnds).mul(local.y.smoothstep(-22, -13).oneMinus()).mul(0)
             // Short tributary beside the ruin; tapers into the existing cove.
             const creekT = local.y.smoothstep(-18, -8)
             const creekX = creekT.mul(6).sub(6).add(creekT.mul(Math.PI * 2).sin().mul(1.2))

@@ -7,6 +7,7 @@ import { TABLE_ANCHORS } from '../tableAnchors.js'
 import { LANDSCAPE } from '../landscapeLayout.js'
 import { AlpineClouds } from './AlpineClouds.js'
 import { ALPINE_STREAM, alpineStreamX } from '../alpineStream.js'
+import { createRemoteIslands } from './RemoteIslands.js'
 
 // Continuous transverse slopes, tapered into the terrain at both ends.
 function ridgeGeometry(centre, radius, depth, height, span, phase)
@@ -59,32 +60,18 @@ export class DistantLandscape
         const game = Game.getInstance()
         const centre = TABLE_ANCHORS.valley
         this.group = new THREE.Group()
-        if(new URLSearchParams(location.search).get('landscape') !== 'alpine')
-        {
-            this.group.name = 'product-island-horizon'
-            for(const [x, z, width, height, depth] of [[-74, -88, 17, 3.2, 9], [96, -58, 12, 2.1, 7]])
-            {
-                const geometry = new THREE.SphereGeometry(1, 32, 12)
-                const material = new MeshDefaultMaterial({
-                    colorNode: mix(game.terrain.grassColorUniform, game.fog.color, 0.72),
-                    hasWater: false, hasReveal: false, hasDropShadows: false,
-                    hasLightBounce: false,
-                })
-                const island = new THREE.Mesh(geometry, material)
-                island.name = 'product-distant-island'
-                island.scale.set(width, height, depth)
-                island.position.set(centre.x + x, -1, centre.z + z)
-                this.group.add(island)
-            }
-            game.scene.add(this.group)
-            return
-        }
+        // Product direction is now fixed: the horizon is a quiet coastal
+        // island chain. The former alpine branch stays below as archived
+        // source history, but has no runtime entry point.
+        this.group = createRemoteIslands(game)
+        game.scene.add(this.group)
+        return
         this.group.name = 'product-mountain-horizon'
         const layers = [
             { radius: 68, depth: 62, height: 28, span: 2.6, phase: 0.3, snow: true, tint: '#707e91' },
             { radius: 48, depth: 65, height: 12, span: 2.85, phase: 1.6, snow: false, tint: '#52752c' },
         ]
-        const legacy = new URLSearchParams(location.search).get('alpine') === 'legacy'
+        const legacy = false
         for(const layer of layers.filter(layer => legacy || !layer.snow))
         {
             const noise = texture(game.noises.perlin, positionWorld.xz.mul(0.06)).r

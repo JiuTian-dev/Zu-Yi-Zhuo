@@ -26,7 +26,7 @@
         evidence.push(await page.evaluate(() => ({
             state: document.querySelector('.bruno-runtime-canvas').dataset.runtimeState,
             elevation: window.islandReview.cameraOrbit.renderElevation,
-            mountains: Boolean(window.islandReview.scene.getObjectByName('product-dem-snow-ridge')),
+            alpineScene: Boolean(window.islandReview.scene.getObjectByName('product-dem-snow-ridge')),
             canvas: document.querySelectorAll('canvas').length,
         })))
     }
@@ -40,5 +40,5 @@
     await page.evaluate(() => window.islandReview.dayCycles.setMode('day'))
     await page.waitForTimeout(2000)
     await page.screenshot({ path: 'output/playwright/island-default.png' })
-    return { errors, evidence, alpineRequests: await page.evaluate(() => performance.getEntriesByType('resource').filter(e => e.name.includes('/alpine/')).map(e => e.name)) }
+    return { errors, evidence, archivedLandscapeRequests: await page.evaluate(() => performance.getEntriesByType('resource').filter(e => e.name.includes('/alpine/')).map(e => e.name)) }
 })

@@ -67,6 +67,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 - React + Vite，3D 底座是 Three.js WebGPU。
 - 入口、Lobby、入席、讨论、历史和收桌卡都是 DOM 产品层，叠在同一个持续存在的 3D Runtime 上。
 - 3D 场景已经迁入原运行时的地形、水面、植被、灯光、雾、风场、Bloom、景深和环境变化；原始 `terrain.png` 数据纹理已恢复，默认镜头现在能看到临水构图。
+- 当前默认场景已收口为临海小岛：关闭雪山、丘陵、长赛道和岛外旧场景物件，保留桌边浅湾、桥、瀑布遗迹、樱花与两座远近错落的雾中灯岛；历史雪山资产仅留在仓库中，不加载、不渲染，也不提供实验入口。
 - 小车、驾驶、角色移动、游戏玩法、作品集菜单和可见的 Bruno 产品界面已经从生产路径移除。
 - 桌内只允许鼠标拖拽改变镜头环绕角度，滚轮改变距离；这些操作不会写入后端，也不会影响桌状态。
 
@@ -99,6 +100,7 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 - [x] 接入三轮主动需求澄清、无候选回首页草稿、首页上下文接收和真实行动回响。
 - [x] 关系保存只在收桌后按真实成员和 `table_id` 触发，不在前端伪造关系结果。
 - [x] 清理旧的 R3F / 低模桌海、定稿背景图和本地大模型；当前发布树只保留 Bruno Runtime 资源。
+- [x] 完成第十四轮 3D 收尾：默认海岛远景、两座复用 Bruno 素材的雾中灯岛、赛道与海上残留物清理，以及自由环绕可见性修复。
 - [x] 前端 `check`、生产构建和后端测试通过。
 
 最近一次验证结果：
@@ -115,12 +117,12 @@ backend pytest               507 passed
 
 接下来沿着产品计划继续，把“坐下来和刚好在场的人聊一会儿”做完整，而不是再做一个游戏或作品集网站。
 
-当前阶段按 [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md) 已恢复 Bruno 水景并收紧数据一致性；双客户端传输和断线恢复已有可重复验收，正式身份、队友首页汇合和最终桌椅美术签收仍未完成。下一步沿产品计划进入以下扩展：
+3D 收尾按 [`specs/TREE-CANOPY-AND-WORLD-DEPTH.md`](specs/TREE-CANOPY-AND-WORLD-DEPTH.md) 第十四轮执行完成；后续工作回到产品、后端和正式身份接入。下一步沿产品计划进入以下扩展：
 
 1. **完成首页汇合**：接入推荐桌、手动建桌、邀请和 `OpenTableContext`，不让匹配页重新承担首页职责。
 2. **补真实候选 source**：有授权 source 后，完成 `MatchPlan` 预览、明确确认和公开来源验收。
 3. **继续做跨桌延续**：再次遇见、再次邀桌和“问题长出下一桌”由首页承载总览，桌内只保留当前桌真实结果。
-4. **守住 Bruno 的场景质量**：不再引入定稿图、低模世界或第二个 3D 渲染器。需要改视觉时，只在 `src/bruno-runtime/` 和对应资源边界内改。
+4. **守住 Bruno 的场景质量**：3D 进入维护状态，不再新增远景主题、地标或水体类型。需要修复视觉缺陷时，只在 `src/bruno-runtime/` 和对应资源边界内改。
 5. **最后做生产化**：真实身份、持久化部署、WebSocket 故障演练、日志和 WebGPU 降级策略，优先于新增花哨玩法。
 
 当前生产化的第一优先级已经切到知乎 OAuth 与真实数据。公开搜索适配器、服务端 source 边界、OAuth coordinator 和 Pages 回调中继已经就位；拿到 `Access Secret` 可先联调公开信号，拿到 `app_id` / `app_key` 后即可联调授权会话。当前还缺知乎稳定用户 ID/用户信息契约、个人 OAuth source 和前端身份 hydration。具体阻塞项和验收标准见 [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)。
@@ -201,6 +203,16 @@ corepack pnpm verify:p0-p2   # 需要同时启动前后端
 cd backend
 pytest
 ```
+
+## 关键规格
+
+- [`specs/TREE-CANOPY-AND-WORLD-DEPTH.md`](specs/TREE-CANOPY-AND-WORLD-DEPTH.md)：树冠、世界纵深与第十四轮临海小岛收尾。
+- [`specs/bruno-runtime-product-integration-v2.md`](specs/bruno-runtime-product-integration-v2.md)：React、SceneBridge、TableState 与 Bruno Runtime 的集成边界。
+- [`specs/IMPLEMENTATION-STATUS.md`](specs/IMPLEMENTATION-STATUS.md)：当前实现进度和验证状态。
+- [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md)：水景恢复与运行时收口记录。
+- [`specs/P0-P2-PRODUCT-TASKS.md`](specs/P0-P2-PRODUCT-TASKS.md)：产品主流程和队友首页、当前匹配页/桌内工作线的分工。
+- [`specs/conversation-orchestrator.md`](specs/conversation-orchestrator.md)：后端 Conversation Orchestrator 规格。
+- [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)：知乎 OAuth 与真实数据接入清单。
 
 ## 第三方说明
 
