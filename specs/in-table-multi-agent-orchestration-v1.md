@@ -780,6 +780,15 @@ src/App.tsx
 | D5 纠偏 | done | 四种 feedback、revision/supersede、stale conflict、viewer-private replay、E2E 通过 | 增加跨 worker feedback transaction 压测 |
 | D6 E2E | done | `529 passed`；Playwright 三 tab（2 participant + observer）进入、入席、发言、summary、折叠、截图通过 | 关闭本地演示服务后再提交；pre-close summary 留为下一迭代 |
 
+### 18.1 本轮最终验收记录（2026-09-08）
+
+- Git commits：`5be9e54`（contracts/baseline/ledgers）、`7023c12`（runtime/summary/UI/E2E）、`525b72d`（SPEC/task ledger）。
+- `backend`: `python -m pytest -q` → **530 passed**；包含 12 场景 10 次 deterministic replay、slow-provider non-blocking、summary feedback stale、JSON reload 和完整桌内 E2E。
+- `frontend`: `corepack pnpm check`、`corepack pnpm build` → **通过**；build 仅保留既有 chunk size warning。
+- `git diff --check` → **通过**；提交后工作区 clean。
+- 浏览器证据：Playwright 三 tab 进入同一真实 `table_id`，两位独立 guest participant + observer 完成入口、入席、发言、手动 summary、卡片收起；截图：[output/playwright/in-table-summary.png](../output/playwright/in-table-summary.png)。
+- 残余风险：pre-close summary 尚未与 close transaction 原子接入；summary `next_focus` 尚未改变下一轮 Host route；D4 真实模型相对 D2 的收益/成本仍需线上数据校准。
+
 ## 19. 开放但不阻塞 D0–D2 的问题
 
 以下不需要现在向用户追问，先由 eval 给出证据：

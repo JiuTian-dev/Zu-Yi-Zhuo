@@ -232,4 +232,4 @@ D0 评测基线
 - Coordinator：已落 context、checkpoint policy、lease 协议与 no-runtime-wiring 骨架。
 - Provider：复用现有 `LLMProvider` 和 resilient retry/fallback，不绑定供应商 SDK。
 - 生产 WebSocket：已接入 additive summary 事件；真人消息仍先提交广播，Host 在后台运行。
-- 当前验证：backend 全量 529 passed；`corepack pnpm check` 与 `corepack pnpm build` 通过；Playwright 三 tab 路径通过。
+- 当前验证：backend 全量 530 passed；`corepack pnpm check` 与 `corepack pnpm build` 通过；Playwright 三 tab 路径通过。
