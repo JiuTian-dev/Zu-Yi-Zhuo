@@ -2800,17 +2800,20 @@ def create_app(
         state = table_or_404(table_id)
         if participant_id not in state.participants:
             raise HTTPException(status_code=403, detail="participant_id must be a table participant")
-        feedback = StageSummaryFeedback(
-            feedback_id=f"{table_id}:feedback:{summary_id}:{summary_revision}:{participant_id}",
-            table_id=table_id,
-            summary_id=summary_id,
-            summary_revision=summary_revision,
-            participant_id=participant_id,
-            kind=payload.kind,
-            note=payload.note,
-            evidence_turns=payload.evidence_turns,
-            created_at=clock(),
-        )
+        try:
+            feedback = StageSummaryFeedback(
+                feedback_id=f"{table_id}:feedback:{summary_id}:{summary_revision}:{participant_id}",
+                table_id=table_id,
+                summary_id=summary_id,
+                summary_revision=summary_revision,
+                participant_id=participant_id,
+                kind=payload.kind,
+                note=payload.note,
+                evidence_turns=payload.evidence_turns,
+                created_at=clock(),
+            )
+        except ValidationError as error:
+            raise HTTPException(status_code=422, detail="请写下需要修改的内容") from error
         try:
             saved, created = repo.append_summary_feedback(feedback)
         except KeyError as error:

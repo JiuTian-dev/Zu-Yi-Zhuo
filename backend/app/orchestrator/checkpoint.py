@@ -69,6 +69,9 @@ def build_fallback_summary_draft(
     if len({turn.turn_id for turn in ordered}) != len(ordered):
         raise ValueError("checkpoint turns must have unique turn_id values")
     last_turn = ordered[-1]
+    excerpt = last_turn.text.strip()
+    if len(excerpt) > 64:
+        excerpt = f"{excerpt[:64].rstrip()}…"
     return StageSummaryDraft(
         input_state_version=state.version,
         phase=state.phase,
@@ -77,6 +80,12 @@ def build_fallback_summary_draft(
         covered_turn_end=last_turn.turn_id,
         clarified=[],
         disagreements=[],
-        missing=[],
-        next_focus=None,
+        missing=[{
+            "text": "还需要其他成员回应。",
+            "evidence_turns": [last_turn.turn_id],
+        }],
+        next_focus={
+            "text": f"回应这句话：{excerpt}",
+            "evidence_turns": [last_turn.turn_id],
+        },
     )

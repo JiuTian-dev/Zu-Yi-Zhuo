@@ -106,9 +106,9 @@ function handleServerEvent(event: ServerEvent) {
       {
         const summary = event.summary
         const history = [
-          ...getLiveState().summaryHistory.filter((item) => item.summary_id !== summary.summary_id),
+          ...getLiveState().summaryHistory.filter((item) => !(item.summary_id === summary.summary_id && item.revision === summary.revision)),
           summary,
-        ].sort((left, right) => left.revision - right.revision)
+        ].sort((left, right) => left.published_state_version - right.published_state_version)
         setLive({ latestSummary: summary, summaryHistory: history.slice(-8), summaryStatus: 'idle', lastError: null })
       }
       break

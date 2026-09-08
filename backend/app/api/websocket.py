@@ -742,24 +742,21 @@ def register_websocket_routes(
                                 "client_ts": event.client_ts,
                             },
                         })
+                        await broadcast_state(table_id, state)
                         reflected = _reflect_latest_intervention(repository, table_id, state)
                         gate, route = decide_intervention(state)
-                        host_scheduled = False
                         if gate.should_speak and route.action is not Action.SILENCE:
                             grounding_card = (
                                 repository.peek_trusted_grounding_card(table_id)
                                 if route.action is Action.GROUND else None
                             )
                             schedule_host_intervention(table_id, state, gate, route, grounding_card)
-                            host_scheduled = True
                         if safety.level is SafetyLevel.ELEVATED:
                             await broadcast(table_id, {
                                 "type": "safety_soft_intervention",
                                 "text": "我们先把观点和人分开，回到具体经历。",
                                 "state_version": state.version,
                             })
-                        if not host_scheduled:
-                            await broadcast_state(table_id, state)
                         if reflected is not None:
                             await broadcast(table_id, {
                                 "type": "intervention_reflected",

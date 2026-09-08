@@ -176,10 +176,12 @@ def test_injected_provider_rewrites_host_text_but_keeps_action_and_audit() -> No
             "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
         })
         assert websocket.receive_json()["type"] == "message_committed"
+        human_state = websocket.receive_json()
         action = websocket.receive_json()
         changed = websocket.receive_json()
 
     assert provider.calls == 1
+    assert human_state["state"]["version"] == 3
     assert action["action"] == "PASS"
     assert action["text"] == provider.text_value
     assert changed["state"]["intervention"]["last_action"] == "PASS"
@@ -219,6 +221,7 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
             "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
         })
         committed = websocket.receive_json()
+        human_state = websocket.receive_json()
         action = websocket.receive_json()
         changed = websocket.receive_json()
 
@@ -229,6 +232,8 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
             "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
         },
     }
+    assert human_state["type"] == "table_state_changed"
+    assert human_state["state"]["version"] == 3
     assert changed["type"] == "table_state_changed"
     assert (changed["phase"], changed["momentum"], changed["close_readiness"]) == (
         "explore", "high", "low"
@@ -263,6 +268,7 @@ def test_duplicate_message_id_is_rejected_without_replaying_the_turn() -> None:
     with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
         websocket.send_json(payload)
         assert websocket.receive_json()["type"] == "message_committed"
+        assert websocket.receive_json()["type"] == "table_state_changed"
         assert websocket.receive_json()["type"] == "agent_action"
         changed = websocket.receive_json()
         assert changed["type"] == "table_state_changed"
@@ -294,6 +300,7 @@ def test_intervention_audit_receives_post_turn_reflection() -> None:
             "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
         })
         assert websocket.receive_json()["type"] == "message_committed"
+        assert websocket.receive_json()["type"] == "table_state_changed"
         assert websocket.receive_json()["type"] == "agent_action"
         assert websocket.receive_json()["type"] == "table_state_changed"
 
@@ -304,8 +311,7 @@ def test_intervention_audit_receives_post_turn_reflection() -> None:
             })
             assert websocket.receive_json()["type"] == "message_committed"
             event = websocket.receive_json()
-            while event["type"] != "table_state_changed":
-                event = websocket.receive_json()
+            assert event["type"] == "table_state_changed"
             if index == 2:
                 reflected = websocket.receive_json()
 
@@ -330,6 +336,8 @@ def test_public_table_events_are_broadcast_to_other_connections() -> None:
             })
             sender_message = sender.receive_json()
             observer_message = observer.receive_json()
+            sender_human_state = sender.receive_json()
+            observer_human_state = observer.receive_json()
             sender_action = sender.receive_json()
             observer_action = observer.receive_json()
             sender_state = sender.receive_json()
@@ -337,6 +345,7 @@ def test_public_table_events_are_broadcast_to_other_connections() -> None:
 
     assert sender_message == observer_message
     assert sender_action == observer_action
+    assert sender_human_state["type"] == observer_human_state["type"] == "table_state_changed"
     assert observer_message["type"] == "message_committed"
     assert observer_message["message"]["participant_id"] == "p1"
     assert observer_action["type"] == "agent_action"
@@ -496,6 +505,7 @@ def test_request_nudge_requires_evidence_and_respects_intervention_cooldown() ->
             "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": 2,
         })
         assert websocket.receive_json()["type"] == "message_committed"
+        assert websocket.receive_json()["type"] == "table_state_changed"
         assert websocket.receive_json()["type"] == "agent_action"
         assert websocket.receive_json()["type"] == "table_state_changed"
 
@@ -694,7 +704,7 @@ def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
             "type": "human_message", "message_id": "msg-close", "participant_id": "p1",
             "text": "我亲历过采购试点，预算和责任需要澄清。", "client_ts": "2026-08-31T12:05:00Z",
         })
-        [websocket.receive_json() for _ in range(3)]
+        [websocket.receive_json() for _ in range(4)]
         websocket.send_json({"type": "request_close"})
         started = websocket.receive_json()
         artifact = websocket.receive_json()
@@ -831,6 +841,7 @@ def test_demo_grounding_card_is_emitted_only_for_a_ground_action() -> None:
                 "text": "这个事实需要核对。", "client_ts": "2026-08-31T12:06:00Z",
             })
             assert websocket.receive_json()["type"] == "message_committed"
+            assert websocket.receive_json()["type"] == "table_state_changed"
             action = websocket.receive_json()
             card = websocket.receive_json()
             assert websocket.receive_json()["type"] == "table_state_changed"

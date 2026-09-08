@@ -144,7 +144,10 @@ def test_fallback_summary_never_invents_claims() -> None:
     fallback = build_fallback_summary_draft(state(), tuple(turns()), trigger="manual")
     assert fallback.covered_turn_start == 1
     assert fallback.covered_turn_end == 4
-    assert not fallback.clarified and not fallback.disagreements and not fallback.missing
+    assert not fallback.clarified and not fallback.disagreements
+    assert fallback.missing[0].evidence_turns == [4]
+    assert fallback.next_focus is not None
+    assert fallback.next_focus.evidence_turns == [4]
 
 
 def test_in_memory_lease_is_single_flight_and_reusable() -> None:

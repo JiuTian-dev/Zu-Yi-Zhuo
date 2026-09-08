@@ -47,6 +47,14 @@ def test_table_flow_replays_summary_and_applies_feedback() -> None:
         assert summary["table_id"] == "e2e-table"
         assert summary["revision"] == 1
 
+        invalid = client.post(
+            f"/tables/e2e-table/stage-summaries/{summary['summary_id']}/feedback",
+            params={"participant_id": "p1", "summary_revision": 1},
+            json={"kind": "missing_point"},
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["detail"] == "请写下需要修改的内容"
+
         response = client.post(
             f"/tables/e2e-table/stage-summaries/{summary['summary_id']}/feedback",
             params={"participant_id": "p1", "summary_revision": 1},
