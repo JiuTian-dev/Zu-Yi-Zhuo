@@ -11,7 +11,7 @@ import time
 from threading import RLock
 from typing import Any
 
-from app.domain import Action, ActionEchoEntry, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, JoinRequest, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, QuestionFootprintNextTable, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, TableState, ValueFeedback
+from app.domain import Action, ActionEchoEntry, AgentRunRecord, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, JoinRequest, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, QuestionFootprintNextTable, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, StageSummary, StageSummaryFeedback, TableState, ValueFeedback
 from app.domain.schemas import ParticipantState
 from app.orchestrator import build_initial_state, build_personal_card, build_shared_baseline, observe_turn
 
@@ -166,6 +166,9 @@ class InMemoryTableRepository:
         self._personal_context_consents: dict[str, PersonalContextConsent] = {}
         self._behavior_events: dict[str, list[BehaviorEvent]] = {}
         self._public_source_signals: dict[str, dict[str, ContentSignal]] = {}
+        self._stage_summaries: dict[str, list[StageSummary]] = {}
+        self._summary_feedback: dict[str, list[StageSummaryFeedback]] = {}
+        self._agent_runs: dict[str, list[AgentRunRecord]] = {}
 
     @contextmanager
     def _external_lock(self):
@@ -223,6 +226,9 @@ class InMemoryTableRepository:
         self._safety_resolutions[table_id] = []
         self._safety_strikes[table_id] = {}
         self._public_source_signals[table_id] = public_signals
+        self._stage_summaries[table_id] = []
+        self._summary_feedback[table_id] = []
+        self._agent_runs[table_id] = []
         return state.model_copy(deep=True)
 
     @_synchronized
@@ -1539,6 +1545,172 @@ class InMemoryTableRepository:
         return [turn.model_copy(deep=True) for turn in self._turns[table_id]]
 
     @_synchronized
+    def stage_summaries(self, table_id: str) -> list[StageSummary]:
+        """Return immutable summary revisions; the latest published row is last."""
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._stage_summaries[table_id]]
+
+    @_synchronized
+    def latest_stage_summary(self, table_id: str) -> StageSummary | None:
+        self.get(table_id)
+        rows = self._stage_summaries[table_id]
+        latest = next((item for item in reversed(rows) if item.status == "published"), None)
+        return latest.model_copy(deep=True) if latest is not None else None
+
+    @_synchronized
+    def append_stage_summary_bundle(
+        self,
+        table_id: str,
+        state: TableState,
+        summary: StageSummary,
+    ) -> TableState:
+        """Atomically publish one summary revision and advance its state reference."""
+        latest = self.get(table_id)
+        if latest.conversation.closed:
+            raise ValueError("table is closed")
+        if latest.conversation.soft_expired:
+            raise ValueError("table is soft-expired")
+        if state.table_id != table_id or state.version != latest.version + 1:
+            raise ValueError("summary state must be the next snapshot for its table")
+        if summary.table_id != table_id:
+            raise ValueError("summary must belong to the table")
+        if summary.input_state_version != latest.version:
+            raise ValueError("summary input version is stale")
+        if summary.published_state_version != state.version:
+            raise ValueError("summary publication version must match state")
+        if state.latest_stage_summary_id != summary.summary_id:
+            raise ValueError("state must reference the published summary")
+        existing = [item for item in self._stage_summaries[table_id] if item.summary_id == summary.summary_id]
+        expected_revision = (max((item.revision for item in existing), default=0) + 1)
+        if summary.revision != expected_revision:
+            raise ValueError("summary revision must advance exactly once")
+        if summary.status != "published":
+            raise ValueError("new summary revisions must be published")
+        turn_ids = {turn.turn_id for turn in self._turns[table_id]}
+        evidence_items = [
+            *summary.clarified,
+            *summary.disagreements,
+            *summary.missing,
+            *([summary.next_focus] if summary.next_focus is not None else []),
+        ]
+        total_chars = sum(len(item.text) for item in evidence_items)
+        if total_chars > 2400:
+            raise ValueError("summary text budget exceeded")
+        participant_ids = set(latest.participants)
+        if any(
+            participant_id not in participant_ids
+            for item in summary.disagreements
+            for participant_id in item.participant_ids
+        ):
+            raise ValueError("summary attribution references an unknown participant")
+        if any(turn_id not in turn_ids for item in evidence_items for turn_id in item.evidence_turns):
+            raise ValueError("summary evidence must reference committed turns from this table")
+        snapshots = TableState.model_validate(state.model_dump())
+        for index, item in enumerate(self._stage_summaries[table_id]):
+            if item.summary_id == summary.summary_id and item.status == "published":
+                self._stage_summaries[table_id][index] = item.model_copy(update={"status": "superseded"})
+        self._states[table_id].append(snapshots)
+        self._stage_summaries[table_id].append(summary.model_copy(deep=True))
+        return snapshots.model_copy(deep=True)
+
+    @_synchronized
+    def append_summary_feedback(
+        self, feedback: StageSummaryFeedback
+    ) -> tuple[StageSummaryFeedback, bool]:
+        """Persist one member correction idempotently against an existing revision."""
+        state = self.get(feedback.table_id)
+        if feedback.participant_id not in state.participants:
+            raise ValueError("summary feedback author must be a table participant")
+        if not any(
+            item.summary_id == feedback.summary_id and item.revision == feedback.summary_revision
+            for item in self._stage_summaries[feedback.table_id]
+        ):
+            raise KeyError(f"unknown summary revision: {feedback.summary_id}:{feedback.summary_revision}")
+        existing = next(
+            (item for item in self._summary_feedback[feedback.table_id] if item.feedback_id == feedback.feedback_id),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != feedback.model_dump(mode="json"):
+                raise ValueError("feedback_id already belongs to a different feedback")
+            return existing.model_copy(deep=True), False
+        self._summary_feedback[feedback.table_id].append(feedback.model_copy(deep=True))
+        return feedback.model_copy(deep=True), True
+
+    @_synchronized
+    def summary_feedback(self, table_id: str) -> list[StageSummaryFeedback]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._summary_feedback[table_id]]
+
+    @_synchronized
+    def apply_summary_feedback_revision(
+        self, table_id: str, feedback_id: str
+    ) -> tuple[StageSummary, StageSummaryFeedback, TableState]:
+        """Apply one correction as a new immutable summary revision."""
+        current = self.get(table_id)
+        feedback = next(
+            (item for item in self._summary_feedback[table_id] if item.feedback_id == feedback_id),
+            None,
+        )
+        if feedback is None:
+            raise KeyError(f"unknown summary feedback: {feedback_id}")
+        latest = self.latest_stage_summary(table_id)
+        if latest is None or latest.summary_id != feedback.summary_id or latest.revision != feedback.summary_revision:
+            raise ValueError("feedback must target the latest published summary")
+        if feedback.status == "applied":
+            return latest, feedback, current
+        missing = list(latest.missing)
+        if feedback.kind != "ready_to_advance" and (feedback.note or feedback.evidence_turns):
+            if len(missing) >= 3:
+                missing = missing[:2]
+            missing.append({
+                "text": feedback.note or "参与者请求重新核对这段总结",
+                "evidence_turns": feedback.evidence_turns or [latest.covered_turn_end],
+            })
+        revised = StageSummary(
+            **latest.model_dump(exclude={"revision", "status", "input_state_version", "published_state_version", "created_at", "missing", "used_fallback"}),
+            revision=latest.revision + 1,
+            status="published",
+            input_state_version=current.version,
+            published_state_version=current.version + 1,
+            missing=missing,
+            created_at=time.time(),
+            used_fallback=True,
+        )
+        next_state = current.model_copy(update={
+            "version": current.version + 1,
+            "latest_stage_summary_id": revised.summary_id,
+            "latest_stage_summary_revision": revised.revision,
+        })
+        committed = self.append_stage_summary_bundle(table_id, next_state, revised)
+        index = self._summary_feedback[table_id].index(feedback)
+        applied = feedback.model_copy(update={"status": "applied"})
+        self._summary_feedback[table_id][index] = applied
+        return revised.model_copy(deep=True), applied.model_copy(deep=True), committed
+
+    @_synchronized
+    def append_agent_run(self, record: AgentRunRecord) -> tuple[AgentRunRecord, bool]:
+        """Persist redacted run metadata only; raw prompts and completions never enter the ledger."""
+        state = self.get(record.table_id)
+        if record.trigger_turn_id not in {turn.turn_id for turn in self._turns[record.table_id]}:
+            raise ValueError("agent run trigger_turn_id must reference a committed turn")
+        existing = next(
+            (item for item in self._agent_runs[record.table_id] if item.run_id == record.run_id),
+            None,
+        )
+        if existing is not None:
+            if existing.model_dump(mode="json") != record.model_dump(mode="json"):
+                raise ValueError("run_id already belongs to a different run")
+            return existing.model_copy(deep=True), False
+        self._agent_runs[record.table_id].append(record.model_copy(deep=True))
+        return record.model_copy(deep=True), True
+
+    @_synchronized
+    def agent_runs(self, table_id: str) -> list[AgentRunRecord]:
+        self.get(table_id)
+        return [item.model_copy(deep=True) for item in self._agent_runs[table_id]]
+
+    @_synchronized
     def set_trusted_grounding_card(self, table_id: str, card: GroundingCard) -> None:
         """Stage one validated demo-injected source for the table's next GROUND action."""
         state = self.get(table_id)
@@ -1611,6 +1783,9 @@ class JsonTableRepository(InMemoryTableRepository):
             self._behavior_events,
             self._saved_tables,
             self._public_source_signals,
+            self._stage_summaries,
+            self._summary_feedback,
+            self._agent_runs,
         ) = loaded
 
     @contextmanager
@@ -1697,6 +1872,9 @@ class JsonTableRepository(InMemoryTableRepository):
             **self._public_source_signals,
             table_id: public_signals,
         }
+        stage_summaries = {**self._stage_summaries, table_id: []}
+        summary_feedback = {**self._summary_feedback, table_id: []}
+        agent_runs = {**self._agent_runs, table_id: []}
         self._commit(
             states, turns, self._trusted_grounding_cards, interventions, invitations,
             outcomes, feedback, comments, self._no_match, reports,
@@ -1706,6 +1884,9 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_strikes=safety_strikes,
             public_source_signals=public_source_signals,
             join_requests=join_requests,
+            stage_summaries=stage_summaries,
+            summary_feedback=summary_feedback,
+            agent_runs=agent_runs,
         )
         return state.model_copy(deep=True)
 
@@ -2603,6 +2784,38 @@ class JsonTableRepository(InMemoryTableRepository):
         return snapshot.model_copy(deep=True)
 
     @_synchronized
+    def append_stage_summary_bundle(
+        self, table_id: str, state: TableState, summary: StageSummary
+    ) -> TableState:
+        committed = InMemoryTableRepository.append_stage_summary_bundle(self, table_id, state, summary)
+        self._commit(self._states, self._turns)
+        return committed
+
+    @_synchronized
+    def append_summary_feedback(
+        self, feedback: StageSummaryFeedback
+    ) -> tuple[StageSummaryFeedback, bool]:
+        saved, created = InMemoryTableRepository.append_summary_feedback(self, feedback)
+        if created:
+            self._commit(self._states, self._turns)
+        return saved, created
+
+    @_synchronized
+    def append_agent_run(self, record: AgentRunRecord) -> tuple[AgentRunRecord, bool]:
+        saved, created = InMemoryTableRepository.append_agent_run(self, record)
+        if created:
+            self._commit(self._states, self._turns)
+        return saved, created
+
+    @_synchronized
+    def apply_summary_feedback_revision(
+        self, table_id: str, feedback_id: str
+    ) -> tuple[StageSummary, StageSummaryFeedback, TableState]:
+        result = InMemoryTableRepository.apply_summary_feedback_revision(self, table_id, feedback_id)
+        self._commit(self._states, self._turns)
+        return result
+
+    @_synchronized
     def append_intervention_bundle(
         self,
         table_id: str,
@@ -2665,6 +2878,9 @@ class JsonTableRepository(InMemoryTableRepository):
         safety_strikes: dict[str, dict[str, int]] | None = None,
         account_invitation_preferences: dict[str, InvitationPreference] | None = None,
         saved_tables: dict[str, list[str]] | None = None,
+        stage_summaries: dict[str, list[StageSummary]] | None = None,
+        summary_feedback: dict[str, list[StageSummaryFeedback]] | None = None,
+        agent_runs: dict[str, list[AgentRunRecord]] | None = None,
     ) -> None:
         cards = trusted_grounding_cards if trusted_grounding_cards is not None else self._trusted_grounding_cards
         audit = interventions if interventions is not None else self._interventions
@@ -2724,6 +2940,9 @@ class JsonTableRepository(InMemoryTableRepository):
             if saved_tables is not None
             else self._saved_tables
         )
+        summary_rows = stage_summaries if stage_summaries is not None else self._stage_summaries
+        summary_feedback_rows = summary_feedback if summary_feedback is not None else self._summary_feedback
+        agent_run_rows = agent_runs if agent_runs is not None else self._agent_runs
         payload = {
             "tables": {
                 table_id: {
@@ -2762,6 +2981,18 @@ class JsonTableRepository(InMemoryTableRepository):
                     "safety_resolutions": [
                         item.model_dump(mode="json")
                         for item in resolution_rows[table_id]
+                    ],
+                    "stage_summaries": [
+                        item.model_dump(mode="json")
+                        for item in summary_rows.get(table_id, [])
+                    ],
+                    "summary_feedback": [
+                        item.model_dump(mode="json")
+                        for item in summary_feedback_rows.get(table_id, [])
+                    ],
+                    "agent_runs": [
+                        item.model_dump(mode="json")
+                        for item in agent_run_rows.get(table_id, [])
                     ],
                 }
                 for table_id, snapshots in states.items()
@@ -2880,6 +3111,18 @@ class JsonTableRepository(InMemoryTableRepository):
             }
             for table_id, rows in public_source_rows.items()
         }
+        self._stage_summaries = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in summary_rows.items()
+        }
+        self._summary_feedback = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in summary_feedback_rows.items()
+        }
+        self._agent_runs = {
+            table_id: [item.model_copy(deep=True) for item in rows]
+            for table_id, rows in agent_run_rows.items()
+        }
 
     def _load(self) -> tuple[
         dict[str, list[TableState]],
@@ -2902,6 +3145,9 @@ class JsonTableRepository(InMemoryTableRepository):
         dict[str, list[BehaviorEvent]],
         dict[str, list[str]],
         dict[str, dict[str, ContentSignal]],
+        dict[str, list[StageSummary]],
+        dict[str, list[StageSummaryFeedback]],
+        dict[str, list[AgentRunRecord]],
     ]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
@@ -2929,6 +3175,9 @@ class JsonTableRepository(InMemoryTableRepository):
         safety_reports: dict[str, list[SafetyReport]] = {}
         safety_report_audits: dict[str, list[SafetyReportStatusAudit]] = {}
         safety_resolutions: dict[str, list[SafetyResolution]] = {}
+        stage_summaries: dict[str, list[StageSummary]] = {}
+        summary_feedback: dict[str, list[StageSummaryFeedback]] = {}
+        agent_runs: dict[str, list[AgentRunRecord]] = {}
         for table_id, table in payload["tables"].items():
             table_keys = set(table) if isinstance(table, dict) else set()
             if (not isinstance(table_id, str) or not table_id or not isinstance(table, dict)
@@ -2939,6 +3188,7 @@ class JsonTableRepository(InMemoryTableRepository):
                             "follow_up_outcomes", "value_feedback", "comments",
                             "comment_promotions", "safety_reports",
                             "safety_report_audits", "safety_resolutions",
+                            "stage_summaries", "summary_feedback", "agent_runs",
                         }
                     )):
                 raise ValueError(f"invalid persistence file: malformed table {table_id!r}")
@@ -2985,6 +3235,14 @@ class JsonTableRepository(InMemoryTableRepository):
                 if not isinstance(raw_resolutions, list):
                     raise ValueError("safety_resolutions must be an array")
                 resolutions = [SafetyResolution.model_validate(item) for item in raw_resolutions]
+                raw_summaries = table.get("stage_summaries", [])
+                raw_summary_feedback = table.get("summary_feedback", [])
+                raw_agent_runs = table.get("agent_runs", [])
+                if not isinstance(raw_summaries, list) or not isinstance(raw_summary_feedback, list) or not isinstance(raw_agent_runs, list):
+                    raise ValueError("summary ledgers must be arrays")
+                summaries = [StageSummary.model_validate(item) for item in raw_summaries]
+                summary_feedback_rows = [StageSummaryFeedback.model_validate(item) for item in raw_summary_feedback]
+                agent_run_rows = [AgentRunRecord.model_validate(item) for item in raw_agent_runs]
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid persistence file: invalid data for table {table_id!r}") from error
             if not snapshots or any(state.table_id != table_id for state in snapshots):
@@ -3127,6 +3385,21 @@ class JsonTableRepository(InMemoryTableRepository):
                 for resolution in resolutions
             ):
                 raise ValueError(f"invalid persistence file: incompatible safety resolutions for table {table_id!r}")
+            if any(item.table_id != table_id for item in summaries):
+                raise ValueError(f"invalid persistence file: incompatible stage summaries for table {table_id!r}")
+            summary_keys = [(item.summary_id, item.revision) for item in summaries]
+            if len(summary_keys) != len(set(summary_keys)):
+                raise ValueError(f"invalid persistence file: duplicate stage summaries for table {table_id!r}")
+            if any(item.table_id != table_id for item in summary_feedback_rows):
+                raise ValueError(f"invalid persistence file: incompatible summary feedback for table {table_id!r}")
+            feedback_ids = [item.feedback_id for item in summary_feedback_rows]
+            if len(feedback_ids) != len(set(feedback_ids)):
+                raise ValueError(f"invalid persistence file: duplicate summary feedback for table {table_id!r}")
+            if any(item.table_id != table_id for item in agent_run_rows):
+                raise ValueError(f"invalid persistence file: incompatible agent runs for table {table_id!r}")
+            run_ids = [item.run_id for item in agent_run_rows]
+            if len(run_ids) != len(set(run_ids)):
+                raise ValueError(f"invalid persistence file: duplicate agent runs for table {table_id!r}")
             resolution_ids = [resolution.resolution_id for resolution in resolutions]
             if len(set(resolution_ids)) != len(resolution_ids):
                 raise ValueError(f"invalid persistence file: duplicate safety resolutions for table {table_id!r}")
@@ -3145,6 +3418,9 @@ class JsonTableRepository(InMemoryTableRepository):
             safety_reports[table_id] = self_reports
             safety_report_audits[table_id] = report_audits
             safety_resolutions[table_id] = resolutions
+            stage_summaries[table_id] = summaries
+            summary_feedback[table_id] = summary_feedback_rows
+            agent_runs[table_id] = agent_run_rows
         raw_cards = payload.get("trusted_grounding_cards", {})
         if not isinstance(raw_cards, dict):
             raise ValueError("invalid persistence file: malformed trusted_grounding_cards")
@@ -3324,4 +3600,7 @@ class JsonTableRepository(InMemoryTableRepository):
             behavior_events,
             saved_tables,
             public_source_signals,
+            stage_summaries,
+            summary_feedback,
+            agent_runs,
         )
