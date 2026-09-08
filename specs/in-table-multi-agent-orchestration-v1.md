@@ -782,7 +782,7 @@ src/App.tsx
 
 ### 18.1 本轮最终验收记录（2026-09-08）
 
-- Git commits：`5be9e54`（contracts/baseline/ledgers）、`7023c12`（runtime/summary/UI/E2E）、`525b72d`（SPEC/task ledger）。
+- Git commits：`5be9e54`（contracts/baseline/ledgers）、`7023c12`（runtime/summary/UI/E2E）、`525b72d`（SPEC/task ledger）、`79d4eb5`（final verification evidence）。
 - `backend`: `python -m pytest -q` → **530 passed**；包含 12 场景 10 次 deterministic replay、slow-provider non-blocking、summary feedback stale、JSON reload 和完整桌内 E2E。
 - `frontend`: `corepack pnpm check`、`corepack pnpm build` → **通过**；build 仅保留既有 chunk size warning。
 - `git diff --check` → **通过**；提交后工作区 clean。
