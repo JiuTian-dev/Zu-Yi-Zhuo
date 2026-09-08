@@ -164,6 +164,11 @@ class _RequestNudge(_ClientEvent):
     type: Literal["request_nudge"]
 
 
+class _RequestStageSummary(_ClientEvent):
+    type: Literal["request_stage_summary"]
+    request_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class _PeripheralComment(_ClientEvent):
     type: Literal["peripheral_comment"]
     comment_id: str = Field(min_length=1)
@@ -254,6 +259,7 @@ def register_websocket_routes(
     connections: dict[str, dict[WebSocket, str]] = {}
     table_locks: dict[str, asyncio.Lock] = {}
     state_broadcast = _MonotonicStateBroadcast()
+    host_tasks: set[asyncio.Task[None]] = set()
     instance_id = uuid4().hex
     bus_task: asyncio.Task[None] | None = None
 
@@ -355,6 +361,73 @@ def register_websocket_routes(
                 "decision": decision.model_dump(mode="json"),
             },
         )
+
+    def schedule_host_intervention(
+        table_id: str,
+        state: TableState,
+        gate,
+        route,
+        grounding_card,
+    ) -> None:
+        """Run the optional host model after the human turn is visible.
+
+        The human commit and its state snapshot are already broadcast before
+        this task starts.  If another turn wins the race while the provider is
+        running, the stale intervention is discarded rather than blocking or
+        rewriting the newer table state.
+        """
+        async def run() -> None:
+            try:
+                action = await generate_host_event_with_provider(
+                    state, route, grounding_card, provider
+                )
+                current = repository.get(table_id)
+                if current.version != state.version:
+                    return
+                agent_turn_id = f"{table_id}:agent:{current.version + 1}"
+                final_state = record_intervention(current, route, agent_turn_id)
+                action = action.model_copy(update={"state_version": final_state.version})
+                model_name = str(
+                    getattr(provider, "model", None)
+                    or (type(provider).__name__ if provider is not None else "deterministic-demo")
+                )
+                record = build_intervention_record(
+                    table_id,
+                    final_state,
+                    route,
+                    action,
+                    model=model_name,
+                    grounding_card=grounding_card,
+                )
+                committed = repository.append_intervention_bundle(
+                    table_id,
+                    final_state,
+                    record,
+                    consume_grounding_card=route.action is Action.GROUND
+                    and grounding_card is not None,
+                )
+                await broadcast(table_id, {
+                    "type": "agent_action",
+                    **action.model_dump(mode="json"),
+                    "gate": gate.model_dump(mode="json"),
+                    "route": route.model_dump(mode="json"),
+                })
+                if action.action is Action.GROUND and grounding_card is not None:
+                    await broadcast(table_id, {
+                        "type": "grounding_card",
+                        "table_id": table_id,
+                        "state_version": committed.version,
+                        **grounding_card.model_dump(mode="json"),
+                    })
+                await broadcast_state(table_id, committed)
+            except (KeyError, ValueError, RuntimeError):
+                # A close, safety pause, or competing writer can invalidate a
+                # queued intervention. The committed human turn remains valid.
+                return
+
+        task = asyncio.create_task(run())
+        host_tasks.add(task)
+        task.add_done_callback(host_tasks.discard)
 
     async def _poll_shared_bus() -> None:
         """Forward events written by other workers to this worker's sockets."""
@@ -541,7 +614,7 @@ def register_websocket_routes(
                     viewer_mode == "participant" and payload["type"] in {
                         "human_message", "participant_joined", "participant_left",
                         "participant_consent", "participant_invitation_preference",
-                        "request_close", "request_nudge",
+                        "request_close", "request_nudge", "request_stage_summary",
                     }
                 ) or (
                     viewer_mode == "commenter" and payload["type"] == "peripheral_comment"
@@ -658,41 +731,8 @@ def register_websocket_routes(
                                 message_id=event.message_id,
                             )
                             continue
-                        reflected = _reflect_latest_intervention(repository, table_id, state)
-                        action = None
-                        grounding_card = None
-                        gate, route = decide_intervention(state)
-                        if gate.should_speak and route.action is not Action.SILENCE:
-                            grounding_card = (
-                                repository.peek_trusted_grounding_card(table_id)
-                                if route.action is Action.GROUND else None
-                            )
-                            action = await generate_host_event_with_provider(
-                                state, route, grounding_card, provider
-                            )
-                            agent_turn_id = f"{table_id}:agent:{state.version + 1}"
-                            final_state = record_intervention(state, route, agent_turn_id)
-                            action = action.model_copy(update={"state_version": final_state.version})
-                            model_name = str(
-                                getattr(provider, "model", None)
-                                or (type(provider).__name__ if provider is not None else "deterministic-demo")
-                            )
-                            record = build_intervention_record(
-                                table_id,
-                                final_state,
-                                route,
-                                action,
-                                model=model_name,
-                                grounding_card=grounding_card,
-                            )
-                            state = repository.append_intervention_bundle(
-                                table_id,
-                                final_state,
-                                record,
-                                consume_grounding_card=route.action is Action.GROUND
-                                and grounding_card is not None,
-                            )
-
+                        # Commit and fan out the human turn before any provider
+                        # call. The table stays responsive while Host thinks.
                         await broadcast(table_id, {
                             "type": "message_committed",
                             "message": {
@@ -702,27 +742,24 @@ def register_websocket_routes(
                                 "client_ts": event.client_ts,
                             },
                         })
+                        reflected = _reflect_latest_intervention(repository, table_id, state)
+                        gate, route = decide_intervention(state)
+                        host_scheduled = False
+                        if gate.should_speak and route.action is not Action.SILENCE:
+                            grounding_card = (
+                                repository.peek_trusted_grounding_card(table_id)
+                                if route.action is Action.GROUND else None
+                            )
+                            schedule_host_intervention(table_id, state, gate, route, grounding_card)
+                            host_scheduled = True
                         if safety.level is SafetyLevel.ELEVATED:
                             await broadcast(table_id, {
                                 "type": "safety_soft_intervention",
                                 "text": "我们先把观点和人分开，回到具体经历。",
                                 "state_version": state.version,
                             })
-                        if action is not None:
-                            await broadcast(table_id, {
-                                "type": "agent_action",
-                                **action.model_dump(mode="json"),
-                                "gate": gate.model_dump(mode="json"),
-                                "route": route.model_dump(mode="json"),
-                            })
-                        if action is not None and action.action is Action.GROUND and grounding_card is not None:
-                            await broadcast(table_id, {
-                                "type": "grounding_card",
-                                "table_id": table_id,
-                                "state_version": state.version,
-                                **grounding_card.model_dump(mode="json"),
-                            })
-                        await broadcast_state(table_id, state)
+                        if not host_scheduled:
+                            await broadcast_state(table_id, state)
                         if reflected is not None:
                             await broadcast(table_id, {
                                 "type": "intervention_reflected",
@@ -758,6 +795,31 @@ def register_websocket_routes(
                             "route": route.model_dump(mode="json"),
                         })
                         await broadcast_state(table_id, state)
+                    elif payload["type"] == "request_stage_summary":
+                        event = _RequestStageSummary.model_validate(payload)
+                        state = repository.get(table_id)
+                        if participant_id not in state.participants:
+                            raise ValueError(f"unknown participant: {participant_id}")
+                        if state.conversation.closed or state.conversation.soft_expired:
+                            await _send_error(websocket, "table_not_active", "table is not active")
+                            continue
+                        if state.conversation.safety_level is SafetyLevel.CRITICAL:
+                            await _send_error(websocket, "table_paused", "table is paused for safety review")
+                            continue
+                        if not repository.turns(table_id):
+                            await _send_error(websocket, "summary_unavailable", "summary requires a committed turn")
+                            continue
+                        service = getattr(api.state, "table_run_service", None)
+                        if service is None:
+                            await _send_error(websocket, "summary_unavailable", "summary service is unavailable")
+                            continue
+                        await service.enqueue(table_id, manual=True)
+                        await websocket.send_json({
+                            "type": "stage_summary_requested",
+                            "table_id": table_id,
+                            "state_version": state.version,
+                            **({"request_id": event.request_id} if event.request_id else {}),
+                        })
                     elif payload["type"] == "participant_joined":
                         event = _ParticipantJoined.model_validate(payload)
                         if event.participant_id != participant_id:

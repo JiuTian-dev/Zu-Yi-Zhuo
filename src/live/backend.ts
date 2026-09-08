@@ -1,7 +1,7 @@
 import { humanActors } from '../actors'
-import type { ClientHumanMessage, ParticipantSeedLike, ServerEvent } from './contract'
-import { BackendApiError, fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, requestRaw, setProfileConsent, wsUrl } from './api'
-import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike } from './contract'
+import type { ClientHumanMessage, ClientRequestStageSummary, ParticipantSeedLike, ServerEvent } from './contract'
+import { BackendApiError, fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, requestRaw, setProfileConsent, submitStageSummaryFeedback as submitStageSummaryFeedbackApi, wsUrl } from './api'
+import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike, StageSummaryFeedbackKindLike, StageSummaryLike } from './contract'
 import { VIEWER_ID, viewerIdentity } from './identity'
 import * as mock from './mock'
 import { commitMessage, getLiveState, markMessageFailed, markMessagePending, pushMessage, resetLive, setLive, type LiveStatus } from './store'
@@ -76,7 +76,7 @@ function handleServerEvent(event: ServerEvent) {
     case 'message_committed':
       if (runtime.seenMessageIds.has(event.message.message_id)) return
       runtime.seenMessageIds.add(event.message.message_id)
-      commitMessage(event.message.message_id, { participantId: event.message.participant_id, text: event.message.text, fromHost: false, action: null })
+      commitMessage(event.message.message_id, { participantId: event.message.participant_id, text: event.message.text, turnId: event.message.turn_id, fromHost: false, action: null })
       break
     case 'agent_action':
       {
@@ -95,6 +95,32 @@ function handleServerEvent(event: ServerEvent) {
       break
     case 'intervention_reflected':
       setLive({ latestReflection: event.record.reflection ?? null })
+      break
+    case 'stage_summary_requested':
+      setLive({ summaryStatus: 'requested', lastError: null })
+      break
+    case 'stage_summary_started':
+      setLive({ summaryStatus: 'running', lastError: null })
+      break
+    case 'stage_summary_published':
+      {
+        const summary = event.summary
+        const history = [
+          ...getLiveState().summaryHistory.filter((item) => item.summary_id !== summary.summary_id),
+          summary,
+        ].sort((left, right) => left.revision - right.revision)
+        setLive({ latestSummary: summary, summaryHistory: history.slice(-8), summaryStatus: 'idle', lastError: null })
+      }
+      break
+    case 'stage_summary_failed':
+      setLive({ summaryStatus: 'failed', lastError: event.detail })
+      break
+    case 'stage_summary_feedback':
+      {
+        const feedback = event.feedback
+        const history = [...getLiveState().summaryFeedback.filter((item) => item.feedback_id !== feedback.feedback_id), feedback]
+        setLive({ summaryFeedback: history.slice(-20) })
+      }
       break
     case 'participant_added':
     case 'participant_left':
@@ -246,11 +272,22 @@ async function hydrateAfterReconnect(generation = liveGeneration) {
     const replay = await fetchReplay(tableId, participantId)
     if (generation !== liveGeneration || tableId !== currentTableId()) return
     reconcilePendingMessages(replay)
+    reconcileSummariesFromReplay(replay)
     if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(tableId, VIEWER_ID, generation)
   } catch (error) {
     if (generation !== liveGeneration || tableId !== currentTableId()) return
     setLive({ lastError: error instanceof Error ? error.message : '重连后的桌状态恢复失败' })
   }
+}
+
+function reconcileSummariesFromReplay(replay: ReplayResponseLike) {
+  const summaries = [...replay.stage_summaries].sort((left, right) => left.revision - right.revision)
+  setLive({
+    latestSummary: summaries.at(-1) ?? null,
+    summaryHistory: summaries.slice(-8),
+    summaryFeedback: replay.summary_feedback.slice(-20),
+    summaryStatus: 'idle',
+  })
 }
 
 function reconcilePendingMessages(replay: ReplayResponseLike) {
@@ -267,6 +304,7 @@ function reconcilePendingMessages(replay: ReplayResponseLike) {
       commitMessage(message.messageId, {
         participantId: committed.participant_id,
         text: committed.text,
+        turnId: committed.turn_id,
         fromHost: false,
         action: null,
       })
@@ -286,6 +324,7 @@ async function reconcileMessageFromReplay(messageId: string, generation = liveGe
       commitMessage(messageId, {
         participantId: committed.participant_id,
         text: committed.text,
+        turnId: committed.turn_id,
         fromHost: false,
         action: null,
       })
@@ -299,7 +338,7 @@ async function reconcileMessageFromReplay(messageId: string, generation = liveGe
   }
 }
 
-function sendVia(socket: WebSocket, payload: ClientHumanMessage | { type: 'request_close' } | { type: 'request_nudge' }): boolean {
+function sendVia(socket: WebSocket, payload: ClientHumanMessage | ClientRequestStageSummary | { type: 'request_close' } | { type: 'request_nudge' }): boolean {
   if (socket.readyState !== WebSocket.OPEN) return false
   try {
     socket.send(JSON.stringify(payload))
@@ -433,6 +472,8 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   try {
     applyTableState(initialState)
     setLive({ viewerJoined: shouldParticipate })
+    const replay = await fetchReplay(readyTableId, shouldParticipate ? VIEWER_ID : undefined)
+    if (generation === liveGeneration && readyTableId === currentTableId()) reconcileSummariesFromReplay(replay)
     if (initialState.conversation.closed && shouldParticipate) void recoverCloseArtifacts(readyTableId, VIEWER_ID, generation)
   } catch {
     // The observer stream remains authoritative if the initial REST refresh races it.
@@ -586,6 +627,35 @@ export function loadLobbyFit(tableId: string, participant = viewerSeed()): Promi
 
 export function loadReplay(tableId = currentTableId(), participantId?: string): Promise<ReplayResponseLike> {
   return fetchReplay(tableId, participantId)
+}
+
+export function requestStageSummary(): boolean {
+  if (!runtime.viewerJoined) return false
+  const state = getLiveState()
+  if (state.closeState !== 'idle' || (state.status !== 'live' && state.status !== 'mock')) return false
+  if (state.summaryStatus === 'requested' || state.summaryStatus === 'running') return false
+  if (state.status === 'mock') {
+    setLive({ summaryStatus: 'requested' })
+    window.setTimeout(() => {
+      if (getLiveState().summaryStatus === 'requested') setLive({ summaryStatus: 'idle', lastError: '演示模式暂不生成阶段总结。' })
+    }, 1200)
+    return true
+  }
+  const sent = !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_stage_summary', request_id: `summary-${Date.now()}` })
+  if (sent) setLive({ summaryStatus: 'requested', lastError: null })
+  return sent
+}
+
+export async function submitStageSummaryFeedbackFromViewer(
+  summary: StageSummaryLike,
+  kind: StageSummaryFeedbackKindLike,
+  note?: string,
+  evidenceTurns: number[] = [],
+) {
+  const feedback = await submitStageSummaryFeedbackApi(currentTableId(), summary, VIEWER_ID, kind, note, evidenceTurns)
+  const history = [...getLiveState().summaryFeedback.filter((item) => item.feedback_id !== feedback.feedback_id), feedback]
+  setLive({ summaryFeedback: history.slice(-20) })
+  return feedback
 }
 
 export function requestClose(): boolean {

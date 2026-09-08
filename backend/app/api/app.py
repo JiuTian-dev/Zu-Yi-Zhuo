@@ -13,10 +13,12 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, ActiveIntentSessionView, ActiveIntentSourcePreviewRequest, ActiveIntentTurnRequest, AgentActionEvent, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
+from app.domain import ActionEchoEntry, ActiveIntentPreview, ActiveIntentRequest, ActiveIntentSessionView, ActiveIntentSourcePreviewRequest, ActiveIntentTurnRequest, AgentActionEvent, AgentRunRecord, BehaviorEvent, BehaviorEventType, CommentPromotion, CommentPromotionCandidates, ContentSignal, FeedbackSummary, FollowUpItem, FollowUpOutcome, GateDecision, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InvitationView, InterventionRecord, JoinRequest, JoinRequestView, LobbyFitPreview, LobbyPreview, MatchPlan, MatchRequest, NoMatchPreference, OpportunityPreview, OpportunityRequest, ParticipantSavedTables, ParticipantSeed, ParticipantTableRecommendations, PeripheralComment, PersonalCard, PersonalContextConsent, PersonalContextPreview, PersonalContextScope, PersonalContextSignal, Phase, QuestionFootprintEntry, RelationshipMemory, RouteDecision, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, SavedTableItem, SharedBaseline, StageSummary, StageSummaryFeedback, StageSummaryTrigger, SyncUpgradeDecision, SyncUpgradeSignals, TableCandidatePreview, TableEvaluation, TableRecruitmentDecision, TableState, ValueFeedback
 from app.matching import build_match_plan, evaluate_recruitment_need, infer_role_gaps, recommend_candidates
 from app.opportunities import build_opportunity_preview
 from app.orchestrator import build_personal_card, build_shared_baseline, enforce_safety, escalate_boundary_safety, evaluate_safety, evaluate_sync_upgrade
+from app.orchestrator.run_service import TableRunService
+from app.orchestrator.lease import SQLiteAgentRunLeaseStore
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
 
@@ -102,6 +104,24 @@ class ReplayResponse(BaseModel):
         max_length=20,
         exclude_if=lambda value: not value,
     )
+    stage_summaries: list[StageSummary] = Field(default_factory=list)
+    summary_feedback: list[StageSummaryFeedback] = Field(default_factory=list)
+
+
+class StageSummaryRequestResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    table_id: str
+    accepted: bool
+    state_version: int
+
+
+class StageSummaryFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["misrepresented", "missing_point", "not_consensus", "ready_to_advance"]
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+    evidence_turns: list[int] = Field(default_factory=list, max_length=10)
 
 
 class CapabilitiesResponse(BaseModel):
@@ -691,6 +711,17 @@ def create_app(
         max_websocket_events_per_minute,
         clock,
         event_bus,
+    )
+    api.state.table_run_service = TableRunService(
+        repo,
+        provider=provider,
+        broadcast=api.state.table_broadcast,
+        broadcast_state=api.state.table_broadcast_state,
+        lease_store=(
+            SQLiteAgentRunLeaseStore(configured_ephemeral_path)
+            if configured_ephemeral_path else None
+        ),
+        clock=clock,
     )
     if oauth_service is not None:
         register_zhihu_auth_routes(api, oauth_service)
@@ -2693,9 +2724,130 @@ def create_app(
                 comments=repo.comments(table_id),
                 comment_promotions=repo.comment_promotions(table_id),
                 source_signals=repo.public_source_signals(table_id),
+                stage_summaries=repo.stage_summaries(table_id),
+                summary_feedback=[
+                    item for item in repo.summary_feedback(table_id)
+                    if participant_id is not None and item.participant_id == participant_id
+                ],
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @api.get("/tables/{table_id}/stage-summaries", response_model=list[StageSummary])
+    def get_stage_summaries(
+        table_id: str,
+        request: Request,
+        participant_id: str | None = Query(default=None, min_length=1),
+    ) -> list[StageSummary]:
+        state = table_or_404(table_id)
+        if identity_resolver is not None:
+            if participant_id is None:
+                raise HTTPException(status_code=401, detail="participant_id is required")
+            require_request_identity(identity_resolver, request, participant_id)
+        if participant_id is not None and participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        return repo.stage_summaries(table_id)
+
+    @api.get("/tables/{table_id}/stage-summaries/latest", response_model=StageSummary)
+    def get_latest_stage_summary(
+        table_id: str,
+        request: Request,
+        participant_id: str | None = Query(default=None, min_length=1),
+    ) -> StageSummary:
+        rows = get_stage_summaries(table_id, request, participant_id)
+        if not rows:
+            raise HTTPException(status_code=404, detail="no published stage summary")
+        return next((item for item in reversed(rows) if item.status == "published"), rows[-1])
+
+    @api.post(
+        "/tables/{table_id}/stage-summaries/request",
+        response_model=StageSummaryRequestResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def request_stage_summary(
+        table_id: str,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+    ) -> StageSummaryRequestResponse:
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if state.conversation.closed or state.conversation.soft_expired:
+            raise HTTPException(status_code=409, detail="table is not active")
+        if state.conversation.safety_level is SafetyLevel.CRITICAL:
+            raise HTTPException(status_code=409, detail="table is paused for safety review")
+        if not repo.turns(table_id):
+            raise HTTPException(status_code=409, detail="summary requires at least one committed turn")
+        service: TableRunService = api.state.table_run_service
+        await service.enqueue(table_id, manual=True)
+        return StageSummaryRequestResponse(table_id=table_id, accepted=True, state_version=state.version)
+
+    @api.post(
+        "/tables/{table_id}/stage-summaries/{summary_id}/feedback",
+        response_model=StageSummaryFeedback,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_stage_summary_feedback(
+        table_id: str,
+        summary_id: str,
+        payload: StageSummaryFeedbackRequest,
+        request: Request,
+        participant_id: str = Query(..., min_length=1),
+        summary_revision: int = Query(..., ge=1),
+    ) -> StageSummaryFeedback:
+        require_request_identity(identity_resolver, request, participant_id)
+        state = table_or_404(table_id)
+        if participant_id not in state.participants:
+            raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        feedback = StageSummaryFeedback(
+            feedback_id=f"{table_id}:feedback:{summary_id}:{summary_revision}:{participant_id}",
+            table_id=table_id,
+            summary_id=summary_id,
+            summary_revision=summary_revision,
+            participant_id=participant_id,
+            kind=payload.kind,
+            note=payload.note,
+            evidence_turns=payload.evidence_turns,
+            created_at=clock(),
+        )
+        try:
+            saved, created = repo.append_summary_feedback(feedback)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        if created:
+            await broadcast_table_event(table_id, {
+                "type": "stage_summary_feedback",
+                "feedback": saved.model_dump(mode="json"),
+            })
+            latest = repo.latest_stage_summary(table_id)
+            if latest is not None and latest.summary_id == saved.summary_id and latest.revision == saved.summary_revision:
+                try:
+                    revised, saved, revised_state = repo.apply_summary_feedback_revision(
+                        table_id, saved.feedback_id
+                    )
+                except ValueError as error:
+                    raise HTTPException(status_code=409, detail=str(error)) from error
+                await broadcast_table_event(table_id, {
+                    "type": "stage_summary_published",
+                    "summary": revised.model_dump(mode="json"),
+                    "reason": "member_feedback",
+                })
+                await broadcast_table_state(table_id, revised_state)
+        return saved
+
+    @api.get("/tables/{table_id}/agent-runs", response_model=list[AgentRunRecord])
+    def get_agent_runs(
+        table_id: str,
+        request: Request,
+    ) -> list[AgentRunRecord]:
+        if moderator_resolver is None:
+            raise HTTPException(status_code=403, detail="agent run ledger is restricted")
+        require_moderator_identity(moderator_resolver, request)
+        table_or_404(table_id)
+        return repo.agent_runs(table_id)
 
     @api.get("/tables/{table_id}/lineage", response_model=TableLineageResponse)
     def get_lineage(table_id: str) -> TableLineageResponse:

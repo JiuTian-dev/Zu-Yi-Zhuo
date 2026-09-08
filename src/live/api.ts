@@ -18,6 +18,9 @@ import type {
   InvitationResponseLike,
   JoinRequestApprovalLike,
   JoinRequestViewLike,
+  StageSummaryFeedbackKindLike,
+  StageSummaryFeedbackLike,
+  StageSummaryLike,
 } from './contract'
 
 const API_TIMEOUT_MS = 4500
@@ -192,6 +195,31 @@ export function leaveTable(tableId: string, participantId: string) {
 export function fetchReplay(tableId: string, participantId?: string) {
   return requestJson<ReplayResponseLike>(
     `/tables/${encodeURIComponent(tableId)}/replay${query({ participant_id: participantId })}`,
+  )
+}
+
+export function requestStageSummary(tableId: string, participantId: string) {
+  return requestJson<{ table_id: string; accepted: boolean; state_version: number }>(
+    `/tables/${encodeURIComponent(tableId)}/stage-summaries/request${query({ participant_id: participantId })}`,
+    { method: 'POST' },
+  )
+}
+
+export function submitStageSummaryFeedback(
+  tableId: string,
+  summary: StageSummaryLike,
+  participantId: string,
+  kind: StageSummaryFeedbackKindLike,
+  note?: string,
+  evidenceTurns: number[] = [],
+) {
+  return requestJson<StageSummaryFeedbackLike>(
+    `/tables/${encodeURIComponent(tableId)}/stage-summaries/${encodeURIComponent(summary.summary_id)}/feedback${query({ participant_id: participantId, summary_revision: summary.revision })}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, note: note?.trim() || undefined, evidence_turns: evidenceTurns }),
+    },
   )
 }
 

@@ -1832,6 +1832,46 @@ body:has(.lobby-root) .sea-page.product-entry .sea-backend-note {
   }
 }
 
+.stage-summary-card {
+  position: fixed;
+  z-index: 24;
+  top: 92px;
+  right: 28px;
+  width: min(390px, calc(100vw - 40px));
+  max-height: min(72vh, 680px);
+  overflow: auto;
+  padding: 20px;
+  color: #f7f2e8;
+  background: rgba(22, 31, 29, .92);
+  border: 1px solid rgba(225, 214, 185, .28);
+  border-radius: 18px;
+  box-shadow: 0 20px 55px rgba(0, 0, 0, .25);
+  backdrop-filter: blur(16px);
+}
+.stage-summary-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.stage-summary-card h2 { margin: 2px 0 0; font: 600 22px/1.2 var(--font-display, Georgia, serif); }
+.stage-summary-card h3 { margin: 18px 0 7px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #d7c7a3; }
+.stage-summary-card ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.stage-summary-card li { font-size: 14px; line-height: 1.45; }
+.stage-summary-card li small { display: block; margin-top: 3px; color: rgba(247, 242, 232, .55); font-size: 11px; }
+.evidence-link { margin-right: 7px; padding: 0; border: 0; background: transparent; color: #d8c7a5; cursor: pointer; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.stage-summary-revision, .stage-summary-meta { color: rgba(247, 242, 232, .62); font-size: 12px; }
+.stage-summary-meta { margin: 12px 0 0; }
+.stage-summary-status, .stage-summary-empty { color: rgba(247, 242, 232, .75); font-size: 13px; line-height: 1.5; }
+.stage-summary-status.is-error { color: #f3b0a1; }
+.stage-summary-actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+.stage-summary-request, .stage-summary-feedback button, .stage-summary-history-toggle { border: 1px solid rgba(225, 214, 185, .32); border-radius: 999px; background: transparent; color: inherit; cursor: pointer; }
+.stage-summary-request { padding: 10px 15px; background: #d8c7a5; color: #1c2824; border-color: transparent; font-weight: 600; }
+.stage-summary-request:disabled, .stage-summary-feedback button:disabled { cursor: default; opacity: .55; }
+.stage-summary-history-toggle { padding: 8px 11px; font-size: 12px; }
+.stage-summary-feedback { margin-top: 22px; padding-top: 15px; border-top: 1px solid rgba(225, 214, 185, .16); font-size: 12px; color: rgba(247, 242, 232, .72); }
+.stage-summary-feedback > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.stage-summary-feedback button { padding: 7px 9px; font-size: 11px; }
+.stage-summary-feedback button.is-selected { background: #d8c7a5; color: #1c2824; }
+.stage-summary-history { display: grid; gap: 8px; margin: 16px 0 0; padding-left: 18px; color: rgba(247, 242, 232, .7); font-size: 12px; }
+.stage-summary-history span { display: block; margin-top: 2px; }
+@media (max-width: 760px) { .stage-summary-card { top: auto; right: 14px; bottom: 84px; max-height: 60vh; } }
+
 /* P4 — the replay is portaled to body so it is independent of the scene HUD.
  * Collapse the product chrome through the body state instead of relying on a
  * descendant selector that would stop working after the portal move. */

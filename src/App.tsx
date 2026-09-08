@@ -4,12 +4,13 @@ import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
 import type { AppPhase, TableSummary } from './domain'
 import { useLive } from './live/store'
-import { joinViewer, requestClose, requestNudge, retryViewerMessage, sendViewerMessage, startLive, stopLive, viewerSeed } from './live/backend'
+import { joinViewer, requestClose, requestNudge, requestStageSummary, retryViewerMessage, sendViewerMessage, startLive, stopLive, submitStageSummaryFeedbackFromViewer, viewerSeed } from './live/backend'
 import { VIEWER_ID } from './live/identity'
 import ClosingCard from './live/ClosingCard'
 import DiscussionPanel from './live/DiscussionPanel'
+import StageSummaryPanel from './live/StageSummaryPanel'
 import IntentPanel from './live/IntentPanel'
-import type { HomeToMatchContextLike, LobbyFitPreviewLike, LobbyPreviewLike, MatchToHomeDraftLike, OpenTableContextLike } from './live/contract'
+import type { HomeToMatchContextLike, LobbyFitPreviewLike, LobbyPreviewLike, MatchToHomeDraftLike, OpenTableContextLike, StageSummaryFeedbackKindLike } from './live/contract'
 import { loadLobby, loadLobbyFit, ensureTable } from './live/backend'
 import { fetchDiscovery, fetchLobby, leaveTable, selectTable } from './live/api'
 import { clearHomeContext, clearOpenTableContext, handoffMatchDraft, HOME_TO_MATCH_CONTEXT_EVENT, normalizeHomeToMatchContext, normalizeOpenTableContext, OPEN_TABLE_CONTEXT_EVENT, readHomeContext, readOpenTableContext } from './live/handoff'
@@ -144,6 +145,9 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const safetyNotice = useLive((state) => state.safetyNotice)
   const liveError = useLive((state) => state.lastError)
   const latestReflection = useLive((state) => state.latestReflection)
+  const latestSummary = useLive((state) => state.latestSummary)
+  const summaryHistory = useLive((state) => state.summaryHistory)
+  const summaryStatus = useLive((state) => state.summaryStatus)
   const tableMembers = liveTableState
     ? Object.values(liveTableState.participants).map((participant) => ({
       participant_id: participant.participant_id,
@@ -283,6 +287,32 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       setNudgePending(false)
       nudgeTimerRef.current = null
     }, 2400)
+  }
+
+  const requestStageSummaryFromUi = () => {
+    if (!hasJoined || !liveActive || closeState !== 'idle') return
+    if (!requestStageSummary()) setActionNotice('总结请求暂时没有送达，请确认实时连接后再试。')
+    else setActionNotice('已请主持 Agent 整理当前讨论。')
+  }
+
+  const sendSummaryFeedback = async (kind: StageSummaryFeedbackKindLike, summary: NonNullable<typeof latestSummary>) => {
+    try {
+      await submitStageSummaryFeedbackFromViewer(summary, kind)
+      setActionNotice('已把你的校正反馈递给主持 Agent。')
+    } catch (error) {
+      setActionNotice(error instanceof Error ? error.message : '反馈暂时没有送达。')
+    }
+  }
+
+  const focusSummaryEvidence = (turnId: number) => {
+    const target = Array.from(document.querySelectorAll<HTMLElement>('[data-turn-id]')).find((item) => item.dataset.turnId === String(turnId))
+    if (target) {
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+      target.focus({ preventScroll: true })
+      return
+    }
+    setHistoryOpen(true)
+    setActionNotice(`已打开对话历史，请查看第 ${turnId} 句。`)
   }
 
   const requestCloseFromUi = () => {
@@ -585,7 +615,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
           <section id="conversation-dock-content" className="drawer-card-content" aria-hidden={conversationCollapsed} inert={conversationCollapsed}>
             {liveActive && lastLive ? (
               liveMessages.slice(-2).map((message, index, list) => (
-                <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
+                <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} data-turn-id={message.turnId} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
                   <b className={message.fromHost ? 'host-name' : ''}>
                     {speakerName(message.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
                   </b>
@@ -611,6 +641,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
           </section>
         </div>
         {tableInteractive && <button className="close-table-button" type="button" disabled={closePending} aria-busy={closePending} onClick={requestCloseFromUi}>{closePending ? '正在请主持人收桌…' : '收这桌'} <span>→</span></button>}
+        {seated && <StageSummaryPanel summary={latestSummary} history={summaryHistory} pending={summaryStatus} participantId={hasJoined ? VIEWER_ID : undefined} onRequest={requestStageSummaryFromUi} onFeedback={sendSummaryFeedback} onEvidence={focusSummaryEvidence} />}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
         {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard tableId={table.id} participantId={VIEWER_ID} baseline={liveBaseline} personalCard={livePersonalCard} onDismiss={dismissClosingCard} onReturn={onExit} />}
         {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => setClosingCardOpen(true)}>打开收桌卡 <span>↗</span></button>}

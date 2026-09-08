@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +21,13 @@ class _HostProvider:
 
     async def text(self, task, messages, config=None):
         self.calls += 1
+        return self.text_value
+
+
+class _SlowHostProvider(_HostProvider):
+    async def text(self, task, messages, config=None):
+        self.calls += 1
+        await asyncio.sleep(0.2)
         return self.text_value
 
 
@@ -131,6 +139,31 @@ def test_overlong_human_text_is_rejected_without_persistence() -> None:
     assert repository.turns("table-ws") == []
 
 
+def test_manual_stage_summary_is_non_blocking_and_replayed() -> None:
+    client, repository = _client_with_table()
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as websocket:
+        websocket.send_json({
+            "type": "human_message",
+            "message_id": "summary-m1",
+            "participant_id": "p1",
+            "text": "我先讲一个试点案例。",
+            "client_ts": 1,
+        })
+        seen = {websocket.receive_json()["type"] for _ in range(2)}
+        assert "message_committed" in seen
+        websocket.send_json({"type": "request_stage_summary"})
+        assert websocket.receive_json()["type"] == "stage_summary_requested"
+        event_types = {websocket.receive_json()["type"] for _ in range(2)}
+        assert event_types == {"stage_summary_started", "stage_summary_published"}
+
+    assert repository.latest_stage_summary("table-ws") is not None
+    replay = client.get("/tables/table-ws/replay").json()
+    assert len(replay["stage_summaries"]) == 1
+
+
 def test_injected_provider_rewrites_host_text_but_keeps_action_and_audit() -> None:
     provider = _HostProvider("先把预算验收的具体边界说清，再继续比较。")
     client, repository = _client_with_table(provider)
@@ -151,6 +184,28 @@ def test_injected_provider_rewrites_host_text_but_keeps_action_and_audit() -> No
     assert action["text"] == provider.text_value
     assert changed["state"]["intervention"]["last_action"] == "PASS"
     assert repository.interventions("table-ws")[0].model == "test-host"
+
+
+def test_human_turn_is_broadcast_before_slow_host_provider_finishes() -> None:
+    provider = _SlowHostProvider("主持人稍后补一句。")
+    client, _repository = _client_with_table(provider)
+    assert client.post("/tables/table-ws/participants", json=_participant("p1")).status_code == 200
+    assert client.post("/tables/table-ws/participants", json=_participant("p2", "采购")).status_code == 200
+
+    with client.websocket_connect("/ws/tables/table-ws?participant_id=p1") as first:
+        with client.websocket_connect("/ws/tables/table-ws?participant_id=p2") as second:
+            started = time.perf_counter()
+            first.send_json({
+                "type": "human_message", "message_id": "slow-1", "participant_id": "p1",
+                "text": "先把一条真实约束放在桌面上。", "client_ts": 1,
+            })
+            assert first.receive_json()["type"] == "message_committed"
+            assert time.perf_counter() - started < 0.15
+            second.send_json({
+                "type": "human_message", "message_id": "slow-2", "participant_id": "p2",
+                "text": "我可以马上补充另一条约束。", "client_ts": 2,
+            })
+            assert second.receive_json()["type"] == "message_committed"
 
 
 def test_human_message_commits_contract_and_persists_host_intervention() -> None:

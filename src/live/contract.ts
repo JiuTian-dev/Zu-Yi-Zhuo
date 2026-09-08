@@ -2,6 +2,8 @@
 
 export type AgentActionName = 'SILENCE' | 'PASS' | 'PROBE' | 'REFRAME' | 'GROUND' | 'CLOSE'
 export type TablePhase = 'opening' | 'explore' | 'tension' | 'deepen' | 'close'
+export type StageSummaryTriggerLike = 'question_aligned' | 'disagreement_changed' | 'grounding_changed' | 'thread_advanced' | 'stalled' | 'manual' | 'pre_close'
+export type StageSummaryFeedbackKindLike = 'misrepresented' | 'missing_point' | 'not_consensus' | 'ready_to_advance'
 
 export interface EvidenceStatementLike {
   text: string
@@ -90,11 +92,46 @@ export interface TableStateLike {
   conversation: ConversationStateLike
   intervention: InterventionStateLike
   agent: AgentPresenceLike
+  latest_stage_summary_id?: string | null
+  latest_stage_summary_revision?: number | null
+}
+
+export interface StageSummaryLike {
+  summary_id: string
+  table_id: string
+  revision: number
+  status: 'published' | 'superseded'
+  input_state_version: number
+  published_state_version: number
+  phase: TablePhase
+  trigger: StageSummaryTriggerLike
+  covered_turn_start: number
+  covered_turn_end: number
+  clarified: EvidenceStatementLike[]
+  disagreements: DisagreementLike[]
+  missing: EvidenceStatementLike[]
+  next_focus: EvidenceStatementLike | null
+  created_at: number
+  model: string
+  used_fallback: boolean
+}
+
+export interface StageSummaryFeedbackLike {
+  feedback_id: string
+  table_id: string
+  summary_id: string
+  summary_revision: number
+  participant_id: string
+  kind: StageSummaryFeedbackKindLike
+  note: string | null
+  evidence_turns: number[]
+  status: 'open' | 'applied' | 'dismissed'
+  created_at: number
 }
 
 export interface ServerMessageCommitted {
   type: 'message_committed'
-  message: { message_id: string; participant_id: string; text: string; client_ts: unknown }
+  message: { message_id: string; participant_id: string; text: string; client_ts: unknown; turn_id?: number }
 }
 
 export interface ServerAgentAction {
@@ -146,6 +183,38 @@ export interface ServerCloseReady {
   personal_card: PersonalCardLike
 }
 
+export interface ServerStageSummaryRequested {
+  type: 'stage_summary_requested'
+  table_id: string
+  state_version: number
+  request_id?: string
+}
+
+export interface ServerStageSummaryStarted {
+  type: 'stage_summary_started'
+  table_id: string
+  input_state_version: number
+  trigger: StageSummaryTriggerLike
+}
+
+export interface ServerStageSummaryPublished {
+  type: 'stage_summary_published'
+  summary: StageSummaryLike
+}
+
+export interface ServerStageSummaryFailed {
+  type: 'stage_summary_failed'
+  table_id: string
+  input_state_version: number
+  code: string
+  detail: string
+}
+
+export interface ServerStageSummaryFeedback {
+  type: 'stage_summary_feedback'
+  feedback: StageSummaryFeedbackLike
+}
+
 export interface GroundingCardLike {
   title: string
   excerpt: string
@@ -159,6 +228,11 @@ export type ServerEvent =
   | ServerStateChanged
   | ServerCloseStarted
   | ServerCloseReady
+  | ServerStageSummaryRequested
+  | ServerStageSummaryStarted
+  | ServerStageSummaryPublished
+  | ServerStageSummaryFailed
+  | ServerStageSummaryFeedback
   | { type: 'grounding_card'; table_id: string; state_version: number; title: string; excerpt: string; source_ref: string; signal_id?: string }
   | { type: 'intervention_reflected'; record: ReplayInterventionLike }
   | { type: 'participant_added' | 'participant_left'; participant_id: string; state?: TableStateLike }
@@ -180,6 +254,11 @@ export interface ClientHumanMessage {
 
 export interface ClientRequestClose {
   type: 'request_close'
+}
+
+export interface ClientRequestStageSummary {
+  type: 'request_stage_summary'
+  request_id?: string
 }
 
 /** Public REST projections used by the entry, lobby and replay surfaces. */
@@ -462,6 +541,8 @@ export interface ReplayResponseLike {
   comments: unknown[]
   comment_promotions: unknown[]
   source_signals: ReplaySourceSignalLike[]
+  stage_summaries: StageSummaryLike[]
+  summary_feedback: StageSummaryFeedbackLike[]
 }
 
 export interface InterventionReflectionLike {

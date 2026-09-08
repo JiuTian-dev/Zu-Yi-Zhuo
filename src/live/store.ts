@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike } from './contract'
+import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike, StageSummaryLike, StageSummaryFeedbackLike } from './contract'
 
 export interface LiveMessage {
   participantId: string
   text: string
+  turnId?: number
   fromHost: boolean
   action: AgentActionName | null
   messageId?: string
@@ -28,6 +29,10 @@ export interface LiveStatus {
   safetyNotice: string | null
   tableMode: 'async' | 'sync' | null
   latestReflection: InterventionReflectionLike | null
+  latestSummary: StageSummaryLike | null
+  summaryHistory: StageSummaryLike[]
+  summaryFeedback: StageSummaryFeedbackLike[]
+  summaryStatus: 'idle' | 'requested' | 'running' | 'failed'
   lastError: string | null
 }
 
@@ -49,6 +54,10 @@ const initial: LiveStatus = {
   safetyNotice: null,
   tableMode: null,
   latestReflection: null,
+  latestSummary: null,
+  summaryHistory: [],
+  summaryFeedback: [],
+  summaryStatus: 'idle',
   lastError: null,
 }
 
