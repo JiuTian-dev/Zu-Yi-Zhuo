@@ -292,6 +292,11 @@ $env:OPENAI_API_KEY = "..."
 $env:OPENAI_MODEL = "gpt-4o-mini"
 ```
 
+OpenCode Go 使用兼容端点时，将 `OPENAI_BASE_URL` 设为
+`https://opencode.ai/zen/go/v1`，并将 `OPENAI_API_STYLE=chat`；例如模型 `omen-alpha`
+走 `/chat/completions`。模型 ID 和端点以 [OpenCode Go 文档](https://opencode.ai/docs/zh-cn/go)
+为准。
+
 provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案；Gate、Safety、Router、状态证据、目标人和 GROUND 来源不交给模型决定。
 模型只收到公开问题、当前子问题和确定性草稿，不会收到完整 Table State 或未同意的个人资料。输出为空、超出 120 字、包含系统腔/来源声称/链接或调用失败时自动回退到确定性草稿。
 没有密钥或 SDK 时，`CONVERSATION_PROVIDER=openai` 会在启动阶段显式失败；默认 deterministic 模式不需要 OpenAI 依赖。

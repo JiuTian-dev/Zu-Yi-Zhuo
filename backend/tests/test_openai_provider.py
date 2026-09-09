@@ -30,6 +30,26 @@ class _Client:
         self.responses = _Responses()
 
 
+class _ChatCompletions:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs.get("response_format"):
+            content = '{"action":"PROBE"}'
+        else:
+            content = "  可继续追问预算验收。  "
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        )
+
+
+class _ChatClient:
+    def __init__(self) -> None:
+        self.chat = SimpleNamespace(completions=_ChatCompletions())
+
+
 def test_structured_uses_responses_parse_and_preserves_messages() -> None:
     client = _Client()
     provider = OpenAIResponsesProvider(client, model="demo-model")
@@ -66,3 +86,43 @@ def test_missing_key_is_explicit_when_constructing_default_client(monkeypatch) -
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(ProviderConfigurationError, match="OPENAI_API_KEY"):
         OpenAIResponsesProvider()
+
+
+def test_chat_text_maps_responses_options_to_chat_completions() -> None:
+    client = _ChatClient()
+    provider = OpenAIResponsesProvider(
+        client, model="omen-alpha", api_style="chat"
+    )
+
+    result = asyncio.run(
+        provider.text(
+            "生成一句主持话",
+            [{"role": "user", "content": "预算验收怎么做？"}],
+            {"max_output_tokens": 32, "reasoning": {"effort": "low"}},
+        )
+    )
+
+    assert result == "可继续追问预算验收。"
+    call = client.chat.completions.calls[0]
+    assert call["model"] == "omen-alpha"
+    assert call["max_tokens"] == 32
+    assert "reasoning" not in call
+    assert call["messages"] == [
+        {"role": "system", "content": "生成一句主持话"},
+        {"role": "user", "content": "预算验收怎么做？"},
+    ]
+
+
+def test_chat_structured_validates_json_object() -> None:
+    client = _ChatClient()
+    provider = OpenAIResponsesProvider(client, model="omen-alpha", api_style="chat")
+
+    result = asyncio.run(
+        provider.structured("请判断下一步动作", [], _Decision)
+    )
+
+    assert result.action == "PROBE"
+    call = client.chat.completions.calls[0]
+    assert call["response_format"] == {"type": "json_object"}
+    assert call["messages"][0]["role"] == "system"
+    assert "action" in call["messages"][0]["content"]
