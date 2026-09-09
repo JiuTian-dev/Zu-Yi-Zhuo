@@ -74,6 +74,7 @@ class OpenAIResponsesProvider:
         api_key: str | None = None,
         base_url: str | None = None,
         api_style: str | None = None,
+        thinking: str | None = None,
         timeout: float | None = None,
     ) -> None:
         self.model = (model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
@@ -88,6 +89,10 @@ class OpenAIResponsesProvider:
         if selected_style not in {"responses", "chat"}:
             raise ProviderConfigurationError("OPENAI_API_STYLE must be responses or chat")
         self.api_style = selected_style
+        selected_thinking = (thinking or os.getenv("OPENAI_THINKING") or "").strip().lower()
+        if selected_thinking not in {"", "enabled", "disabled"}:
+            raise ProviderConfigurationError("OPENAI_THINKING must be enabled or disabled")
+        self.thinking = selected_thinking
         if client is not None:
             self._client = client
             return
@@ -130,11 +135,16 @@ class OpenAIResponsesProvider:
             options["max_tokens"] = max_output_tokens
         for key in ("reasoning", "store", "metadata", "verbosity", "previous_response_id", "truncation"):
             options.pop(key, None)
+        if self.thinking:
+            options["extra_body"] = {"thinking": {"type": self.thinking}}
         return options
 
     @staticmethod
     def _chat_messages(instruction: str, input_messages: Sequence[Mapping[str, str]]) -> list[dict[str, str]]:
-        return [{"role": "system", "content": instruction}, *input_messages]
+        messages = [{"role": "system", "content": instruction}, *input_messages]
+        if not any(message.get("role") == "user" for message in input_messages):
+            messages.append({"role": "user", "content": instruction})
+        return messages
 
     @staticmethod
     def _chat_text(response: Any) -> str:

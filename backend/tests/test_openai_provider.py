@@ -91,7 +91,7 @@ def test_missing_key_is_explicit_when_constructing_default_client(monkeypatch) -
 def test_chat_text_maps_responses_options_to_chat_completions() -> None:
     client = _ChatClient()
     provider = OpenAIResponsesProvider(
-        client, model="omen-alpha", api_style="chat"
+        client, model="omen-alpha", api_style="chat", thinking="disabled"
     )
 
     result = asyncio.run(
@@ -106,6 +106,7 @@ def test_chat_text_maps_responses_options_to_chat_completions() -> None:
     call = client.chat.completions.calls[0]
     assert call["model"] == "omen-alpha"
     assert call["max_tokens"] == 32
+    assert call["extra_body"] == {"thinking": {"type": "disabled"}}
     assert "reasoning" not in call
     assert call["messages"] == [
         {"role": "system", "content": "生成一句主持话"},
@@ -126,3 +127,4 @@ def test_chat_structured_validates_json_object() -> None:
     assert call["response_format"] == {"type": "json_object"}
     assert call["messages"][0]["role"] == "system"
     assert "action" in call["messages"][0]["content"]
+    assert call["messages"][1]["role"] == "user"
