@@ -81,9 +81,10 @@ class OpenAIResponsesProvider:
             raise ProviderConfigurationError("OPENAI_MODEL must be non-empty")
         self._default_timeout = timeout
         endpoint = (base_url or os.getenv("OPENAI_BASE_URL") or "").strip()
+        self._is_opencode_go = "opencode.ai/zen/go" in endpoint.lower()
         selected_style = (api_style or os.getenv("OPENAI_API_STYLE") or "").strip().lower()
         if not selected_style:
-            selected_style = "chat" if "opencode.ai/zen/go" in endpoint else "responses"
+            selected_style = "chat" if self._is_opencode_go else "responses"
         if selected_style not in {"responses", "chat"}:
             raise ProviderConfigurationError("OPENAI_API_STYLE must be responses or chat")
         self.api_style = selected_style
@@ -106,7 +107,7 @@ class OpenAIResponsesProvider:
         options: dict[str, Any] = {"api_key": token}
         if endpoint:
             options["base_url"] = endpoint
-        if self.api_style == "chat":
+        if self.api_style == "chat" and self._is_opencode_go:
             options["default_headers"] = {
                 "User-Agent": "zuo-yi-zhuo/0.1",
                 "x-opencode-session": os.getenv("OPENCODE_SESSION_ID") or uuid4().hex,
