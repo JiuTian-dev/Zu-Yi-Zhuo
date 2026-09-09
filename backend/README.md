@@ -8,6 +8,15 @@
 
 ## 本地运行
 
+在项目根目录执行下面这一条命令，会同时启动前端和后端；按 `Ctrl+C` 会一起关闭：
+
+```powershell
+cd D:\知乎黑客松
+corepack pnpm dev:stack
+```
+
+如果只调试后端，仍可单独执行：
+
 ```powershell
 cd D:\知乎黑客松\backend
 python -m pip install -r requirements.txt

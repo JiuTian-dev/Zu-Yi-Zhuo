@@ -54,8 +54,7 @@ input:focus-visible {
     radial-gradient(ellipse at 52% 45%, transparent 30%, rgba(8, 13, 24, .08) 72%, rgba(8, 13, 24, .28) 100%);
 }
 
-.sea-page.product-entry::before,
-.valley-experience::before {
+.sea-page.product-entry::before {
   position: absolute;
   z-index: 4;
   width: min(46vw, 680px);
@@ -65,16 +64,6 @@ input:focus-visible {
   content: '';
   pointer-events: none;
   transform: translate(-28%, -31%) rotate(-26deg);
-}
-
-.valley-experience::before {
-  z-index: 2;
-  right: -23vw;
-  bottom: -55vh;
-  width: min(54vw, 780px);
-  height: min(70vw, 920px);
-  opacity: .44;
-  transform: rotate(21deg);
 }
 
 /* Discovery */
@@ -1631,8 +1620,7 @@ body:has(.lobby-root) .sea-page.product-entry .sea-backend-note {
     display: none;
   }
 
-  .sea-page.product-entry::before,
-  .valley-experience::before {
+  .sea-page.product-entry::before {
     opacity: .24;
   }
 

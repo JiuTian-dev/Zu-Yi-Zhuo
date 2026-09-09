@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:stack": "node scripts/dev-stack.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "check": "tsc -b",
