@@ -3,7 +3,6 @@ import { Game } from '../Game.js'
 import { Floor } from './Floor.js'
 import { WaterSurface } from './WaterSurface.js'
 import { Grass } from './Grass.js'
-import { WindLines } from './WindLines.js'
 import { Leaves } from './Leaves.js'
 import { Bushes } from './Bushes.js'
 import { Trees } from './Trees.js'
@@ -29,7 +28,10 @@ export class World
         this.floor = new Floor()
         this.waterSurface = new WaterSurface()
         this.grass = new Grass()
-        this.windLines = new WindLines()
+        // The upstream wind streaks are long, high-contrast curves that read
+        // as stray guide lines over the table. Keep the world calm and let
+        // weather affect foliage/water without adding a screen-spanning line.
+        this.windLines = null
         this.leaves = new Leaves()
         this.bushes = new Bushes()
         this.birchTrees = new Trees('Birch Tree', this.game.resources.birchTreesVisualModel.scene, this.game.resources.birchTreesReferencesModel.scene.children, '#ff4f2b', '#ff903f')
