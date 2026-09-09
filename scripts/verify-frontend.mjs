@@ -26,6 +26,7 @@ const tableMeeting = read('src/bruno-runtime/Game/World/TableMeeting.js')
 const terrain = read('src/bruno-runtime/Game/Terrain.js')
 const mock = read('src/live/mock.ts')
 const vite = read('vite.config.ts')
+const productUi = read('src/product-ui.css')
 
 expect(!game.includes('Respawns'), 'Game.js still references the removed Respawns system')
 expect(!game.includes('respawnsReferences.glb'), 'Game.js still loads the removed respawn asset')
@@ -64,6 +65,9 @@ expect(vite.includes('strictPort: true') && vite.includes('port: 5174'), 'Vite d
 expect(!tableSea.includes('sea-footer'), 'TableSea still renders the removed bottom scene footer')
 expect(!app.includes('scene-footer'), 'App still renders the removed bottom scene footer')
 expect(app.includes('DrawerToggle') && tableSea.includes('DrawerToggle'), 'scene cards are missing the shared drawer affordance')
+expect(!productUi.includes('.sea-page.product-entry::before'), 'matching page still renders the oversized blue decorative arc')
+expect(productUi.includes('.phase-seated.has-join-open .join-sheet'), 'join sheet visibility is not connected to the React has-join-open state')
+expect(!productUi.includes('.phase-seated .join-sheet.is-open'), 'join sheet still depends on an unused is-open class')
 expect(existsSync(resolve(root, 'src/experience/ORIGIN.md')), 'source map is missing at the spec path src/experience/ORIGIN.md')
 expect(existsSync(resolve(root, 'src/bruno-runtime/REMOVAL-MANIFEST.md')), 'removal manifest is missing')
 
