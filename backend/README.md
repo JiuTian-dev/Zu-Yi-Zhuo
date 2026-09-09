@@ -281,6 +281,10 @@ Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`�
 默认演示不调用外部模型，`CONVERSATION_PROVIDER` 未设置或为 `deterministic` 时不产生外部请求。
 需要接入 OpenAI Responses 时安装可选依赖并设置运行时变量：
 
+本地联合启动时可直接编辑 `backend/.env.local`。模板位于
+`backend/agent-llm.config.example.env`；`corepack pnpm dev:stack` 会把该文件只注入后端，
+不会把 key 暴露给前端 Vite 进程。
+
 ```powershell
 python -m pip install -e ".[openai]"
 $env:CONVERSATION_PROVIDER = "openai"
