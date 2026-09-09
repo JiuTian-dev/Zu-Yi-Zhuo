@@ -62,9 +62,8 @@ class OpenAIResponsesProvider:
 
     ``client`` is injectable for tests and for callers that already manage an
     SDK client. With no client, the SDK is imported lazily and configured from
-    ``OPENAI_API_KEY``, ``OPENAI_BASE_URL`` and ``OPENAI_MODEL``. OpenCode Go
-    is selected with ``OPENAI_API_STYLE=chat`` because some Go models expose
-    only the OpenAI-compatible ``/chat/completions`` endpoint.
+    ``OPENAI_API_KEY``, ``OPENAI_BASE_URL`` and ``OPENAI_MODEL``. OpenAI-compatible
+    Chat Completions providers are selected with ``OPENAI_API_STYLE=chat``.
     """
 
     def __init__(
