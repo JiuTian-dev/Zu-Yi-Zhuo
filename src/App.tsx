@@ -81,6 +81,7 @@ function SettingsIcon() {
 function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discovery, initialJoined = false }: { onExit(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; lobby: LobbyPreviewLike | null; discovery: LobbyPreviewLike[]; initialJoined?: boolean }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
+  const [autoApproach, setAutoApproach] = useState(entryIntent === 'join')
   const [joinOpen, setJoinOpen] = useState(false)
   const [seatDraft, setSeatDraft] = useState('')
   const [joinError, setJoinError] = useState<string | null>(null)
@@ -326,6 +327,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setJoinDismissed(false)
     setHeroCollapsed(false)
     setSummaryOpen(false)
+    setAutoApproach(false)
     setPhase('discovering')
   }
 
@@ -435,6 +437,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const beginApproach = () => {
     if (phase !== 'discovering') return
     setMenuOpen(false)
+    setAutoApproach(false)
     setPhase('approaching')
     void transitionTableCamera({ mode: 'approach', reducedMotion }).then(() => setPhase('seated'))
   }
@@ -442,6 +445,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   useEffect(() => {
     if (appPhase !== 'world' || entryIntent !== 'join') return
     if (phase === 'discovering') {
+      if (!autoApproach) return
       beginApproach()
       return
     }
@@ -454,7 +458,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     setJoinError(null)
     setJoinOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appPhase, entryIntent, phase, reducedMotion, liveStatus, liveViewerJoined, joinOpen, joinDismissed])
+  }, [appPhase, entryIntent, autoApproach, phase, reducedMotion, liveStatus, liveViewerJoined, joinOpen, joinDismissed])
 
   const approachTable = () => {
     beginApproach()
@@ -468,6 +472,12 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const listening = entryIntent === 'listen' && !hasJoined
   const liveActive = liveStatus === 'live' || liveStatus === 'mock'
   const tableInteractive = hasJoined && liveActive && closeState === 'idle'
+  const runtimeNotices = [
+    { text: actionNotice, className: '' },
+    { text: liveError, className: 'is-error' },
+    { text: safetyNotice, className: 'is-safety' },
+  ].filter((notice, index, notices): notice is { text: string; className: string } => Boolean(notice.text)
+    && notices.findIndex((candidate) => candidate.text === notice.text) === index)
   const speakingTurn = liveActive && liveSpeaking ? allTurns.find((turn) => turn.id === liveSpeaking) ?? null : null
   const currentTurn = speakingTurn ?? allTurns[0]
   const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
@@ -527,10 +537,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
         {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
         {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
-        {(safetyNotice || liveError || actionNotice) && <aside className="runtime-notice-stack" aria-live="polite">
-          {actionNotice && <p>{actionNotice}</p>}
-          {liveError && <p className="is-error">{liveError}</p>}
-          {safetyNotice && <p className="is-safety">{safetyNotice}</p>}
+        {runtimeNotices.length > 0 && <aside className="runtime-notice-stack" aria-live="polite">
+          {runtimeNotices.map((notice) => <p key={`${notice.className}:${notice.text}`} className={notice.className}>{notice.text}</p>)}
         </aside>}
 
         <div className="actor-hotspots" aria-label="桌上成员">

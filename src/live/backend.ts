@@ -8,6 +8,7 @@ import { commitMessage, getLiveState, markMessageFailed, markMessagePending, pus
 
 const DEFAULT_TABLE_ID = 'learning-to-rest'
 const DEFAULT_CORE_QUESTION = '为什么我们越来越不会休息？'
+const CONSENT_STATE_WAITING_NOTICE = '收到授权变化，正在等待完整桌状态…'
 
 const runtime = {
   sockets: new Set<WebSocket>(),
@@ -148,8 +149,9 @@ function handleServerEvent(event: ServerEvent) {
         const state = getLiveState().tableState
         if (state?.participants[event.participant_id] && event.state_version === undefined)
           setLive({ tableState: { ...state, participants: { ...state.participants, [event.participant_id]: { ...state.participants[event.participant_id], profile_shared: event.profile_shared } } } })
-        else if (event.state_version !== undefined && state && event.state_version > state.version)
-          setLive({ lastError: '收到授权变化，正在等待完整桌状态…' })
+        // REST consent writes fan out this marker before the authoritative
+        // table_state_changed event. It is not an error and must not become a
+        // persistent toast while the state event is already in flight.
       }
       break
     case 'close_started':
@@ -367,6 +369,7 @@ function acceptStateVersion(version: number): boolean {
 
 function applyTableState(state: NonNullable<LiveStatus['tableState']>): boolean {
   if (!acceptStateVersion(state.version)) return false
+  const waitingForConsentState = getLiveState().lastError === CONSENT_STATE_WAITING_NOTICE
   setLive({
     tableState: state,
     phase: state.phase,
@@ -374,6 +377,7 @@ function applyTableState(state: NonNullable<LiveStatus['tableState']>): boolean 
     subQuestion: state.current_subquestion,
     seatCount: Object.keys(state.participants).length,
     tableMode: state.conversation.mode ?? null,
+    ...(waitingForConsentState ? { lastError: null } : {}),
   })
   return true
 }
