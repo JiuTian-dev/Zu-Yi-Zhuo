@@ -29,7 +29,7 @@
 - [x] 普通讨论默认沉默；数量阈值只触发复核，当前发布入口为语义/manual/pre-close policy 与成员手动请求。
 - [x] 用户纠偏创建新 revision，旧 revision 保留且 replay 可解释。
 - [x] Provider 超时、非法结构和 verifier 拒绝时安全降级，真人讨论继续。
-- [ ] summary → 下一轮主持动作 → pre-close → 公共底稿/个人卡使用同一证据链（pre-close summary 仍需下一迭代接入 close transaction）。
+- [x] summary → 下一轮主持动作 → pre-close → 公共底稿/个人卡使用同一证据链；收桌事务会先完成静默 pre-close summary，再生成公共底稿与个人卡。
 - [x] 后端全量测试、前端 check/build、双客户端 WebSocket 和真实浏览器路径全部通过；浏览器证据已留在 `output/playwright/`。
 
 ## 2. 任务依赖图

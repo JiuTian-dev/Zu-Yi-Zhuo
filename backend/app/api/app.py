@@ -2897,7 +2897,7 @@ def create_app(
         if participant_id not in state.participants:
             raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
         try:
-            baseline = build_shared_baseline(state, turns=repo.turns(table_id))
+            baseline = build_shared_baseline(state, turns=repo.turns(table_id), latest_summary=repo.latest_stage_summary(table_id))
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         outcomes = {item.follow_up_index: item for item in repo.follow_up_outcomes(table_id)}
@@ -3011,7 +3011,7 @@ def create_app(
         follow_up_items: list[FollowUpItem] = []
         if state.conversation.closed:
             try:
-                follow_up_items = build_shared_baseline(state, turns=turns).collective_next_steps
+                follow_up_items = build_shared_baseline(state, turns=turns, latest_summary=repo.latest_stage_summary(table_id)).collective_next_steps
             except ValueError:
                 # A legacy/direct repository close may lack evidence for a baseline;
                 # evaluation remains readable and reports no close-card actions.
@@ -3149,13 +3149,19 @@ def create_app(
                 "reason": "rest_requested_close",
             })
         try:
-            build_shared_baseline(state, turns=repo.turns(table_id))
+            service: TableRunService = api.state.table_run_service
+            if not state.conversation.closed and repo.turns(table_id):
+                await service.enqueue(table_id, pre_close=True, silent=True)
+                await service.wait_idle(table_id)
+                state = repo.get(table_id)
+            latest_summary = repo.latest_stage_summary(table_id)
+            build_shared_baseline(state, turns=repo.turns(table_id), latest_summary=latest_summary)
             closed = (
                 repo.close_table_for_participant(table_id, participant_id)
                 if participant_id is not None
                 else repo.close_table(table_id)
             )
-            baseline = build_shared_baseline(closed, turns=repo.turns(table_id))
+            baseline = build_shared_baseline(closed, turns=repo.turns(table_id), latest_summary=latest_summary)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         if closed.version != state.version:
@@ -3188,7 +3194,7 @@ def create_app(
         if not state.conversation.closed:
             raise HTTPException(status_code=409, detail="table is not closed")
         try:
-            baseline = build_shared_baseline(state, turns=repo.turns(table_id))
+            baseline = build_shared_baseline(state, turns=repo.turns(table_id), latest_summary=repo.latest_stage_summary(table_id))
             new_table_id = payload.table_id or uuid4().hex
             new_state = repo.create(
                 new_table_id,
@@ -3220,8 +3226,9 @@ def create_app(
         if participant_id not in state.participants:
             raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
         try:
-            baseline = build_shared_baseline(state, turns=repo.turns(table_id))
-            personal = build_personal_card(state, participant_id)
+            latest_summary = repo.latest_stage_summary(table_id)
+            baseline = build_shared_baseline(state, turns=repo.turns(table_id), latest_summary=latest_summary)
+            personal = build_personal_card(state, participant_id, latest_summary=latest_summary)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return CloseArtifactsResponse(

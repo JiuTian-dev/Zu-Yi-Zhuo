@@ -274,6 +274,7 @@ async function hydrateAfterReconnect(generation = liveGeneration) {
     const replay = await fetchReplay(tableId, participantId)
     if (generation !== liveGeneration || tableId !== currentTableId()) return
     reconcilePendingMessages(replay)
+    reconcileConversationFromReplay(replay)
     reconcileSummariesFromReplay(replay)
     if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(tableId, VIEWER_ID, generation)
   } catch (error) {
@@ -290,6 +291,25 @@ function reconcileSummariesFromReplay(replay: ReplayResponseLike) {
     summaryFeedback: replay.summary_feedback.slice(-20),
     summaryStatus: 'idle',
   })
+}
+
+function reconcileConversationFromReplay(replay: ReplayResponseLike) {
+  const current = getLiveState().messages
+  const committedIds = new Set(replay.messages.map((message) => message.message_id).filter(Boolean))
+  const recovered = replay.messages.map((message) => ({
+    participantId: message.participant_id,
+    text: message.text,
+    turnId: message.turn_id,
+    fromHost: false,
+    action: null,
+    messageId: message.message_id ?? undefined,
+    delivery: 'committed' as const,
+  }))
+  const localOnly = current.filter((message) =>
+    message.fromHost || !message.messageId || !committedIds.has(message.messageId),
+  )
+  for (const message of recovered) if (message.messageId) runtime.seenMessageIds.add(message.messageId)
+  setLive({ messages: [...recovered, ...localOnly].slice(-120) })
 }
 
 function reconcilePendingMessages(replay: ReplayResponseLike) {
@@ -477,7 +497,10 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
     applyTableState(initialState)
     setLive({ viewerJoined: shouldParticipate })
     const replay = await fetchReplay(readyTableId, shouldParticipate ? VIEWER_ID : undefined)
-    if (generation === liveGeneration && readyTableId === currentTableId()) reconcileSummariesFromReplay(replay)
+    if (generation === liveGeneration && readyTableId === currentTableId()) {
+      reconcileConversationFromReplay(replay)
+      reconcileSummariesFromReplay(replay)
+    }
     if (initialState.conversation.closed && shouldParticipate) void recoverCloseArtifacts(readyTableId, VIEWER_ID, generation)
   } catch {
     // The observer stream remains authoritative if the initial REST refresh races it.

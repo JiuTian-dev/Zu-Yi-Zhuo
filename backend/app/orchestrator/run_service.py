@@ -46,7 +46,7 @@ class TableRunService:
         self.checkpoint_policy = checkpoint_policy or CheckpointPolicy()
         self.deadline_seconds = deadline_seconds
         self.clock = clock
-        self._pending: dict[str, tuple[StageSummaryTrigger | None, bool, bool]] = {}
+        self._pending: dict[str, tuple[StageSummaryTrigger | None, bool, bool, bool]] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
 
@@ -57,6 +57,7 @@ class TableRunService:
         semantic_trigger: StageSummaryTrigger | None = None,
         manual: bool = False,
         pre_close: bool = False,
+        silent: bool = False,
     ) -> None:
         """Merge triggers and schedule at most one active run for a table."""
         async with self._lock:
@@ -66,6 +67,7 @@ class TableRunService:
                 trigger,
                 manual or (previous[1] if previous else False),
                 pre_close or (previous[2] if previous else False),
+                silent and (previous[3] if previous else True),
             )
             if table_id not in self._tasks:
                 self._tasks[table_id] = asyncio.create_task(self._drain(table_id))
@@ -89,8 +91,8 @@ class TableRunService:
         try:
             while True:
                 async with self._lock:
-                    trigger, manual, pre_close = self._pending.pop(table_id, (None, False, False))
-                await self._run(table_id, trigger=trigger, manual=manual, pre_close=pre_close)
+                    trigger, manual, pre_close, silent = self._pending.pop(table_id, (None, False, False, False))
+                await self._run(table_id, trigger=trigger, manual=manual, pre_close=pre_close, silent=silent)
                 async with self._lock:
                     if table_id not in self._pending:
                         self._tasks.pop(table_id, None)
@@ -107,6 +109,7 @@ class TableRunService:
         trigger: StageSummaryTrigger | None,
         manual: bool,
         pre_close: bool,
+        silent: bool,
     ) -> None:
         state = self.repository.get(table_id)
         latest = self.repository.latest_stage_summary(table_id)
@@ -122,7 +125,8 @@ class TableRunService:
         if decision.trigger is None:
             return
         if not context.delta_turns:
-            await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "no_uncovered_turns", "detail": "没有新的未总结发言"})
+            if not silent:
+                await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "no_uncovered_turns", "detail": "没有新的未总结发言"})
             return
         turn_id = context.delta_turns[-1].turn_id
         run_id = f"{table_id}:agent-run:{state.version}:{uuid4().hex[:8]}"
@@ -131,41 +135,59 @@ class TableRunService:
             return
         started = self.clock()
         try:
-            await self._emit(table_id, {
+            if not silent:
+                await self._emit(table_id, {
                 "type": "stage_summary_started",
                 "table_id": table_id,
                 "input_state_version": state.version,
                 "trigger": decision.trigger,
-            })
-            specialist_outputs, specialist_meta = await asyncio.wait_for(
-                self._run_specialists(context), timeout=self.deadline_seconds
-            )
+                })
+            try:
+                specialist_outputs, specialist_meta = await asyncio.wait_for(
+                    self._run_specialists(context), timeout=self.deadline_seconds
+                )
+            except asyncio.TimeoutError:
+                specialist_outputs = {
+                    "content_analyst": ContentAnalystAgent().fallback_factory(context),
+                    "participation_analyst": ParticipationAnalystAgent().fallback_factory(context),
+                }
+                specialist_meta = {
+                    "roles": ["content_analyst", "participation_analyst", "facilitation_strategist"],
+                    "attempts": 1,
+                    "used_fallback": True,
+                }
             # Strategy remains a typed proposal; the existing deterministic
             # host loop is still the sole action/state writer for this phase.
             propose_action(context, specialist_outputs.get("content_analyst"), specialist_outputs.get("participation_analyst"))
-            draft = await asyncio.wait_for(
-                self._draft(context, decision.trigger), timeout=self.deadline_seconds
-            )
+            try:
+                draft, draft_used_fallback = await asyncio.wait_for(
+                    self._draft(context, decision.trigger), timeout=self.deadline_seconds
+                )
+            except asyncio.TimeoutError:
+                draft = StageSummarizerAgent(trigger=decision.trigger).fallback_factory(context)
+                draft_used_fallback = True
             verification = SummaryVerifierAgent().verify(draft, context)
             if verification.decision != "approved":
-                await self._emit(table_id, {
+                if not silent:
+                    await self._emit(table_id, {
                     "type": "stage_summary_failed",
                     "table_id": table_id,
                     "input_state_version": state.version,
                     "code": "verifier_rejected",
                     "detail": "总结未通过证据核验",
-                })
-                await self._record_run(run_id, table_id, turn_id, state.version, "rejected", started, invoked_agents=specialist_meta["roles"] + ["stage_summarizer", "summary_verifier"], attempts=specialist_meta["attempts"], used_fallback=specialist_meta["used_fallback"])
+                    })
+                await self._record_run(run_id, table_id, turn_id, state.version, "rejected", started, invoked_agents=specialist_meta["roles"] + ["stage_summarizer", "summary_verifier"], attempts=specialist_meta["attempts"], used_fallback=draft_used_fallback or specialist_meta["used_fallback"])
                 return
             current = self.repository.get(table_id)
             if current.version != state.version:
-                await self._emit(table_id, {
+                if not silent:
+                    await self._emit(table_id, {
                     "type": "stage_summary_failed",
                     "table_id": table_id,
                     "input_state_version": state.version,
                     "code": "stale_state",
                     "detail": "桌面已经前进，旧总结已丢弃",
-                })
+                    })
                 await self._record_run(run_id, table_id, turn_id, state.version, "stale_discarded", started, invoked_agents=specialist_meta["roles"] + ["stage_summarizer", "summary_verifier"], attempts=specialist_meta["attempts"], used_fallback=specialist_meta["used_fallback"])
                 return
             summary_id = uuid4().hex
@@ -176,8 +198,8 @@ class TableRunService:
                 revision=1,
                 published_state_version=current.version + 1,
                 created_at=self.clock(),
-                model="deterministic-fallback" if self.provider is None else str(getattr(self.provider, "model", "custom")),
-                used_fallback=self.provider is None,
+                model="deterministic-fallback" if draft_used_fallback else str(getattr(self.provider, "model", "custom")),
+                used_fallback=draft_used_fallback or specialist_meta["used_fallback"],
             )
             next_state = current.model_copy(update={
                 "version": current.version + 1,
@@ -185,18 +207,21 @@ class TableRunService:
                 "latest_stage_summary_revision": summary.revision,
             })
             committed = self.repository.append_stage_summary_bundle(table_id, next_state, summary)
-            await self._emit(table_id, {
+            if not silent:
+                await self._emit(table_id, {
                 "type": "stage_summary_published",
                 "summary": summary.model_dump(mode="json"),
-            })
-            if self.broadcast_state is not None:
+                })
+            if not silent and self.broadcast_state is not None:
                 await self.broadcast_state(table_id, committed)
-            await self._record_run(run_id, table_id, turn_id, state.version, "summary_published", started, invoked_agents=specialist_meta["roles"] + ["stage_summarizer", "summary_verifier"], attempts=specialist_meta["attempts"], used_fallback=specialist_meta["used_fallback"])
+            await self._record_run(run_id, table_id, turn_id, state.version, "summary_published", started, invoked_agents=specialist_meta["roles"] + ["stage_summarizer", "summary_verifier"], attempts=specialist_meta["attempts"], used_fallback=draft_used_fallback or specialist_meta["used_fallback"])
         except asyncio.TimeoutError:
-            await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "deadline", "detail": "总结超过时间预算"})
+            if not silent:
+                await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "deadline", "detail": "总结超过时间预算"})
             await self._record_run(run_id, table_id, turn_id, state.version, "timeout", started, error_code="deadline")
         except (ValueError, KeyError):
-            await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "contract", "detail": "总结提交未通过合同校验"})
+            if not silent:
+                await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "contract", "detail": "总结提交未通过合同校验"})
             await self._record_run(run_id, table_id, turn_id, state.version, "rejected", started, error_code="contract")
         finally:
             await self.lease_store.release(table_id, state.version)
@@ -225,9 +250,9 @@ class TableRunService:
 
     async def _draft(self, context, trigger: StageSummaryTrigger):
         if self.provider is None:
-            return StageSummarizerAgent(trigger=trigger).fallback_factory(context)
+            return StageSummarizerAgent(trigger=trigger).fallback_factory(context), True
         result = await StageSummarizerAgent(trigger=trigger).run(self.provider, context)
-        return result.value
+        return result.value, result.used_fallback
 
     async def _record_run(
         self,

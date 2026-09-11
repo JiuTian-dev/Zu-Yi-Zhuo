@@ -88,14 +88,14 @@ export function useLive<T>(selector: (state: LiveStatus) => T): T {
 }
 
 export function pushMessage(message: LiveMessage) {
-  const next = [...state.messages, message].slice(-30)
+  const next = [...state.messages, message].slice(-120)
   setLive({ messages: next, speakingId: message.participantId })
 }
 
 export function commitMessage(messageId: string, message: Omit<LiveMessage, 'messageId' | 'delivery'>) {
   const next = state.messages.filter((item) => item.messageId !== messageId)
   next.push({ ...message, messageId, delivery: 'committed' })
-  setLive({ messages: next.slice(-30), speakingId: message.participantId })
+  setLive({ messages: next.slice(-120), speakingId: message.participantId })
 }
 
 export function markMessageFailed(messageId: string) {

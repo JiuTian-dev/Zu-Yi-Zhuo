@@ -38,15 +38,19 @@ export default function StageSummaryPanel({
   const [editing, setEditing] = useState(false)
   const [note, setNote] = useState('')
   const [sending, setSending] = useState(false)
+  const [selectedRevision, setSelectedRevision] = useState<number | null>(null)
 
   useEffect(() => {
     setEditing(false)
     setNote('')
     setSending(false)
+    setSelectedRevision(summary?.revision ?? null)
   }, [summary?.summary_id, summary?.revision])
 
   if (!open) return null
-  const canRequest = Boolean(participantId) && pending === 'idle'
+  const canRequest = Boolean(participantId) && (pending === 'idle' || pending === 'failed')
+  const displayedSummary = history.find((item) => item.revision === selectedRevision) ?? summary
+  const viewingLatest = displayedSummary?.revision === summary?.revision
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault()
@@ -68,12 +72,12 @@ export default function StageSummaryPanel({
       </header>
       {(pending === 'requested' || pending === 'running') && <p className="summary-state">正在整理</p>}
       {pending === 'failed' && <p className="summary-state is-error">整理失败，请重试</p>}
-      {summary ? (
+      {displayedSummary ? (
         <div className="summary-content">
-          <SummaryItems title="已经确认" items={summary.clarified} onEvidence={onEvidence} />
-          <SummaryItems title="仍待讨论" items={[...summary.disagreements, ...summary.missing]} onEvidence={onEvidence} />
-          {summary.next_focus && <SummaryItems title="接下来" items={[summary.next_focus]} onEvidence={onEvidence} />}
-          {participantId && !editing && <button type="button" className="summary-edit" onClick={() => setEditing(true)}>修改</button>}
+          <SummaryItems title="已经确认" items={displayedSummary.clarified} onEvidence={onEvidence} />
+          <SummaryItems title="仍待讨论" items={[...displayedSummary.disagreements, ...displayedSummary.missing]} onEvidence={onEvidence} />
+          {displayedSummary.next_focus && <SummaryItems title="接下来" items={[displayedSummary.next_focus]} onEvidence={onEvidence} />}
+          {participantId && viewingLatest && !editing && <button type="button" className="summary-edit" onClick={() => setEditing(true)}>修改</button>}
           {participantId && editing && (
             <form className="summary-edit-form" onSubmit={submitFeedback}>
               <input value={note} onChange={(event) => setNote(event.target.value)} maxLength={240} autoFocus aria-label="修改阶段小结" />
@@ -81,10 +85,10 @@ export default function StageSummaryPanel({
               <button type="button" onClick={() => setEditing(false)}>取消</button>
             </form>
           )}
-          {history.length > 1 && <details className="summary-history"><summary>历史版本</summary><ol>{history.slice().reverse().map((item) => <li key={`${item.summary_id}-${item.revision}`}>第 {item.revision} 版</li>)}</ol></details>}
+          {history.length > 1 && <details className="summary-history"><summary>历史版本</summary><ol>{history.slice().reverse().map((item) => <li key={`${item.summary_id}-${item.revision}`}><button type="button" aria-current={displayedSummary.revision === item.revision ? 'true' : undefined} onClick={() => { setEditing(false); setSelectedRevision(item.revision) }}>第 {item.revision} 版{item.next_focus ? `：${item.next_focus.text}` : ''}</button></li>)}</ol></details>}
         </div>
-      ) : pending === 'idle' ? (
-        <button type="button" className="summary-generate" onClick={onRequest} disabled={!canRequest}>生成小结</button>
+      ) : pending === 'idle' || pending === 'failed' ? (
+        <button type="button" className="summary-generate" onClick={onRequest} disabled={!canRequest}>{pending === 'failed' ? '重新整理' : '生成小结'}</button>
       ) : null}
       {summary && pending === 'idle' && <button type="button" className="summary-regenerate" onClick={onRequest} disabled={!canRequest}>重新整理</button>}
     </aside>

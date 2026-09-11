@@ -97,27 +97,24 @@ export default function ClosingCard({ tableId, participantId, baseline, personal
     <div className="closing-root">
       <div className="closing-veil" role="presentation" aria-hidden="true" onClick={onDismiss} />
       <section className="closing-panel" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="closing-card-title">
-        <p className="closing-kicker">收桌 · 这一桌聊成了什么</p>
         <h2 className="closing-question" id="closing-card-title">
-          <small>问题长成了这样</small>
+          <small>这次聊到了</small>
           {baseline.evolved_question.text}
         </h2>
 
         <div className="closing-grid">
-          <div className="closing-block">
+          {baseline.key_consensus.length > 0 && <div className="closing-block">
             <small>共识</small>
-            {baseline.key_consensus.length === 0 && <p className="closing-empty">这一桌还没有沉淀出共识。</p>}
             {baseline.key_consensus.map((item) => (
               <p key={item.text}>{item.text}</p>
             ))}
-          </div>
-          <div className="closing-block">
+          </div>}
+          {baseline.unresolved_disagreements.length > 0 && <div className="closing-block">
             <small>未解决的分歧</small>
-            {baseline.unresolved_disagreements.length === 0 && <p className="closing-empty">没有留下悬而未决的分歧。</p>}
             {baseline.unresolved_disagreements.map((item) => (
               <p key={item.text}>{item.text}</p>
             ))}
-          </div>
+          </div>}
           {baseline.collective_next_steps.length > 0 && (
             <div className="closing-block">
               <small>桌上带走的行动</small>
@@ -130,7 +127,7 @@ export default function ClosingCard({ tableId, participantId, baseline, personal
 
         {personalCard && (
           <div className="closing-personal">
-            <p className="closing-personal-kicker">你的收桌卡 · 第五席</p>
+            <p className="closing-personal-kicker">与你有关</p>
             <div className="closing-grid">
               {personalCard.what_changed.length > 0 && (
                 <div className="closing-block">
@@ -166,27 +163,24 @@ export default function ClosingCard({ tableId, participantId, baseline, personal
           </div>
         )}
 
-        <div className="closing-action-echoes">
+        {(actionEchoLoading || actionEchoError || actionEchoes.length > 0) && <div className="closing-action-echoes">
           <div className="closing-action-echoes-heading">
             <small>行动回响</small>
-            <span>只显示这张桌留下的真实行动项</span>
           </div>
           {actionEchoLoading && <p className="closing-empty" role="status">正在读取行动回响…</p>}
           {!actionEchoLoading && actionEchoError && <p className="closing-empty" role="alert">{actionEchoError}</p>}
-          {!actionEchoLoading && !actionEchoError && actionEchoes.length === 0 && <p className="closing-empty">这张桌暂时没有需要跟进的行动项。</p>}
           {!actionEchoLoading && !actionEchoError && actionEchoes.map((item) => (
             <div className="closing-action-echo" key={`${item.table_id}:${item.follow_up_index}`}>
               <div><small>{item.item_type === 'commitment' ? '承诺' : '建议'} · {actionStatusLabel(item.status)}</small><p>{item.text}</p></div>
               {item.note && <span>{item.note}</span>}
             </div>
           ))}
-        </div>
+        </div>}
 
         <div className="closing-echo">
-          <span>这道问题长出了下一桌。</span>
           <div className="closing-actions">
-            <button ref={dismissButtonRef} type="button" className="closing-dismiss" onClick={onDismiss}>先留在这张桌</button>
-            <button type="button" onClick={onReturn}>回到桌单 <i>→</i></button>
+            <button ref={dismissButtonRef} type="button" className="closing-dismiss" onClick={onDismiss}>关闭</button>
+            <button type="button" onClick={onReturn}>回到桌单</button>
           </div>
         </div>
       </section>

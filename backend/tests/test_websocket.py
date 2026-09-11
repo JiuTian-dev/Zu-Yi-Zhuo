@@ -721,7 +721,9 @@ def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
     }
     assert artifact["type"] == "close_artifact_ready"
     assert artifact["table_id"] == artifact["shared_baseline"]["table_id"] == "table-ws"
-    assert artifact["state_version"] == artifact["shared_baseline"]["state_version"] == 5
+    latest_summary = repository.latest_stage_summary("table-ws")
+    assert latest_summary is not None
+    assert artifact["state_version"] == artifact["shared_baseline"]["state_version"] == latest_summary.published_state_version + 1
     assert artifact["personal_card"]["participant_id"] == "p1"
     assert "personal_cards" not in artifact
     assert final_state["type"] == "table_state_changed"
@@ -730,7 +732,7 @@ def test_request_close_returns_ordered_shared_and_personal_artifacts() -> None:
     assert repository.get("table-ws").phase.value == "close"
     close_events = repository.behavior_events("p1")
     assert close_events[-1].event_type == "table_closed"
-    assert close_events[-1].state_version == 5
+    assert close_events[-1].state_version == artifact["state_version"]
 
 
 def test_request_close_for_unknown_query_participant_does_not_leak_personal_card() -> None:

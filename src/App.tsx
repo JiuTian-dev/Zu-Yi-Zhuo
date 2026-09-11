@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { tableHost } from './actors'
 import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
@@ -9,6 +9,7 @@ import { VIEWER_ID } from './live/identity'
 import ClosingCard from './live/ClosingCard'
 import DiscussionPanel from './live/DiscussionPanel'
 import StageSummaryPanel from './live/StageSummaryPanel'
+import ConversationSurface from './live/ConversationSurface'
 import IntentPanel from './live/IntentPanel'
 import type { HomeToMatchContextLike, LobbyFitPreviewLike, LobbyPreviewLike, MatchToHomeDraftLike, OpenTableContextLike } from './live/contract'
 import { loadLobby, loadLobbyFit, ensureTable } from './live/backend'
@@ -19,11 +20,14 @@ import TableWorld from './TableWorld'
 import { projectTableAnchor, setDayCycleMode, setRuntimeInteraction, transitionTableCamera, type DayCycleMode } from './bruno-runtime/runtimeController'
 import DrawerToggle from './DrawerToggle'
 
-const ACTION_LABELS: Record<string, string> = {
-  SILENCE: '安静听', PASS: '递话', PROBE: '追问', REFRAME: '换个角度', GROUND: '落在桌面', CLOSE: '收束',
-}
-
 type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
+type RoomLayer = 'none' | 'join' | 'menu' | 'settings' | 'history' | 'summary' | 'close_confirm' | 'closing'
+
+function roomLayerReducer(current: RoomLayer, action: { type: 'open'; layer: Exclude<RoomLayer, 'none'> } | { type: 'close'; layer?: RoomLayer }): RoomLayer {
+  if (action.type === 'open') return current === action.layer ? 'none' : action.layer
+  if (!action.layer || current === action.layer) return 'none'
+  return current
+}
 
 const DAY_CYCLE_MODE_KEY = 'zuoyizhuo.scene-time-mode'
 
@@ -82,17 +86,13 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [autoApproach, setAutoApproach] = useState(entryIntent === 'join')
-  const [joinOpen, setJoinOpen] = useState(false)
+  const [roomLayer, dispatchRoomLayer] = useReducer(roomLayerReducer, 'none')
   const [seatDraft, setSeatDraft] = useState('')
   const [joinError, setJoinError] = useState<string | null>(null)
   const [joinDismissed, setJoinDismissed] = useState(false)
   const [profileShared, setProfileShared] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [dayCycleMode, setDayCycleModeState] = useState<DayCycleMode>(readDayCycleMode)
   const [soundOn, setSoundOn] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [summaryOpen, setSummaryOpen] = useState(false)
   const experienceRef = useRef<HTMLElement>(null!)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const joinOpenerRef = useRef<HTMLButtonElement | null>(null)
@@ -108,9 +108,18 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const [closePending, setClosePending] = useState(false)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null)
+  const [evidenceTurnId, setEvidenceTurnId] = useState<number | null>(null)
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null)
-  const [closingCardOpen, setClosingCardOpen] = useState(false)
   const [heroCollapsed, setHeroCollapsed] = useState(false)
+  const joinOpen = roomLayer === 'join'
+  const menuOpen = roomLayer === 'menu'
+  const settingsOpen = roomLayer === 'settings'
+  const historyOpen = roomLayer === 'history'
+  const summaryOpen = roomLayer === 'summary'
+  const closeConfirmOpen = roomLayer === 'close_confirm'
+  const closingCardOpen = roomLayer === 'closing'
+  const openLayer = (layer: Exclude<RoomLayer, 'none'>) => dispatchRoomLayer({ type: 'open', layer })
+  const closeLayer = (layer?: RoomLayer) => dispatchRoomLayer({ type: 'close', layer })
 
   const liveStatus = useLive((state) => state.status)
   const liveMessages = useLive((state) => state.messages)
@@ -173,9 +182,9 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [])
 
   useEffect(() => {
-    setRuntimeInteraction(!historyOpen && !summaryOpen && !joinOpen && !menuOpen && !settingsOpen && !closingCardOpen)
+    setRuntimeInteraction(roomLayer === 'none')
     return () => setRuntimeInteraction(true)
-  }, [historyOpen, summaryOpen, joinOpen, menuOpen, settingsOpen, closingCardOpen])
+  }, [roomLayer])
 
   const focusOpenerFrom = (panelSelector: string, opener: HTMLButtonElement | null) => {
     const active = document.activeElement
@@ -184,20 +193,20 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const closeJoin = () => {
     focusOpenerFrom('.join-sheet', joinOpenerRef.current)
     setJoinDismissed(true)
-    setJoinOpen(false)
+    closeLayer('join')
   }
   const closeMenu = () => {
     focusOpenerFrom('.table-menu', menuButtonRef.current)
-    setMenuOpen(false)
+    closeLayer('menu')
   }
-  const closeSettings = () => setSettingsOpen(false)
+  const closeSettings = () => closeLayer('settings')
   const openJoin = (opener: HTMLButtonElement) => {
     if (liveViewerJoined || closeState !== 'idle') return
     joinOpenerRef.current = opener
     setJoinError(null)
     setJoinDismissed(false)
     setActionNotice(null)
-    setJoinOpen(true)
+    openLayer('join')
   }
 
   const confirmSeat = async () => {
@@ -221,7 +230,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
       // current invitation surface and is reset when returning to discovery.
       setJoinDismissed(true)
       setJoinError(null)
-      setJoinOpen(false)
+      closeLayer('join')
       const stored = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY) ?? '{}') as Record<string, unknown>
       sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ ...stored, joined: true }))
     } finally {
@@ -229,8 +238,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     }
   }
 
-  const submitMessage = (event: { preventDefault(): void }) => {
-    event.preventDefault()
+  const submitMessage = (event?: { preventDefault(): void }) => {
+    event?.preventDefault()
     if (!hasJoined || !liveActive || closeState !== 'idle') return
     if (!sendViewerMessage(messageDraft)) return
     setMessageDraft('')
@@ -271,7 +280,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   const requestStageSummaryFromUi = () => {
     if (!hasJoined || !liveActive || closeState !== 'idle') return
     if (!requestStageSummary()) setActionNotice('总结请求暂时没有送达，请确认实时连接后再试。')
-    else setSummaryOpen(true)
+    else openLayer('summary')
   }
 
   const sendSummaryFeedback = async (note: string, summary: NonNullable<typeof latestSummary>) => {
@@ -285,14 +294,19 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }
 
   const focusSummaryEvidence = (turnId: number) => {
-    const target = Array.from(document.querySelectorAll<HTMLElement>('[data-turn-id]')).find((item) => item.dataset.turnId === String(turnId))
-    if (target) {
-      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
-      target.focus({ preventScroll: true })
-      return
-    }
-    setSummaryOpen(false)
-    setHistoryOpen(true)
+    setEvidenceTurnId(turnId)
+    closeLayer('summary')
+    window.requestAnimationFrame(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('.conversation-stream [data-turn-id]')).find((item) => item.dataset.turnId === String(turnId))
+      if (target) {
+        target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+        target.focus({ preventScroll: true })
+        target.classList.add('is-evidence-focus')
+        window.setTimeout(() => target.classList.remove('is-evidence-focus'), 1800)
+        return
+      }
+      openLayer('history')
+    })
   }
 
   const requestCloseFromUi = () => {
@@ -312,7 +326,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }
 
   const dismissClosingCard = () => {
-    setClosingCardOpen(false)
+    closeLayer('closing')
     window.requestAnimationFrame(() => reopenClosingCardRef.current?.focus({ preventScroll: true }))
   }
 
@@ -320,13 +334,9 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     void transitionTableCamera({ mode: 'overview', reducedMotion })
     const active = document.activeElement
     if (active instanceof HTMLElement && active.closest('.join-sheet,.table-menu')) experienceRef.current?.focus({ preventScroll: true })
-    setJoinOpen(false)
-    setHistoryOpen(false)
-    setMenuOpen(false)
-    setSettingsOpen(false)
+    closeLayer()
     setJoinDismissed(false)
     setHeroCollapsed(false)
-    setSummaryOpen(false)
     setAutoApproach(false)
     setPhase('discovering')
   }
@@ -334,8 +344,9 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (historyOpen) setHistoryOpen(false)
-      else if (summaryOpen) setSummaryOpen(false)
+      if (historyOpen) closeLayer('history')
+      else if (summaryOpen) closeLayer('summary')
+      else if (closeConfirmOpen) closeLayer('close_confirm')
       else if (joinOpen) closeJoin()
       else if (menuOpen) closeMenu()
       else if (settingsOpen) closeSettings()
@@ -345,7 +356,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [historyOpen, summaryOpen, joinOpen, menuOpen, settingsOpen])
+  }, [historyOpen, summaryOpen, closeConfirmOpen, joinOpen, menuOpen, settingsOpen])
 
   useEffect(() => {
     setDayCycleMode(dayCycleMode)
@@ -376,8 +387,8 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
   }, [liveMessages, retryingMessageId])
 
   useEffect(() => {
-    if (closeState === 'ready') setClosingCardOpen(true)
-    if (closeState === 'idle') setClosingCardOpen(false)
+    if (closeState === 'ready') openLayer('closing')
+    if (closeState === 'idle') closeLayer('closing')
     if (closeState !== 'idle') {
       setClosePending(false)
       if (closeTimerRef.current !== null) {
@@ -436,7 +447,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
 
   const beginApproach = () => {
     if (phase !== 'discovering') return
-    setMenuOpen(false)
+    closeLayer('menu')
     setAutoApproach(false)
     setPhase('approaching')
     void transitionTableCamera({ mode: 'approach', reducedMotion }).then(() => setPhase('seated'))
@@ -456,7 +467,7 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     if (liveStatus !== 'live' && liveStatus !== 'mock') return
     if (liveViewerJoined || joinOpen || joinDismissed) return
     setJoinError(null)
-    setJoinOpen(true)
+    openLayer('join')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appPhase, entryIntent, autoApproach, phase, reducedMotion, liveStatus, liveViewerJoined, joinOpen, joinDismissed])
 
@@ -480,7 +491,6 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
     && notices.findIndex((candidate) => candidate.text === notice.text) === index)
   const speakingTurn = liveActive && liveSpeaking ? allTurns.find((turn) => turn.id === liveSpeaking) ?? null : null
   const currentTurn = speakingTurn ?? allTurns[0]
-  const lastLive = liveActive ? liveMessages[liveMessages.length - 1] ?? null : null
   return (
     <main ref={experienceRef} tabIndex={-1} inert={appPhase !== 'world' || historyOpen || closingCardOpen} aria-hidden={appPhase !== 'world' || historyOpen || closingCardOpen} className={`valley-experience app-${appPhase} phase-${phase} ${joinOpen ? 'has-join-open' : ''} ${listening ? 'is-listening' : ''}`}>
       <div className="world-grade" aria-hidden="true" />
@@ -493,10 +503,10 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
           {!seated && <button className={`icon-button ${soundOn ? '' : 'sound-unavailable'}`} type="button" aria-pressed={soundOn} aria-label={soundOn ? '关闭环境音' : '开启环境音'} title={soundOn ? '关闭环境音' : '开启环境音'} onClick={() => { const next = !soundOn; setSoundOn(next); setAmbient(next, 'valley') }}>
             <SoundIcon muted={!soundOn} />
           </button>}
-          {!seated && <button className="icon-button settings-button" type="button" aria-label={settingsOpen ? '关闭场景设置' : '打开场景设置'} aria-expanded={settingsOpen} title="场景设置" onClick={() => { setSettingsOpen((current) => !current); setMenuOpen(false) }}>
+          {!seated && <button className="icon-button settings-button" type="button" aria-label={settingsOpen ? '关闭场景设置' : '打开场景设置'} aria-expanded={settingsOpen} title="场景设置" onClick={() => openLayer('settings')}>
             <SettingsIcon />
           </button>}
-          <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label={menuOpen ? '关闭菜单' : '打开菜单'} aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}><span /><span /></button>
+          <button ref={menuButtonRef} className="icon-button menu-button" type="button" aria-label={menuOpen ? '关闭菜单' : '打开菜单'} aria-expanded={menuOpen} onClick={() => menuOpen ? closeMenu() : openLayer('menu')}><span /><span /></button>
         </div>
       </header>
 
@@ -584,36 +594,36 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
         <button className="seat-marker" type="button" data-anchor="viewer" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{hasJoined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
         <div className="conversation-dock">
-          <section className="drawer-card-content">
-            {liveActive && lastLive ? (
-              liveMessages.slice(-2).map((message, index, list) => (
-                <p key={`${message.participantId}-${liveMessages.length - list.length + index}`} data-turn-id={message.turnId} className={index === list.length - 1 ? 'is-latest' : 'is-previous'}>
-                  <b className={message.fromHost ? 'host-name' : ''}>
-                    {speakerName(message.participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}{message.action && ACTION_LABELS[message.action] ? ` · ${ACTION_LABELS[message.action]}` : ''}
-                  </b>
-                  “{message.text}”
-                  {message.delivery === 'pending' && <small className="message-delivery">正在送达</small>}
-                  {message.delivery === 'failed' && message.messageId && <button className="message-retry" type="button" disabled={retryingMessageId === message.messageId} onClick={() => retryMessage(message.messageId!)}>{retryingMessageId === message.messageId ? '发送中' : '重试'}</button>}
-                </p>
-              ))
-            ) : null}
-            {(latestSummary || summaryStatus === 'requested' || summaryStatus === 'running') && <button className="summary-message" type="button" onClick={() => setSummaryOpen(true)}>
-              <span>{summaryStatus === 'requested' || summaryStatus === 'running' ? '正在整理' : '阶段小结'}</span>
-              {latestSummary?.next_focus && <strong>{latestSummary.next_focus.text}</strong>}
-            </button>}
-            {tableInteractive && (
-              <form className="viewer-input" onSubmit={submitMessage}>
-                <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} placeholder="说点什么…" aria-label="对这桌发言" maxLength={140} />
-                <button type="submit" disabled={!messageDraft.trim()}>说</button>
-              </form>
-            )}
-          </section>
+          <ConversationSurface
+            messages={liveActive ? liveMessages : []}
+            summary={latestSummary}
+            summaryPending={summaryStatus === 'requested' || summaryStatus === 'running'}
+            canSend={tableInteractive}
+            draft={messageDraft}
+            retryingMessageId={retryingMessageId}
+            speakerName={(participantId) => speakerName(participantId, tableMembers, hasJoined ? VIEWER_ID : undefined)}
+            onDraftChange={setMessageDraft}
+            onSend={() => submitMessage()}
+            onRetry={retryMessage}
+            onOpenSummary={() => openLayer('summary')}
+          />
         </div>
-        <StageSummaryPanel open={summaryOpen} summary={latestSummary} history={summaryHistory} pending={summaryStatus} participantId={hasJoined ? VIEWER_ID : undefined} onClose={() => setSummaryOpen(false)} onRequest={requestStageSummaryFromUi} onFeedback={sendSummaryFeedback} onEvidence={focusSummaryEvidence} />
+        <StageSummaryPanel open={summaryOpen} summary={latestSummary} history={summaryHistory} pending={summaryStatus} participantId={hasJoined ? VIEWER_ID : undefined} onClose={() => closeLayer('summary')} onRequest={requestStageSummaryFromUi} onFeedback={sendSummaryFeedback} onEvidence={focusSummaryEvidence} />
+        {closeConfirmOpen && <div className="close-confirm-root">
+          <div className="close-confirm-veil" aria-hidden="true" onClick={() => closeLayer('close_confirm')} />
+          <aside className="close-confirm" role="dialog" aria-modal="true" aria-labelledby="close-confirm-title">
+            <h2 id="close-confirm-title">结束这桌讨论？</h2>
+            <p>结束后，大家仍能回看这次讨论。</p>
+            <div>
+              <button type="button" autoFocus onClick={() => closeLayer('close_confirm')}>继续聊</button>
+              <button type="button" className="is-primary" onClick={() => { requestCloseFromUi(); closeLayer('close_confirm') }}>结束讨论</button>
+            </div>
+          </aside>
+        </div>}
         {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
         {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard tableId={table.id} participantId={VIEWER_ID} baseline={liveBaseline} personalCard={livePersonalCard} onDismiss={dismissClosingCard} onReturn={onExit} />}
-        {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => setClosingCardOpen(true)}>打开收桌卡 <span>↗</span></button>}
-        <DiscussionPanel open={historyOpen} tableId={table.id} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} onClose={() => setHistoryOpen(false)} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
+        {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => openLayer('closing')}>查看收桌内容</button>}
+        <DiscussionPanel open={historyOpen} tableId={table.id} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} focusTurnId={evidenceTurnId} onClose={() => closeLayer('history')} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
         {!hasJoined && <button className="join-table-button" type="button" disabled={closeState !== 'idle'} onClick={(event) => openJoin(event.currentTarget)}><i />坐下</button>}
       </section>
 
@@ -628,10 +638,10 @@ function ValleyExperience({ onExit, appPhase, entryIntent, table, lobby, discove
 
       <nav className={`table-menu ${menuOpen ? 'is-open' : ''}`} aria-label={seated ? '桌内菜单' : '正在发生的桌'} aria-hidden={!menuOpen} inert={!menuOpen}>
         {seated ? <>
-          {tableInteractive && <button type="button" onClick={() => { setSummaryOpen(true); closeMenu() }}>阶段小结</button>}
-          <button type="button" onClick={() => { setHistoryOpen(true); closeMenu() }}>聊天记录</button>
+          {tableInteractive && <button type="button" onClick={() => openLayer('summary')}>阶段小结</button>}
+          <button type="button" onClick={() => openLayer('history')}>讨论依据</button>
           {tableInteractive && <button type="button" disabled={nudgePending} onClick={() => { requestNudgeFromUi(); closeMenu() }}>{nudgePending ? '主持人正在看' : '请主持人介入'}</button>}
-          {tableInteractive && <button type="button" disabled={closePending} onClick={() => { requestCloseFromUi(); closeMenu() }}>{closePending ? '正在收桌' : '收桌'}</button>}
+          {tableInteractive && <button type="button" disabled={closePending} onClick={() => openLayer('close_confirm')}>{closePending ? '正在结束' : '结束这桌'}</button>}
           <button type="button" onClick={resetDiscovery}>离开</button>
         </> : <>
         <p>{discovery.length ? `${discovery.length} 张正在发生` : '当前桌'}</p>

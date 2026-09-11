@@ -119,7 +119,7 @@ def test_rest_close_broadcasts_public_close_event_and_state() -> None:
     }
     assert closed == {
         "type": "table_closed",
-        "state_version": 2,
+            "state_version": 3,
     }
     assert changed["type"] == "table_state_changed"
     assert changed["state"]["conversation"]["closed"] is True

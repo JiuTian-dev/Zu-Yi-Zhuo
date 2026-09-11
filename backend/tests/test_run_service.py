@@ -5,6 +5,14 @@ from app.domain import ParticipantSeed
 from app.orchestrator.run_service import TableRunService
 
 
+class _HangingProvider:
+    model = "hanging-test-model"
+
+    async def text(self, task, messages, config=None):
+        await asyncio.sleep(1)
+        return "unreachable"
+
+
 def setup_repo() -> InMemoryTableRepository:
     repo = InMemoryTableRepository()
     repo.create("table-1", "Q", [
@@ -51,6 +59,26 @@ def test_run_service_merges_pending_triggers_and_does_not_publish_on_budget_only
     assert repo.latest_stage_summary("table-1") is None
 
 
+def test_run_service_falls_back_when_provider_exceeds_the_deadline() -> None:
+    repo = setup_repo()
+    events: list[dict] = []
+
+    async def exercise() -> None:
+        service = TableRunService(
+            repo,
+            provider=_HangingProvider(),
+            broadcast=lambda _table_id, event: _collect(events, event),
+            deadline_seconds=0.01,
+        )
+        await service.enqueue("table-1", manual=True)
+        await service.wait_idle("table-1")
+
+    asyncio.run(exercise())
+    assert [event["type"] for event in events] == ["stage_summary_started", "stage_summary_published"]
+    summary = repo.latest_stage_summary("table-1")
+    assert summary is not None and summary.used_fallback is True
+    assert summary.model == "deterministic-fallback"
+
+
 async def _collect(target: list, value) -> None:
     target.append(value)
-

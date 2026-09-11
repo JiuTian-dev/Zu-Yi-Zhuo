@@ -880,10 +880,16 @@ def register_websocket_routes(
                             "reason": "participant_requested_close",
                         })
                         try:
-                            build_shared_baseline(state, turns=repository.turns(table_id))
+                            service = getattr(api.state, "table_run_service", None)
+                            if service is not None and repository.turns(table_id):
+                                await service.enqueue(table_id, pre_close=True, silent=True)
+                                await service.wait_idle(table_id)
+                                state = repository.get(table_id)
+                            latest_summary = repository.latest_stage_summary(table_id)
+                            build_shared_baseline(state, turns=repository.turns(table_id), latest_summary=latest_summary)
                             state = repository.close_table_for_participant(table_id, participant_id)
-                            baseline = build_shared_baseline(state, turns=repository.turns(table_id))
-                            personal_card = build_personal_card(state, participant_id)
+                            baseline = build_shared_baseline(state, turns=repository.turns(table_id), latest_summary=latest_summary)
+                            personal_card = build_personal_card(state, participant_id, latest_summary=latest_summary)
                         except ValueError as error:
                             await _send_error(websocket, "close_artifact_unavailable", str(error))
                             continue
