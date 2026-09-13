@@ -15,7 +15,8 @@ export class Bushes
         const anchor = TABLE_ANCHORS.valley
         const references = this.game.resources.bushesReferences.scene.children.filter(source =>
             Math.hypot(source.position.x - anchor.x, source.position.z - anchor.z) < 36)
-        this.foliage = new Foliage(references, this.colorANode, this.colorBNode)
+        // Use the same crossed leaf clusters as tree crowns for a full camera orbit.
+        this.foliage = new Foliage(references, this.colorANode, this.colorBNode, false, true)
 
         // Debug
         if(this.game.debug.active)
