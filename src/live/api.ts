@@ -21,6 +21,7 @@ import type {
   StageSummaryFeedbackKindLike,
   StageSummaryFeedbackLike,
   StageSummaryLike,
+  DemoCaseLike,
 } from './contract'
 
 const API_TIMEOUT_MS = 4500
@@ -86,6 +87,21 @@ function query(params: Record<string, string | number | undefined>) {
   })
   const suffix = search.toString()
   return suffix ? `?${suffix}` : ''
+}
+
+export function fetchDemoCase() {
+  return requestJson<DemoCaseLike>('/demo/cases/ai_friendship')
+}
+
+export function createDemoSession(participantId: string, requestId: string) {
+  return requestJson<{ table_id: string; state: TableStateLike }>('/demo/sessions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant_id: participantId, display_name: '你', request_id: requestId }),
+  })
+}
+
+export function resumeDemoSession(tableId: string, participantId: string) {
+  return requestJson<unknown>(`/demo/sessions/${encodeURIComponent(tableId)}/resume${query({ participant_id: participantId })}`, { method: 'POST' })
 }
 
 export function fetchDiscovery(limit = 20) {

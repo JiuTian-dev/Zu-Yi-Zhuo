@@ -230,6 +230,7 @@ def test_human_message_commits_contract_and_persists_host_intervention() -> None
         "message": {
             "message_id": "msg-1", "participant_id": "p1",
             "text": "我亲历过采购，预算和责任需要澄清。", "client_ts": "2026-08-31T12:00:00Z",
+            "turn_id": 1, "state_version": 3,
         },
     }
     assert human_state["type"] == "table_state_changed"

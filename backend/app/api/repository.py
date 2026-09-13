@@ -12,7 +12,7 @@ from threading import RLock
 from typing import Any
 
 from app.domain import Action, ActionEchoEntry, AgentRunRecord, BehaviorEvent, CommentPromotion, ContentSignal, ConversationMode, FollowUpOutcome, GroundingCard, HumanTurn, Invitation, InvitationPreference, InvitationStatus, InterventionRecord, JoinRequest, Level, NoMatchPreference, ParticipantSeed, PeripheralComment, PersonalContextConsent, Phase, QuestionFootprintEntry, QuestionFootprintNextTable, RelationshipMemory, SafetyLevel, SafetyReport, SafetyReportStatusAudit, SafetyResolution, StageSummary, StageSummaryFeedback, TableState, ValueFeedback
-from app.domain.schemas import ParticipantState
+from app.domain.schemas import DemoSession, ParticipantState, SimulationGeneration
 from app.orchestrator import build_initial_state, build_personal_card, build_shared_baseline, observe_turn
 
 MAX_TABLE_PARTICIPANTS = 5
@@ -24,6 +24,16 @@ MAX_ACTION_ECHO_ITEMS = 50
 MAX_JOIN_REQUESTS_PER_TABLE = 50
 MAX_SAFETY_STRIKES_PER_PARTICIPANT = 2
 MAX_SAVED_TABLES_PER_PARTICIPANT = 100
+
+
+def _validate_message_source(
+    state: TableState, participant_id: str, source: str, expected_state_version: int | None,
+) -> None:
+    if expected_state_version is not None and state.version != expected_state_version:
+        raise ValueError("stale message generation")
+    simulated = state.demo is not None and participant_id in state.demo.simulated_participant_ids
+    if simulated != (source == "simulated"):
+        raise ValueError("message source does not match participant identity")
 
 
 def _index_public_source_signals(
@@ -191,6 +201,7 @@ class InMemoryTableRepository:
         origin_table_id: str | None = None,
         origin_signal_ids: Sequence[str] | None = None,
         origin_signals: Sequence[ContentSignal] | None = None,
+        demo: DemoSession | None = None,
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
@@ -212,6 +223,10 @@ class InMemoryTableRepository:
             origin_table_id,
             origin_ids,
         )
+        if demo is not None:
+            if set(state.participants) != {demo.owner_participant_id, *demo.simulated_participant_ids}:
+                raise ValueError("demo participants must match the owner and simulated identities")
+            state.demo = demo.model_copy(deep=True)
         self._states[table_id] = [state]
         self._turns[table_id] = []
         self._interventions[table_id] = []
@@ -253,6 +268,8 @@ class InMemoryTableRepository:
     def add_participant(self, table_id: str, seed: ParticipantSeed) -> TableState:
         seed = self.apply_account_invitation_preference(seed)
         state = self.get(table_id)
+        if state.demo is not None:
+            raise ValueError("demo participants are fixed for this session")
         if state.conversation.closed:
             raise ValueError("table is closed")
         if state.conversation.soft_expired:
@@ -1034,6 +1051,8 @@ class InMemoryTableRepository:
                 continue
             card = build_personal_card(state, participant_id)
             for relationship in card.worth_continuing_with:
+                if state.demo is not None and relationship.participant_id in state.demo.simulated_participant_ids:
+                    continue
                 other = state.participants.get(relationship.participant_id)
                 if other is None:
                     continue
@@ -1309,7 +1328,9 @@ class InMemoryTableRepository:
 
     @_synchronized
     def append_message_once(
-        self, table_id: str, participant_id: str, text: str, message_id: str
+        self, table_id: str, participant_id: str, text: str, message_id: str,
+        *, source: str = "human", generation: SimulationGeneration | None = None,
+        expected_state_version: int | None = None,
     ) -> tuple[TableState, bool]:
         """Atomically commit one client message, returning ``(state, created)``.
 
@@ -1318,6 +1339,7 @@ class InMemoryTableRepository:
         while reusing an id for different content is rejected.
         """
         current = self.get(table_id)
+        _validate_message_source(current, participant_id, source, expected_state_version)
         if current.conversation.closed:
             raise ValueError("table is closed")
         if current.conversation.soft_expired:
@@ -1335,6 +1357,8 @@ class InMemoryTableRepository:
             participant_id=participant_id,
             text=text,
             message_id=message_id,
+            source=source,
+            generation=generation,
         )
         state = observe_turn(current, turn)
         self._turns[table_id].append(turn)
@@ -1834,6 +1858,7 @@ class JsonTableRepository(InMemoryTableRepository):
         origin_table_id: str | None = None,
         origin_signal_ids: Sequence[str] | None = None,
         origin_signals: Sequence[ContentSignal] | None = None,
+        demo: DemoSession | None = None,
     ) -> TableState:
         if table_id in self._states:
             raise ValueError(f"table already exists: {table_id}")
@@ -1855,6 +1880,10 @@ class JsonTableRepository(InMemoryTableRepository):
             origin_table_id,
             origin_ids,
         )
+        if demo is not None:
+            if set(state.participants) != {demo.owner_participant_id, *demo.simulated_participant_ids}:
+                raise ValueError("demo participants must match the owner and simulated identities")
+            state.demo = demo.model_copy(deep=True)
         states = {**self._states, table_id: [state]}
         turns = {**self._turns, table_id: []}
         interventions = {**self._interventions, table_id: []}
@@ -2231,10 +2260,13 @@ class JsonTableRepository(InMemoryTableRepository):
 
     @_synchronized
     def append_message_once(
-        self, table_id: str, participant_id: str, text: str, message_id: str
+        self, table_id: str, participant_id: str, text: str, message_id: str,
+        *, source: str = "human", generation: SimulationGeneration | None = None,
+        expected_state_version: int | None = None,
     ) -> tuple[TableState, bool]:
         """Atomically commit one client message and persist the idempotency key."""
         current = self.get(table_id)
+        _validate_message_source(current, participant_id, source, expected_state_version)
         if current.conversation.closed:
             raise ValueError("table is closed")
         if current.conversation.soft_expired:
@@ -2252,6 +2284,8 @@ class JsonTableRepository(InMemoryTableRepository):
             participant_id=participant_id,
             text=text,
             message_id=message_id,
+            source=source,
+            generation=generation,
         )
         state = observe_turn(current, turn)
         snapshot = TableState.model_validate(state.model_dump())

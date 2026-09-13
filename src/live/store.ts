@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike, StageSummaryLike, StageSummaryFeedbackLike } from './contract'
+import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike, StageSummaryLike, StageSummaryFeedbackLike, ParticipantResponseStatusLike } from './contract'
 
 export interface LiveMessage {
   participantId: string
@@ -9,6 +9,8 @@ export interface LiveMessage {
   action: AgentActionName | null
   messageId?: string
   delivery?: 'pending' | 'committed' | 'failed'
+  source?: 'human' | 'simulated'
+  stateVersion?: number
 }
 
 export interface LiveStatus {
@@ -34,6 +36,7 @@ export interface LiveStatus {
   summaryFeedback: StageSummaryFeedbackLike[]
   summaryStatus: 'idle' | 'requested' | 'running' | 'failed'
   lastError: string | null
+  responses: Record<string, ParticipantResponseStatusLike>
 }
 
 const initial: LiveStatus = {
@@ -59,6 +62,7 @@ const initial: LiveStatus = {
   summaryFeedback: [],
   summaryStatus: 'idle',
   lastError: null,
+  responses: {},
 }
 
 let state: LiveStatus = initial

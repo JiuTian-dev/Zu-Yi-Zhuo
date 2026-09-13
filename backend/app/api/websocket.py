@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, ValidationError
 
 from app.domain import Action, AgentActionEvent, InvitationPreference, InterventionRecord, PeripheralComment, ReflectionResult, RouteDecision, SafetyLevel, TableState
-from app.domain.schemas import EvidenceStatement
+from app.domain.schemas import EvidenceStatement, SimulationGeneration
 from app.orchestrator import (
     build_personal_card,
     build_shared_baseline,
@@ -138,6 +138,15 @@ class _ParticipantJoined(_ClientEvent):
 class _ParticipantLeft(_ClientEvent):
     type: Literal["participant_left"]
     participant_id: str = Field(min_length=1)
+
+
+class _ParticipantTyping(_ClientEvent):
+    type: Literal["participant_typing"]
+    is_typing: bool
+
+
+class _DuplicateMessage(ValueError):
+    pass
 
 
 class _ParticipantConsent(_ClientEvent):
@@ -323,8 +332,24 @@ def register_websocket_routes(
     async def broadcast(table_id: str, payload: dict) -> None:
         await _broadcast(table_id, lambda _viewer_id: payload)
         await _publish_bus(table_id, kind="event", payload=payload)
+        demo = getattr(api.state, "judge_demo_service", None)
+        if demo is not None:
+            if payload.get("type") == "stage_summary_started":
+                await demo.summary_started(table_id)
+                for task in tuple(host_tasks):
+                    if getattr(task, "demo_table_id", None) == table_id:
+                        task.cancel()
+            elif payload.get("type") in {"stage_summary_published", "stage_summary_failed"}:
+                await demo.summary_finished(table_id)
 
     async def broadcast_state(table_id: str, state: TableState) -> None:
+        demo = getattr(api.state, "judge_demo_service", None)
+        if demo is not None and state.demo is not None and (
+            state.conversation.closed or state.conversation.soft_expired
+            or state.demo.owner_participant_id not in state.participants
+            or state.conversation.safety_level is SafetyLevel.CRITICAL
+        ):
+            await demo.stop(table_id)
         sent = await state_broadcast.send(
             table_id,
             state.version,
@@ -377,12 +402,20 @@ def register_websocket_routes(
         rewriting the newer table state.
         """
         async def run() -> None:
+            response_id = uuid4().hex
+            show_status = state.demo is not None and provider is not None
             try:
+                if show_status:
+                    await broadcast(table_id, {"type": "participant_response_status", "table_id": table_id,
+                        "participant_id": state.agent.agent_id, "response_id": response_id, "status": "thinking"})
                 action = await generate_host_event_with_provider(
                     state, route, grounding_card, provider
                 )
                 current = repository.get(table_id)
                 if current.version != state.version:
+                    return
+                demo = getattr(api.state, "judge_demo_service", None)
+                if state.demo is not None and (demo is None or not demo.active(table_id)):
                     return
                 agent_turn_id = f"{table_id}:agent:{current.version + 1}"
                 final_state = record_intervention(current, route, agent_turn_id)
@@ -424,8 +457,13 @@ def register_websocket_routes(
                 # A close, safety pause, or competing writer can invalidate a
                 # queued intervention. The committed human turn remains valid.
                 return
+            finally:
+                if show_status:
+                    await broadcast(table_id, {"type": "participant_response_status", "table_id": table_id,
+                        "participant_id": state.agent.agent_id, "response_id": response_id, "status": "idle"})
 
         task = asyncio.create_task(run())
+        task.demo_table_id = table_id if state.demo is not None else None
         host_tasks.add(task)
         task.add_done_callback(host_tasks.discard)
 
@@ -525,6 +563,87 @@ def register_websocket_routes(
     api.state.table_broadcast_state = broadcast_state
     api.state.table_broadcast_safety = broadcast_safety
 
+    async def commit_message(
+        table_id: str, participant_id: str, text: str, message_id: str, *,
+        source: str = "human", generation: SimulationGeneration | None = None,
+        expected_state_version: int | None = None, client_ts=None,
+        orchestrate: bool = True, already_locked: bool = False,
+    ) -> TableState:
+        """One validated durable-commit/fanout path for real and simulated speech."""
+        lock = table_locks.setdefault(table_id, asyncio.Lock())
+        if not already_locked:
+            await lock.acquire()
+        try:
+            current = repository.get(table_id)
+            if participant_id not in current.participants:
+                raise ValueError("unknown participant")
+            if current.conversation.closed or current.conversation.soft_expired:
+                raise ValueError("table is not active")
+            if current.conversation.safety_level is SafetyLevel.CRITICAL:
+                raise ValueError("table is paused for safety review")
+            turn_id = max((item.turn_id for item in repository.turns(table_id)), default=0) + 1
+            safety = evaluate_safety(text, turn_id)
+            if safety.blocked:
+                raise ValueError("message did not pass safety validation")
+            state, created = repository.append_message_once(table_id, participant_id, text, message_id,
+                source=source, generation=generation, expected_state_version=expected_state_version)
+            if not created:
+                raise _DuplicateMessage("message_id is already committed for this table")
+            turn = next(t for t in reversed(repository.turns(table_id)) if t.message_id == message_id)
+            await broadcast(table_id, {"type": "message_committed", "message": {
+                **turn.model_dump(mode="json"), "client_ts": client_ts if client_ts is not None else clock(),
+                "state_version": state.version,
+            }})
+            await broadcast_state(table_id, state)
+            if orchestrate:
+                reflected = _reflect_latest_intervention(repository, table_id, state)
+                gate, route = decide_intervention(state)
+                if gate.should_speak and route.action is not Action.SILENCE:
+                    card = repository.peek_trusted_grounding_card(table_id) if route.action is Action.GROUND else None
+                    schedule_host_intervention(table_id, state, gate, route, card)
+                if safety.level is SafetyLevel.ELEVATED:
+                    await broadcast(table_id, {"type": "safety_soft_intervention", "text": "我们先把观点和人分开，回到具体经历。", "state_version": state.version})
+                if reflected is not None:
+                    await broadcast(table_id, {"type": "intervention_reflected", "record": reflected.model_dump(mode="json")})
+                demo = getattr(api.state, "judge_demo_service", None)
+                if state.demo and demo is not None and source == "human":
+                    await demo.owner_message(table_id)
+                if state.demo and source == "simulated" and generation is not None and generation.kind == "llm":
+                    latest = repository.latest_stage_summary(table_id)
+                    uncovered = [t for t in repository.turns(table_id) if latest is None or t.turn_id > latest.covered_turn_end]
+                    if len(uncovered) >= 6 and len({t.participant_id for t in uncovered}) >= 3:
+                        trigger = "disagreement_changed" if state.disagreements else (
+                            "thread_advanced" if state.conversation.most_promising_thread else None)
+                        run_service = getattr(api.state, "table_run_service", None)
+                        if trigger and run_service is not None:
+                            await run_service.enqueue(table_id, semantic_trigger=trigger)
+            return state
+        finally:
+            if not already_locked:
+                lock.release()
+
+    api.state.table_commit_message = commit_message
+    conversation_previous_lifespan = api.router.lifespan_context
+
+    @asynccontextmanager
+    async def _conversation_lifespan(application: FastAPI):
+        async with conversation_previous_lifespan(application):
+            try:
+                yield
+            finally:
+                demo = getattr(api.state, "judge_demo_service", None)
+                if demo is not None:
+                    await demo.close()
+                service = getattr(api.state, "table_run_service", None)
+                if service is not None:
+                    await service.close()
+                tasks = list(host_tasks)
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    api.router.lifespan_context = _conversation_lifespan
+
     @api.websocket("/ws/tables/{table_id}")
     async def table_events(
         websocket: WebSocket,
@@ -564,6 +683,10 @@ def register_websocket_routes(
             await _send_error(websocket, "unknown_participant", f"unknown participant: {participant_id}")
             await websocket.close(code=1008)
             return
+        if state.demo is not None and participant_id != state.demo.owner_participant_id:
+            await _send_error(websocket, "demo_owner_only", "模拟桌友不能通过客户端登录或发言")
+            await websocket.close(code=1008)
+            return
 
         connection_viewer_id = participant_id if viewer_mode == "participant" else ""
         connections.setdefault(table_id, {})[websocket] = connection_viewer_id
@@ -571,6 +694,9 @@ def register_websocket_routes(
         if viewer_mode in {"observer", "commenter"}:
             await websocket.send_json(_state_event(project_state_for_viewer(state, None)))
         table_lock = table_locks.setdefault(table_id, asyncio.Lock())
+        demo_service = getattr(api.state, "judge_demo_service", None)
+        if demo_service is not None and viewer_mode == "participant":
+            await demo_service.connected(table_id, participant_id)
         try:
             while True:
                 try:
@@ -720,10 +846,10 @@ def register_websocket_routes(
                             await broadcast_safety(table_id, safety, state)
                             continue
 
-                        state, created = repository.append_message_once(
-                            table_id, participant_id, event.text, event.message_id
-                        )
-                        if not created:
+                        try:
+                            await commit_message(table_id, participant_id, event.text, event.message_id,
+                                                 client_ts=event.client_ts, already_locked=True)
+                        except _DuplicateMessage:
                             await _send_error(
                                 websocket,
                                 "duplicate_message",
@@ -731,37 +857,10 @@ def register_websocket_routes(
                                 message_id=event.message_id,
                             )
                             continue
-                        # Commit and fan out the human turn before any provider
-                        # call. The table stays responsive while Host thinks.
-                        await broadcast(table_id, {
-                            "type": "message_committed",
-                            "message": {
-                                "message_id": event.message_id,
-                                "participant_id": event.participant_id,
-                                "text": event.text,
-                                "client_ts": event.client_ts,
-                            },
-                        })
-                        await broadcast_state(table_id, state)
-                        reflected = _reflect_latest_intervention(repository, table_id, state)
-                        gate, route = decide_intervention(state)
-                        if gate.should_speak and route.action is not Action.SILENCE:
-                            grounding_card = (
-                                repository.peek_trusted_grounding_card(table_id)
-                                if route.action is Action.GROUND else None
-                            )
-                            schedule_host_intervention(table_id, state, gate, route, grounding_card)
-                        if safety.level is SafetyLevel.ELEVATED:
-                            await broadcast(table_id, {
-                                "type": "safety_soft_intervention",
-                                "text": "我们先把观点和人分开，回到具体经历。",
-                                "state_version": state.version,
-                            })
-                        if reflected is not None:
-                            await broadcast(table_id, {
-                                "type": "intervention_reflected",
-                                "record": reflected.model_dump(mode="json"),
-                            })
+                    elif payload["type"] == "participant_typing":
+                        event = _ParticipantTyping.model_validate(payload)
+                        if demo_service is not None and state.demo is not None:
+                            await demo_service.typing(table_id, participant_id, event.is_typing)
                     elif payload["type"] == "request_nudge":
                         _RequestNudge.model_validate(payload)
                         try:
@@ -873,6 +972,8 @@ def register_websocket_routes(
                         state = repository.get(table_id)
                         if participant_id not in state.participants:
                             raise ValueError(f"unknown participant: {participant_id}")
+                        if demo_service is not None and state.demo is not None:
+                            await demo_service.stop(table_id, closing=True)
                         await broadcast(table_id, {
                             "type": "close_started",
                             "table_id": table_id,
@@ -891,6 +992,8 @@ def register_websocket_routes(
                             baseline = build_shared_baseline(state, turns=repository.turns(table_id), latest_summary=latest_summary)
                             personal_card = build_personal_card(state, participant_id, latest_summary=latest_summary)
                         except ValueError as error:
+                            if demo_service is not None and state.demo is not None:
+                                await demo_service.abort_close(table_id)
                             await _send_error(websocket, "close_artifact_unavailable", str(error))
                             continue
                         await websocket.send_json({
@@ -911,6 +1014,8 @@ def register_websocket_routes(
                     if mutates_table:
                         table_lock.release()
         finally:
+            if demo_service is not None and viewer_mode == "participant":
+                await demo_service.disconnected(table_id, participant_id)
             peers = connections.get(table_id)
             if peers is not None:
                 peers.pop(websocket, None)

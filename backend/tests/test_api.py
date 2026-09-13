@@ -791,6 +791,7 @@ def test_capabilities_describe_runtime_paths_without_secrets() -> None:
         "oauth_configured": False,
         "websocket_available": True,
         "max_table_participants": 5,
+        "judge_demo_available": False,
     }
     assert "token" not in response.text
     assert "command" not in response.text
@@ -813,6 +814,7 @@ def test_capabilities_reflect_injected_provider_sources() -> None:
         "oauth_configured": False,
         "websocket_available": True,
         "max_table_participants": 5,
+        "judge_demo_available": False,
     }
 
 

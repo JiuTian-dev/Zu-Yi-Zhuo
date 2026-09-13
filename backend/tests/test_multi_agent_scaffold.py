@@ -200,3 +200,26 @@ def test_structured_specialist_uses_typed_fallback_after_one_retry() -> None:
     assert result.attempts == 2
     assert result.used_fallback
     assert result.value.covered_turn_end == 4
+
+
+def test_specialist_context_omits_unconsented_profile_values():
+    import json
+
+    current = state()
+    current.participants["p1"].declared_position = "private-position-never-send"
+    captured = []
+
+    class CapturingProvider(BrokenProvider):
+        async def structured(self, task, messages, schema, config=None):
+            captured.extend(messages)
+            return {"not": "valid"}
+
+    specialist = StructuredSpecialist(
+        role="stage_summarizer", task="summarize", schema=StageSummaryDraft,
+        fallback_factory=lambda context: build_fallback_summary_draft(
+            context.table_state, context.delta_turns, trigger="manual",
+        ),
+    )
+    asyncio.run(specialist.run(CapturingProvider(), build_agent_context(current, turns())))
+    assert "private-position-never-send" not in json.dumps(captured)
+    assert current.participants["p1"].declared_position == "private-position-never-send"

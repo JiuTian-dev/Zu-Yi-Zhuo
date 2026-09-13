@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+import math
 import time
 from uuid import uuid4
 
@@ -36,8 +37,8 @@ class TableRunService:
         deadline_seconds: float = 8.0,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        if deadline_seconds <= 0:
-            raise ValueError("deadline_seconds must be positive")
+        if not math.isfinite(deadline_seconds) or not 0 < deadline_seconds <= 120:
+            raise ValueError("deadline_seconds must be finite and between 0 and 120 seconds")
         self.repository = repository
         self.provider = provider
         self.broadcast = broadcast
@@ -121,12 +122,12 @@ class TableRunService:
             manual_requested=manual,
             pre_close=pre_close,
         )
+        if not context.delta_turns:
+            if not silent and (manual or pre_close):
+                await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "no_uncovered_turns", "detail": "没有新的未总结发言"})
+            return
         # Quantity thresholds schedule review but do not publish a summary by themselves.
         if decision.trigger is None:
-            return
-        if not context.delta_turns:
-            if not silent:
-                await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "no_uncovered_turns", "detail": "没有新的未总结发言"})
             return
         turn_id = context.delta_turns[-1].turn_id
         run_id = f"{table_id}:agent-run:{state.version}:{uuid4().hex[:8]}"
@@ -142,30 +143,12 @@ class TableRunService:
                 "input_state_version": state.version,
                 "trigger": decision.trigger,
                 })
-            try:
-                specialist_outputs, specialist_meta = await asyncio.wait_for(
-                    self._run_specialists(context), timeout=self.deadline_seconds
-                )
-            except asyncio.TimeoutError:
-                specialist_outputs = {
-                    "content_analyst": ContentAnalystAgent().fallback_factory(context),
-                    "participation_analyst": ParticipationAnalystAgent().fallback_factory(context),
-                }
-                specialist_meta = {
-                    "roles": ["content_analyst", "participation_analyst", "facilitation_strategist"],
-                    "attempts": 1,
-                    "used_fallback": True,
-                }
+            draft, draft_used_fallback, specialist_outputs, specialist_meta = await self._prepare_summary(
+                context, decision.trigger
+            )
             # Strategy remains a typed proposal; the existing deterministic
             # host loop is still the sole action/state writer for this phase.
             propose_action(context, specialist_outputs.get("content_analyst"), specialist_outputs.get("participation_analyst"))
-            try:
-                draft, draft_used_fallback = await asyncio.wait_for(
-                    self._draft(context, decision.trigger), timeout=self.deadline_seconds
-                )
-            except asyncio.TimeoutError:
-                draft = StageSummarizerAgent(trigger=decision.trigger).fallback_factory(context)
-                draft_used_fallback = True
             verification = SummaryVerifierAgent().verify(draft, context)
             if verification.decision != "approved":
                 if not silent:
@@ -199,7 +182,9 @@ class TableRunService:
                 published_state_version=current.version + 1,
                 created_at=self.clock(),
                 model="deterministic-fallback" if draft_used_fallback else str(getattr(self.provider, "model", "custom")),
-                used_fallback=draft_used_fallback or specialist_meta["used_fallback"],
+                # A separate analysis fallback does not mean this public text
+                # stopped being model-generated and verified.
+                used_fallback=draft_used_fallback,
             )
             next_state = current.model_copy(update={
                 "version": current.version + 1,
@@ -215,6 +200,11 @@ class TableRunService:
             if not silent and self.broadcast_state is not None:
                 await self.broadcast_state(table_id, committed)
             await self._record_run(run_id, table_id, turn_id, state.version, "summary_published", started, invoked_agents=specialist_meta["roles"] + ["stage_summarizer", "summary_verifier"], attempts=specialist_meta["attempts"], used_fallback=draft_used_fallback or specialist_meta["used_fallback"])
+        except asyncio.CancelledError:
+            if not silent:
+                await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "cancelled", "detail": "已停止整理"})
+            await self._record_run(run_id, table_id, turn_id, state.version, "cancelled", started, error_code="cancelled")
+            raise
         except asyncio.TimeoutError:
             if not silent:
                 await self._emit(table_id, {"type": "stage_summary_failed", "table_id": table_id, "input_state_version": state.version, "code": "deadline", "detail": "总结超过时间预算"})
@@ -226,6 +216,46 @@ class TableRunService:
         finally:
             await self.lease_store.release(table_id, state.version)
 
+    async def _prepare_summary(self, context, trigger: StageSummaryTrigger):
+        """Generation and verification share one deadline and at most five calls.
+
+        The two independent analysts each get one attempt while the draft gets
+        one schema-repair retry. A model draft gets one semantic verification.
+        Slow analysts never hold up a usable summary or extend its budget.
+        """
+        fallback = StageSummarizerAgent(trigger=trigger).fallback_factory(context)
+        draft, used_fallback = fallback, True
+        draft_attempts = 1
+        specialist_outputs = {
+            "content_analyst": ContentAnalystAgent().fallback_factory(context),
+            "participation_analyst": ParticipationAnalystAgent().fallback_factory(context),
+        }
+        specialist_meta = {
+            "roles": ["content_analyst", "participation_analyst", "facilitation_strategist"],
+            "attempts": 1,
+            "used_fallback": True,
+        }
+        specialists = asyncio.create_task(self._run_specialists(context))
+        try:
+            async with asyncio.timeout(self.deadline_seconds):
+                draft, used_fallback, draft_attempts = await self._draft(context, trigger)
+                verifier = SummaryVerifierAgent()
+                verification = verifier.verify(draft, context)
+                if verification.decision == "approved" and not used_fallback and self.provider is not None:
+                    review = await verifier.review(self.provider, draft, context)
+                    verification = review.value
+                if verification.decision != "approved":
+                    draft, used_fallback = fallback, True
+        except (asyncio.TimeoutError, ValueError):
+            draft, used_fallback = fallback, True
+        finally:
+            if not specialists.done():
+                specialists.cancel()
+            with suppress(asyncio.CancelledError):
+                specialist_outputs, specialist_meta = await specialists
+        specialist_meta["attempts"] = max(specialist_meta["attempts"], draft_attempts)
+        return draft, used_fallback, specialist_outputs, specialist_meta
+
     async def _run_specialists(self, context):
         roles = ["content_analyst", "participation_analyst", "facilitation_strategist"]
         if self.provider is None:
@@ -236,8 +266,8 @@ class TableRunService:
                 "participation_analyst": participation,
             }, {"roles": roles, "attempts": 1, "used_fallback": True}
         content_call, participation_call = await asyncio.gather(
-            ContentAnalystAgent().run(self.provider, context),
-            ParticipationAnalystAgent().run(self.provider, context),
+            ContentAnalystAgent().run(self.provider, context, max_attempts=1),
+            ParticipationAnalystAgent().run(self.provider, context, max_attempts=1),
         )
         return {
             "content_analyst": content_call.value,
@@ -250,9 +280,19 @@ class TableRunService:
 
     async def _draft(self, context, trigger: StageSummaryTrigger):
         if self.provider is None:
-            return StageSummarizerAgent(trigger=trigger).fallback_factory(context), True
+            return StageSummarizerAgent(trigger=trigger).fallback_factory(context), True, 1
         result = await StageSummarizerAgent(trigger=trigger).run(self.provider, context)
-        return result.value, result.used_fallback
+        # Snapshot metadata belongs to the coordinator. Model text and evidence
+        # stay untouched and are revalidated after binding to the actual range.
+        payload = result.value.model_dump()
+        payload.update(
+            input_state_version=context.input_state_version,
+            phase=context.table_state.phase,
+            trigger=trigger,
+            covered_turn_start=context.delta_turns[0].turn_id,
+            covered_turn_end=context.delta_turns[-1].turn_id,
+        )
+        return type(result.value).model_validate(payload), result.used_fallback, result.attempts
 
     async def _record_run(
         self,

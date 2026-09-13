@@ -8,11 +8,12 @@ interface ClosingCardProps {
   participantId: string
   baseline: SharedBaselineLike
   personalCard: PersonalCardLike | null
+  simulatedParticipantIds?: string[]
   onDismiss(): void
   onReturn(): void
 }
 
-export default function ClosingCard({ tableId, participantId, baseline, personalCard, onDismiss, onReturn }: ClosingCardProps) {
+export default function ClosingCard({ tableId, participantId, baseline, personalCard, simulatedParticipantIds = [], onDismiss, onReturn }: ClosingCardProps) {
   const panelRef = useRef<HTMLElement>(null)
   const dismissButtonRef = useRef<HTMLButtonElement>(null)
   const onDismissRef = useRef(onDismiss)
@@ -23,6 +24,7 @@ export default function ClosingCard({ tableId, participantId, baseline, personal
   const [actionEchoes, setActionEchoes] = useState<ActionEchoEntryLike[]>([])
   const [actionEchoLoading, setActionEchoLoading] = useState(true)
   const [actionEchoError, setActionEchoError] = useState<string | null>(null)
+  const continuingWith = personalCard?.worth_continuing_with.filter((item) => !simulatedParticipantIds.includes(item.participant_id)) ?? []
 
   useEffect(() => {
     dismissButtonRef.current?.focus({ preventScroll: true })
@@ -104,7 +106,7 @@ export default function ClosingCard({ tableId, participantId, baseline, personal
 
         <div className="closing-grid">
           {baseline.key_consensus.length > 0 && <div className="closing-block">
-            <small>共识</small>
+            <small>聊清楚了</small>
             {baseline.key_consensus.map((item) => (
               <p key={item.text}>{item.text}</p>
             ))}
@@ -141,13 +143,13 @@ export default function ClosingCard({ tableId, participantId, baseline, personal
                   {personalCard.your_contribution.map((item) => <p key={item.text}>{item.text}</p>)}
                 </div>
               )}
-              {personalCard.worth_continuing_with.length > 0 && (
+              {continuingWith.length > 0 && (
                 <div className="closing-block">
                   <small>值得继续聊的人</small>
-                  {personalCard.worth_continuing_with.map((item) => (
+                  {continuingWith.map((item) => (
                     <div className="closing-relationship" key={item.participant_id}>
                       <p>{item.reason}</p>
-                      <button type="button" disabled={Boolean(savingRelationship) || savedRelationships.includes(item.participant_id)} onClick={() => void savePerson(item.participant_id)}>{savedRelationships.includes(item.participant_id) ? '已记住' : savingRelationship === item.participant_id ? '正在保存…' : '记住这个人'}</button>
+                      {!simulatedParticipantIds.includes(item.participant_id) && <button type="button" disabled={Boolean(savingRelationship) || savedRelationships.includes(item.participant_id)} onClick={() => void savePerson(item.participant_id)}>{savedRelationships.includes(item.participant_id) ? '已记住' : savingRelationship === item.participant_id ? '正在保存…' : '记住这个人'}</button>}
                     </div>
                   ))}
                   {relationshipError && <em className="closing-inline-error" role="alert">{relationshipError}</em>}

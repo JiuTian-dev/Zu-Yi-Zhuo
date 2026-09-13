@@ -94,6 +94,24 @@ export interface TableStateLike {
   agent: AgentPresenceLike
   latest_stage_summary_id?: string | null
   latest_stage_summary_revision?: number | null
+  demo?: { case_id: string; owner_participant_id: string; simulated_participant_ids: string[]; request_id: string } | null
+}
+
+export interface DemoCaseLike {
+  case_id: string
+  topic: string
+  available: boolean
+  disclosure: string
+  participants: Array<{ persona_id: string; display_name: string; description: string }>
+}
+
+export interface ParticipantResponseStatusLike {
+  type: 'participant_response_status'
+  table_id: string
+  participant_id: string
+  response_id: string
+  status: 'thinking' | 'paused' | 'failed' | 'idle'
+  detail?: string
 }
 
 export interface StageSummaryLike {
@@ -131,7 +149,7 @@ export interface StageSummaryFeedbackLike {
 
 export interface ServerMessageCommitted {
   type: 'message_committed'
-  message: { message_id: string; participant_id: string; text: string; client_ts: unknown; turn_id?: number }
+  message: { message_id: string; participant_id: string; text: string; client_ts: unknown; turn_id?: number; state_version?: number; source?: 'human' | 'simulated' }
 }
 
 export interface ServerAgentAction {
@@ -224,6 +242,7 @@ export interface GroundingCardLike {
 
 export type ServerEvent =
   | ServerMessageCommitted
+  | ParticipantResponseStatusLike
   | ServerAgentAction
   | ServerStateChanged
   | ServerCloseStarted
@@ -506,6 +525,7 @@ export interface ReplayMessageLike {
   text: string
   message_id?: string
   source_comment_id?: string
+  source?: 'human' | 'simulated'
 }
 
 export interface ReplayInterventionLike {

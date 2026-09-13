@@ -21,6 +21,8 @@ from app.orchestrator.run_service import TableRunService
 from app.orchestrator.lease import SQLiteAgentRunLeaseStore
 from app.providers import LLMProvider
 from app.domain.schemas import EvidenceStatement
+from app.demo.service import DemoTiming, JudgeDemoService
+from app.demo.routes import register_demo_routes
 
 from .repository import MAX_ACTION_ECHO_ITEMS, MAX_QUESTION_FOOTPRINT_ITEMS, MAX_SAVED_TABLES_PER_PARTICIPANT, MAX_TABLE_LINEAGE_DEPTH, MAX_TABLE_PARTICIPANTS, InMemoryTableRepository
 from .privacy import project_state_for_viewer
@@ -137,6 +139,7 @@ class CapabilitiesResponse(BaseModel):
     oauth_configured: bool = False
     websocket_available: bool = True
     max_table_participants: int = Field(ge=1, le=5)
+    judge_demo_available: bool = False
 
 
 class TableLineageItem(BaseModel):
@@ -552,6 +555,9 @@ def create_app(
     shared_rate_limit_path: str | os.PathLike[str] | None = None,
     shared_ephemeral_store_path: str | os.PathLike[str] | None = None,
     clock: Callable[[], float] = time.time,
+    enable_judge_demo: bool = False,
+    judge_demo_timing: DemoTiming | None = None,
+    stage_summary_timeout_seconds: float = 8.0,
 ) -> FastAPI:
     """Create an app with an injectable repository for tests and future persistence."""
     if candidate_source_timeout_seconds <= 0:
@@ -690,6 +696,20 @@ def create_app(
     @api.middleware("http")
     async def limit_rest_mutations(request: Request, call_next):
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            parts = request.url.path.strip("/").split("/")
+            if len(parts) >= 2 and parts[0] == "tables":
+                try:
+                    demo_state = repo.get(parts[1])
+                except KeyError:
+                    demo_state = None
+                if demo_state is not None and demo_state.demo is not None:
+                    actor = next((request.query_params.get(key) for key in ("participant_id", "viewer_id", "inviter_id", "author_id") if request.query_params.get(key)), None)
+                    if actor != demo_state.demo.owner_participant_id:
+                        return JSONResponse(status_code=403, content={"detail": "只有本次体验的参与者可以操作；模拟桌友由后端管理"})
+                    try:
+                        require_request_identity(effective_identity_resolver, request, actor)
+                    except HTTPException as error:
+                        return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
             client = request.client
             client_key = client.host if client is not None and client.host else "unknown"
             allowed, retry_after = rest_rate_limiter.allow(client_key)
@@ -718,11 +738,18 @@ def create_app(
         broadcast=api.state.table_broadcast,
         broadcast_state=api.state.table_broadcast_state,
         lease_store=(
-            SQLiteAgentRunLeaseStore(configured_ephemeral_path)
+            SQLiteAgentRunLeaseStore(configured_ephemeral_path, ttl_seconds=max(45.0, stage_summary_timeout_seconds + 10.0))
             if configured_ephemeral_path else None
         ),
         clock=clock,
+        deadline_seconds=stage_summary_timeout_seconds,
     )
+    api.state.judge_demo_service = JudgeDemoService(
+        repo, provider, enabled=enable_judge_demo,
+        commit=api.state.table_commit_message, broadcast=api.state.table_broadcast,
+        timing=judge_demo_timing,
+    )
+    register_demo_routes(api, api.state.judge_demo_service, effective_identity_resolver)
     if oauth_service is not None:
         register_zhihu_auth_routes(api, oauth_service)
 
@@ -742,6 +769,7 @@ def create_app(
             oauth_configured=oauth_service is not None,
             websocket_available=True,
             max_table_participants=MAX_TABLE_PARTICIPANTS,
+            judge_demo_available=api.state.judge_demo_service.available,
         )
 
     @api.get("/readyz")
@@ -824,6 +852,7 @@ def create_app(
         return [
             project_state_for_viewer(state, participant_id)
             for state in repo.list_tables(include_closed=include_closed)
+            if state.demo is None or state.demo.owner_participant_id == participant_id
         ]
 
     @api.get("/tables/discovery", response_model=list[LobbyPreview])
@@ -832,7 +861,7 @@ def create_app(
     ) -> list[LobbyPreview]:
         """Return bounded public Lobby cards for homepage table discovery."""
         refresh_sync_windows()
-        return build_lobby_discovery(repo.list_tables(), limit=limit)
+        return build_lobby_discovery([state for state in repo.list_tables() if state.demo is None], limit=limit)
 
     @api.get("/tables/{table_id}/lobby", response_model=LobbyPreview)
     def get_lobby_preview(table_id: str) -> LobbyPreview:
@@ -963,6 +992,8 @@ def create_app(
         """Record a member's explicit post-close relationship choice."""
         require_request_identity(identity_resolver, request, participant_id)
         state = table_or_404(table_id)
+        if state.demo is not None:
+            raise HTTPException(status_code=409, detail="模拟桌友不能添加为真实好友")
         if not state.conversation.closed:
             raise HTTPException(status_code=409, detail="relationship save requires a closed table")
         if participant_id not in state.participants:
@@ -1157,11 +1188,12 @@ def create_app(
         history = {
             state.table_id: state
             for state in repo.list_tables(include_closed=True)
+            if state.demo is None
         }
         candidates = [
             state
             for state in repo.list_tables()
-            if not any(
+            if state.demo is None and not any(
                 repo.is_no_match(participant_id, member_id)
                 for member_id in state.participants
             )
@@ -1311,14 +1343,14 @@ def create_app(
         """Route an active demand toward clarification, an open table, or a new table."""
         return build_active_intent_preview(
             payload.message,
-            repo.list_tables(),
+            [state for state in repo.list_tables() if state.demo is None],
             limit=payload.limit,
         )
 
     def active_intent_session_view(session) -> ActiveIntentSessionView:
         preview = build_active_intent_session_preview(
             session.messages,
-            repo.list_tables(),
+            [state for state in repo.list_tables() if state.demo is None],
             limit=session.limit,
         )
         remaining_turns = session.max_turns - session.turn_count
@@ -1771,6 +1803,8 @@ def create_app(
         inviter_id: str | None = Query(default=None, min_length=1),
     ) -> TableState:
         state = table_or_404(table_id)
+        if state.demo is not None:
+            raise HTTPException(status_code=409, detail="模拟体验固定为你、三位桌友和一位主持人")
         if identity_resolver is not None:
             if inviter_id is None:
                 raise HTTPException(status_code=401, detail="inviter_id is required")
@@ -1801,6 +1835,12 @@ def create_app(
         table_or_404(table_id)
         if viewer_id != participant_id:
             raise HTTPException(status_code=403, detail="viewer_id must match participant_id")
+        if repo.get(table_id).demo is not None:
+            try:
+                api.state.judge_demo_service.require_owner(repo.get(table_id), participant_id)
+            except PermissionError as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            await api.state.judge_demo_service.stop(table_id, closing=True)
         try:
             state = repo.remove_participant(table_id, participant_id)
         except ValueError as error:
@@ -2712,6 +2752,8 @@ def create_app(
         elif participant_id is not None:
             require_request_identity(identity_resolver, request, participant_id)
         current_state = table_or_404(table_id)
+        if current_state.demo is not None and participant_id != current_state.demo.owner_participant_id:
+            raise HTTPException(status_code=403, detail="只有本次体验的参与者可以读取聊天记录")
         if participant_id is not None and participant_id not in current_state.participants:
             raise HTTPException(status_code=404, detail=f"unknown participant: {participant_id}")
         try:
@@ -3141,6 +3183,12 @@ def create_app(
             require_request_identity(identity_resolver, request, participant_id)
         if participant_id is not None and participant_id not in state.participants:
             raise HTTPException(status_code=403, detail="participant_id must be a table participant")
+        if state.demo is not None:
+            try:
+                api.state.judge_demo_service.require_owner(state, participant_id or "")
+            except PermissionError as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            await api.state.judge_demo_service.stop(table_id, closing=True)
         if not state.conversation.closed:
             await broadcast_table_event(table_id, {
                 "type": "close_started",
@@ -3163,6 +3211,8 @@ def create_app(
             )
             baseline = build_shared_baseline(closed, turns=repo.turns(table_id), latest_summary=latest_summary)
         except ValueError as error:
+            if state.demo is not None:
+                await api.state.judge_demo_service.abort_close(table_id)
             raise HTTPException(status_code=409, detail=str(error)) from error
         if closed.version != state.version:
             await broadcast_table_event(table_id, {

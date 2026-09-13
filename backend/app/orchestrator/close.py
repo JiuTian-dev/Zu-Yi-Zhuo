@@ -63,7 +63,9 @@ def build_shared_baseline(state: TableState, core_question_before: str | None = 
         raise ValueError("cannot build a baseline without turn evidence")
     question = summary.next_focus.text if summary and summary.next_focus else (state.current_subquestion or state.core_question)
     next_steps = [item for loop in state.open_loops if (item := _suggestion(loop.question, list(loop.evidence_turns)))]
-    next_steps += extract_follow_ups(turns) if turns else []
+    # Synthetic demo speech can contain words such as “可以” without being a
+    # commitment by the real participant. Only human speech becomes a take-away.
+    next_steps += extract_follow_ups([turn for turn in turns if turn.source == "human"]) if turns else []
     evolved = EvidenceStatement(text=question, evidence_turns=evidence)
     return SharedBaseline(table_id=state.table_id, state_version=state.version,
         core_question_before=core_question_before or state.core_question,

@@ -564,6 +564,14 @@ class MatchPlan(ContractModel):
             raise ValueError("selected participants cannot be unmatched")
         return self
 
+class SimulationGeneration(ContractModel):
+    """Public provenance, never a persona prompt or model reasoning."""
+
+    model: str = Field(min_length=1, max_length=120)
+    response_id: str = Field(min_length=1, max_length=160)
+    kind: Literal["opening", "llm"]
+
+
 class HumanTurn(ContractModel):
     turn_id: PositiveInt
     participant_id: str = Field(min_length=1)
@@ -573,6 +581,14 @@ class HumanTurn(ContractModel):
     # When a core member explicitly promotes an external comment, retain the
     # immutable source reference without changing normal human-message shape.
     source_comment_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
+    source: Literal["human", "simulated"] = Field(default="human", exclude_if=lambda value: value == "human")
+    generation: SimulationGeneration | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def simulation_has_provenance(self) -> "HumanTurn":
+        if (self.source == "simulated") != (self.generation is not None):
+            raise ValueError("simulated turns require generation provenance; human turns must omit it")
+        return self
 
 
 class SafetyDecision(ContractModel):
@@ -668,6 +684,19 @@ class AgentPresence(ContractModel):
     status: Literal["active", "paused", "closed"] = "active"
 
 
+class DemoSession(ContractModel):
+    case_id: Literal["ai_friendship"] = "ai_friendship"
+    owner_participant_id: str = Field(min_length=1, max_length=120)
+    simulated_participant_ids: list[str] = Field(min_length=3, max_length=3)
+    request_id: str = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def identities_are_distinct(self) -> "DemoSession":
+        if len(set(self.simulated_participant_ids)) != 3 or self.owner_participant_id in self.simulated_participant_ids:
+            raise ValueError("demo requires one owner and three distinct simulated identities")
+        return self
+
+
 class TableState(ContractModel):
     table_id: str = Field(min_length=1)
     origin_table_id: str | None = Field(default=None, min_length=1)
@@ -692,6 +721,7 @@ class TableState(ContractModel):
     conversation: ConversationState
     intervention: InterventionState
     agent: AgentPresence = Field(default_factory=AgentPresence)
+    demo: DemoSession | None = Field(default=None, exclude_if=lambda value: value is None)
     latest_stage_summary_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
     latest_stage_summary_revision: PositiveInt | None = Field(
         default=None, exclude_if=lambda value: value is None

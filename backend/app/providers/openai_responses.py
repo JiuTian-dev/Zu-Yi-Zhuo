@@ -109,7 +109,9 @@ class OpenAIResponsesProvider:
                 "install the optional 'openai' dependency to use this provider"
             ) from error
 
-        options: dict[str, Any] = {"api_key": token}
+        # The orchestration boundary owns its one repair retry and deadline.
+        # SDK retries would silently multiply requests inside that budget.
+        options: dict[str, Any] = {"api_key": token, "max_retries": 0}
         if endpoint:
             options["base_url"] = endpoint
         if self.api_style == "chat" and self._is_opencode_go:

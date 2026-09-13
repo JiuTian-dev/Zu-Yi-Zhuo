@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -128,3 +129,12 @@ def test_chat_structured_validates_json_object() -> None:
     assert call["messages"][0]["role"] == "system"
     assert "action" in call["messages"][0]["content"]
     assert call["messages"][1]["role"] == "user"
+
+
+def test_default_sdk_client_does_not_multiply_orchestrator_retries(monkeypatch) -> None:
+    options = []
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(
+        AsyncOpenAI=lambda **kwargs: options.append(kwargs) or _ChatClient(),
+    ))
+    OpenAIResponsesProvider(api_key="test-only", api_style="chat")
+    assert options[0]["max_retries"] == 0
