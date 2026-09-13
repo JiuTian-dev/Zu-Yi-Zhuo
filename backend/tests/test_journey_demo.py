@@ -38,7 +38,7 @@ def test_journey_demo_report_covers_real_api_boundaries() -> None:
     assert report["lobby"]["participant_count"] == 5
     assert report["replay_summary"] == {
         "message_count": 1,
-        "snapshot_count": 5,
+        "snapshot_count": 6,
         "intervention_count": 1,
         "source_signal_count": 4,
         "closed": True,

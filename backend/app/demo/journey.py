@@ -136,9 +136,14 @@ def run_journey_demo() -> dict[str, Any]:
                 action_event = event
             if event.get("type") == "table_state_changed":
                 state_event = event
+            if (
+                action_event is not None
+                and state_event is not None
+                and state_event["state"]["version"] >= action_event["state_version"]
+            ):
                 break
-        if state_event is None:
-            raise RuntimeError("did not receive table_state_changed after human turn")
+        if state_event is None or action_event is None:
+            raise RuntimeError("did not receive the host response after human turn")
 
         websocket.send_json({"type": "request_close"})
         close_started = _receive_until(websocket, "close_started")

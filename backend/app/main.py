@@ -176,6 +176,8 @@ def _build_app():
         sync_window_seconds=_build_sync_window(),
         event_bus=event_bus,
         shared_ephemeral_store_path=shared_ephemeral_store_path,
+        enable_judge_demo=os.getenv("ENABLE_JUDGE_DEMO", "0").strip().lower() in {"1", "true", "yes"},
+        stage_summary_timeout_seconds=float(os.getenv("STAGE_SUMMARY_TIMEOUT_SECONDS", "8")),
     )
 
 

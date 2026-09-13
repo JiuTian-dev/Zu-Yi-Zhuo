@@ -12,7 +12,7 @@ button:focus-visible,textarea:focus-visible { outline: 1px solid #ffe19b; outlin
 .world-grade { z-index:2; pointer-events:none; background:linear-gradient(90deg,rgba(37,63,66,.3),rgba(37,63,66,.07) 35%,transparent 58%),linear-gradient(0deg,rgba(24,43,39,.23),transparent 25%); transition:background 1.2s ease,backdrop-filter .8s ease; }
 .phase-approaching .world-grade { background:radial-gradient(circle at 65% 65%,transparent 0 17%,rgba(31,42,36,.12) 48%,rgba(25,42,40,.4) 100%); }
 .phase-seated .world-grade { background:radial-gradient(circle at 58% 55%,transparent 0 24%,rgba(28,43,39,.16) 58%,rgba(19,35,35,.55) 100%); }
-.has-join-open .world-grade { background:rgba(22,42,39,.5); backdrop-filter:blur(4px); }
+.has-join-open .world-grade { background:rgba(22,42,39,.28); }
 .has-join-open > .site-header,
 .has-join-open > .hero-copy,
 .has-join-open > .seat-hotspot,

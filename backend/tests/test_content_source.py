@@ -104,6 +104,7 @@ def test_grounding_endpoint_stages_public_card_for_the_real_ground_action() -> N
                 "client_ts": 1756728000000,
             })
             assert websocket.receive_json()["type"] == "message_committed"
+            assert websocket.receive_json()["type"] == "table_state_changed"
             action = websocket.receive_json()
             card = websocket.receive_json()
             assert websocket.receive_json()["type"] == "table_state_changed"
@@ -152,7 +153,7 @@ def test_grounding_card_is_used_after_observer_detects_opposite_fact_turns() -> 
             "client_ts": 1756728001000,
         })
         events = {}
-        for _ in range(4):
+        for _ in range(5):
             event = observer.receive_json()
             events[event["type"]] = event
 

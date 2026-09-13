@@ -191,7 +191,7 @@ def test_close_path_records_actor_scoped_table_closed_behavior() -> None:
     retry = client.post("/tables/close-behavior/close?participant_id=p1")
 
     assert first.status_code == retry.status_code == 200
-    assert first.json()["state_version"] == retry.json()["state_version"] == 2
+    assert first.json()["state_version"] == retry.json()["state_version"] == 3
     events = client.get("/participants/p1/behavior-events?viewer_id=p1").json()
     assert events[0]["event_type"] == "human_message"
     assert events[-1] == {
@@ -199,7 +199,7 @@ def test_close_path_records_actor_scoped_table_closed_behavior() -> None:
         "participant_id": "p1",
         "event_type": "table_closed",
         "table_id": "close-behavior",
-        "state_version": 2,
+            "state_version": 3,
         "detail": "closed",
     }
     assert client.get("/participants/p2/behavior-events?viewer_id=p2").json() == []

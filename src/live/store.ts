@@ -1,13 +1,16 @@
 import { useSyncExternalStore } from 'react'
-import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike } from './contract'
+import type { AgentActionName, SharedBaselineLike, PersonalCardLike, TablePhase, TableStateLike, GroundingCardLike, InterventionReflectionLike, StageSummaryLike, StageSummaryFeedbackLike, ParticipantResponseStatusLike } from './contract'
 
 export interface LiveMessage {
   participantId: string
   text: string
+  turnId?: number
   fromHost: boolean
   action: AgentActionName | null
   messageId?: string
   delivery?: 'pending' | 'committed' | 'failed'
+  source?: 'human' | 'simulated'
+  stateVersion?: number
 }
 
 export interface LiveStatus {
@@ -28,7 +31,12 @@ export interface LiveStatus {
   safetyNotice: string | null
   tableMode: 'async' | 'sync' | null
   latestReflection: InterventionReflectionLike | null
+  latestSummary: StageSummaryLike | null
+  summaryHistory: StageSummaryLike[]
+  summaryFeedback: StageSummaryFeedbackLike[]
+  summaryStatus: 'idle' | 'requested' | 'running' | 'failed'
   lastError: string | null
+  responses: Record<string, ParticipantResponseStatusLike>
 }
 
 const initial: LiveStatus = {
@@ -49,7 +57,12 @@ const initial: LiveStatus = {
   safetyNotice: null,
   tableMode: null,
   latestReflection: null,
+  latestSummary: null,
+  summaryHistory: [],
+  summaryFeedback: [],
+  summaryStatus: 'idle',
   lastError: null,
+  responses: {},
 }
 
 let state: LiveStatus = initial
@@ -79,14 +92,14 @@ export function useLive<T>(selector: (state: LiveStatus) => T): T {
 }
 
 export function pushMessage(message: LiveMessage) {
-  const next = [...state.messages, message].slice(-30)
+  const next = [...state.messages, message].slice(-120)
   setLive({ messages: next, speakingId: message.participantId })
 }
 
 export function commitMessage(messageId: string, message: Omit<LiveMessage, 'messageId' | 'delivery'>) {
   const next = state.messages.filter((item) => item.messageId !== messageId)
   next.push({ ...message, messageId, delivery: 'committed' })
-  setLive({ messages: next.slice(-30), speakingId: message.participantId })
+  setLive({ messages: next.slice(-120), speakingId: message.participantId })
 }
 
 export function markMessageFailed(messageId: string) {

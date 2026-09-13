@@ -11,5 +11,10 @@ dependencies = [
 ]
 [project.optional-dependencies]
 openai = ["openai>=2.0,<3"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "adapters*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

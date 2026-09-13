@@ -14,10 +14,12 @@ class _FakeProvider:
         self.structured_values = list(structured_values or [])
         self.text_values = list(text_values or [])
         self.structured_configs = []
+        self.structured_messages = []
         self.text_configs = []
 
     async def structured(self, task, messages, schema, config=None):
         self.structured_configs.append(dict(config or {}))
+        self.structured_messages.append(list(messages))
         value = self.structured_values.pop(0)
         if isinstance(value, Exception):
             raise value
@@ -47,6 +49,29 @@ def test_structured_parse_failure_gets_exactly_one_retry() -> None:
     assert result.value.action == "REFRAME"
     assert result.attempts == 2
     assert provider.structured_configs[1] == {"retry": True, "attempt": 2}
+    assert "json_invalid" in provider.structured_messages[1][-1]["content"]
+    assert "not-json" not in provider.structured_messages[1][-1]["content"]
+
+
+def test_structured_retry_explains_schema_defect_without_echoing_input() -> None:
+    secret = "private-input-do-not-repeat"
+    provider = _FakeProvider(structured_values=[{"action": {"key": secret}}, {"action": "PASS"}])
+    result = asyncio.run(call_structured(provider, task="route", messages=[], schema=_Decision))
+    assert not result.used_fallback
+    repair = provider.structured_messages[1][-1]["content"]
+    assert "action: string_type" in repair
+    assert secret not in repair
+
+
+def test_structured_one_attempt_bounds_work_and_redacts_provider_errors() -> None:
+    provider = _FakeProvider(structured_values=[ValueError("secret-api-key")])
+    result = asyncio.run(call_structured(
+        provider, task="route", messages=[], schema=_Decision, max_attempts=1,
+        fallback_factory=lambda: _Decision(action="SILENCE"),
+    ))
+    assert result.attempts == 1 and result.used_fallback
+    assert result.error == "ValueError"
+    assert len(provider.structured_configs) == 1
 
 
 def test_structured_failure_reuses_previous_typed_value() -> None:

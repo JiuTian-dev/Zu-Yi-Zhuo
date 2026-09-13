@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/ws': { target: 'http://127.0.0.1:8000', ws: true },
       '/tables': { target: 'http://127.0.0.1:8000' },
+      '/demo': { target: 'http://127.0.0.1:8000' },
       '/matches': { target: 'http://127.0.0.1:8000' },
       '/participants': { target: 'http://127.0.0.1:8000' },
       '/personal-context': { target: 'http://127.0.0.1:8000' },

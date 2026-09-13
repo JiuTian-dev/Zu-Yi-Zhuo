@@ -19,6 +19,8 @@ out/
 .env
 .env.*
 !.env.example
+backend/.env.local
+backend/data/
 .dev.vars
 .dev.vars.*
 *.pem

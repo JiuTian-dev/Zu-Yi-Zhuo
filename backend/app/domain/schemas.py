@@ -8,6 +8,37 @@ Confidence = Annotated[float, Field(ge=0, le=1)]
 TurnEvidence = Annotated[list[PositiveInt], Field(min_length=1)]
 SafetyAction = Literal["allow", "pause", "intercept", "remove"]
 SafetyResolutionAction = Literal["resume", "remove_participant"]
+StageSummaryTrigger = Literal[
+    "question_aligned",
+    "disagreement_changed",
+    "grounding_changed",
+    "thread_advanced",
+    "stalled",
+    "manual",
+    "pre_close",
+]
+SummaryFeedbackKind = Literal["misrepresented", "missing_point", "not_consensus", "ready_to_advance"]
+AgentRunOutcome = Literal[
+    "no_action",
+    "host_action",
+    "summary_published",
+    "stale_discarded",
+    "fallback",
+    "rejected",
+    "timeout",
+    "cancelled",
+]
+SpecialistAgentRole = Literal[
+    "content_analyst",
+    "participation_analyst",
+    "facilitation_strategist",
+    "stage_summarizer",
+    "summary_verifier",
+    "public_host_renderer",
+]
+ProposedAction = Literal[
+    "SILENCE", "PASS", "PROBE", "REFRAME", "GROUND", "CLOSE", "CHECKPOINT", "CLOSE_CANDIDATE"
+]
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -533,6 +564,14 @@ class MatchPlan(ContractModel):
             raise ValueError("selected participants cannot be unmatched")
         return self
 
+class SimulationGeneration(ContractModel):
+    """Public provenance, never a persona prompt or model reasoning."""
+
+    model: str = Field(min_length=1, max_length=120)
+    response_id: str = Field(min_length=1, max_length=160)
+    kind: Literal["opening", "llm"]
+
+
 class HumanTurn(ContractModel):
     turn_id: PositiveInt
     participant_id: str = Field(min_length=1)
@@ -542,6 +581,14 @@ class HumanTurn(ContractModel):
     # When a core member explicitly promotes an external comment, retain the
     # immutable source reference without changing normal human-message shape.
     source_comment_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
+    source: Literal["human", "simulated"] = Field(default="human", exclude_if=lambda value: value == "human")
+    generation: SimulationGeneration | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def simulation_has_provenance(self) -> "HumanTurn":
+        if (self.source == "simulated") != (self.generation is not None):
+            raise ValueError("simulated turns require generation provenance; human turns must omit it")
+        return self
 
 
 class SafetyDecision(ContractModel):
@@ -637,6 +684,19 @@ class AgentPresence(ContractModel):
     status: Literal["active", "paused", "closed"] = "active"
 
 
+class DemoSession(ContractModel):
+    case_id: Literal["ai_friendship"] = "ai_friendship"
+    owner_participant_id: str = Field(min_length=1, max_length=120)
+    simulated_participant_ids: list[str] = Field(min_length=3, max_length=3)
+    request_id: str = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def identities_are_distinct(self) -> "DemoSession":
+        if len(set(self.simulated_participant_ids)) != 3 or self.owner_participant_id in self.simulated_participant_ids:
+            raise ValueError("demo requires one owner and three distinct simulated identities")
+        return self
+
+
 class TableState(ContractModel):
     table_id: str = Field(min_length=1)
     origin_table_id: str | None = Field(default=None, min_length=1)
@@ -661,6 +721,11 @@ class TableState(ContractModel):
     conversation: ConversationState
     intervention: InterventionState
     agent: AgentPresence = Field(default_factory=AgentPresence)
+    demo: DemoSession | None = Field(default=None, exclude_if=lambda value: value is None)
+    latest_stage_summary_id: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
+    latest_stage_summary_revision: PositiveInt | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def participant_keys_match_ids(self) -> "TableState":
@@ -676,6 +741,8 @@ class TableState(ContractModel):
             raise ValueError("soft-expired conversations must use soft_expired or closed state")
         if self.conversation.state == "soft_expired" and not self.conversation.soft_expired:
             raise ValueError("soft_expired state requires soft_expired flag")
+        if (self.latest_stage_summary_id is None) != (self.latest_stage_summary_revision is None):
+            raise ValueError("latest stage summary id and revision must be set together")
         if self.conversation.closed:
             self.agent.status = "closed"
         elif self.conversation.soft_expired or self.conversation.safety_level.value == "critical":
@@ -779,6 +846,175 @@ class InterventionRecord(AgentActionEvent):
             raise ValueError("SILENCE actions do not create intervention records")
         if self.reflection_effective is not None and self.reflection is None:
             raise ValueError("reflection_effective requires reflection")
+        return self
+
+
+class ContentAnalysis(ContractModel):
+    """Evidence-bound semantic reading proposed by the content specialist."""
+
+    input_state_version: int = Field(ge=0)
+    clarified_points: list[EvidenceStatement] = Field(default_factory=list, max_length=3)
+    new_insights: list[EvidenceStatement] = Field(default_factory=list, max_length=3)
+    disagreements: list[Disagreement] = Field(default_factory=list, max_length=3)
+    open_questions: list[EvidenceStatement] = Field(default_factory=list, max_length=3)
+    suggested_phase: Phase | None = None
+    confidence: Confidence
+
+
+class ParticipationAnalysis(ContractModel):
+    """Turn-taking diagnosis; it may suggest but never directly address a participant."""
+
+    input_state_version: int = Field(ge=0)
+    dominant_participant_ids: list[str] = Field(default_factory=list)
+    underheard_participant_ids: list[str] = Field(default_factory=list)
+    pass_candidate_id: str | None = Field(default=None, min_length=1)
+    evidence_turns: list[PositiveInt] = Field(default_factory=list)
+    confidence: Confidence
+
+    @model_validator(mode="after")
+    def pass_candidate_has_evidence(self) -> "ParticipationAnalysis":
+        if self.pass_candidate_id is not None and not self.evidence_turns:
+            raise ValueError("pass candidate requires evidence_turns")
+        return self
+
+
+class InterventionProposal(ContractModel):
+    """A strategist proposal. The coordinator remains the only state writer."""
+
+    input_state_version: int = Field(ge=0)
+    action: ProposedAction = "SILENCE"
+    target_participant_id: str | None = Field(default=None, min_length=1)
+    rationale: str = Field(min_length=1, max_length=500)
+    evidence_turns: list[PositiveInt] = Field(default_factory=list)
+    confidence: Confidence
+
+    @model_validator(mode="after")
+    def proposal_is_grounded(self) -> "InterventionProposal":
+        if self.action != "SILENCE" and not self.evidence_turns:
+            raise ValueError("non-SILENCE proposals require evidence_turns")
+        if self.action == "PASS" and self.target_participant_id is None:
+            raise ValueError("PASS proposals require target_participant_id")
+        if self.action != "PASS" and self.target_participant_id is not None:
+            raise ValueError("only PASS proposals may target a participant")
+        return self
+
+
+class StageSummaryDraft(ContractModel):
+    """Unpublished checkpoint proposal. It cannot mutate TableState."""
+
+    input_state_version: int = Field(ge=0)
+    phase: Phase
+    trigger: StageSummaryTrigger
+    covered_turn_start: PositiveInt
+    covered_turn_end: PositiveInt
+    clarified: list[EvidenceStatement] = Field(default_factory=list, max_length=3)
+    disagreements: list[Disagreement] = Field(default_factory=list, max_length=3)
+    missing: list[EvidenceStatement] = Field(default_factory=list, max_length=3)
+    next_focus: EvidenceStatement | None = None
+
+    @model_validator(mode="after")
+    def covered_turn_range_is_ordered(self) -> "StageSummaryDraft":
+        if self.covered_turn_start > self.covered_turn_end:
+            raise ValueError("covered turn range must be ordered")
+        evidence_items: list[EvidenceStatement] = [
+            *self.clarified,
+            *self.disagreements,
+            *self.missing,
+        ]
+        if self.next_focus is not None:
+            evidence_items.append(self.next_focus)
+        if any(
+            turn < self.covered_turn_start or turn > self.covered_turn_end
+            for item in evidence_items
+            for turn in item.evidence_turns
+        ):
+            raise ValueError("summary evidence must stay inside the covered turn range")
+        return self
+
+
+class SummaryVerification(ContractModel):
+    """Verifier result kept separate from the summarizer's draft."""
+
+    decision: Literal["approved", "repair", "reject"]
+    evidence_complete: bool
+    attribution_safe: bool
+    unsupported_claims: list[str] = Field(default_factory=list, max_length=5)
+    correction_notes: list[str] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def approved_verification_has_no_known_defect(self) -> "SummaryVerification":
+        if self.decision == "approved" and (
+            not self.evidence_complete
+            or not self.attribution_safe
+            or self.unsupported_claims
+            or self.correction_notes
+        ):
+            raise ValueError("approved verification cannot retain known defects")
+        return self
+
+
+class StageSummary(StageSummaryDraft):
+    """Immutable published revision used as the next stage's shared checkpoint."""
+
+    summary_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    revision: PositiveInt
+    status: Literal["published", "superseded"] = "published"
+    published_state_version: PositiveInt
+    created_at: float = Field(ge=0)
+    model: str = Field(min_length=1)
+    used_fallback: bool = False
+
+    @model_validator(mode="after")
+    def publication_advances_state(self) -> "StageSummary":
+        if self.published_state_version <= self.input_state_version:
+            raise ValueError("published summary must advance the table state")
+        return self
+
+
+class StageSummaryFeedback(ContractModel):
+    """A participant correction or readiness signal against one exact revision."""
+
+    feedback_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    summary_id: str = Field(min_length=1)
+    summary_revision: PositiveInt
+    participant_id: str = Field(min_length=1)
+    kind: SummaryFeedbackKind
+    note: str | None = Field(default=None, min_length=1, max_length=240)
+    evidence_turns: list[PositiveInt] = Field(default_factory=list)
+    status: Literal["open", "applied", "dismissed"] = "open"
+    created_at: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def correction_has_detail(self) -> "StageSummaryFeedback":
+        if self.kind != "ready_to_advance" and self.note is None and not self.evidence_turns:
+            raise ValueError("summary corrections require a note or evidence_turns")
+        return self
+
+
+class AgentRunRecord(ContractModel):
+    """Replayable metadata for one bounded specialist invocation."""
+
+    run_id: str = Field(min_length=1)
+    table_id: str = Field(min_length=1)
+    trigger_turn_id: PositiveInt
+    input_state_version: int = Field(ge=0)
+    outcome: AgentRunOutcome
+    invoked_agents: list[SpecialistAgentRole] = Field(default_factory=list)
+    attempts: PositiveInt
+    latency_ms: int = Field(ge=0)
+    token_usage: TokenUsage = Field(default_factory=lambda: TokenUsage(input_tokens=0, output_tokens=0))
+    used_fallback: bool = False
+    error_code: str | None = Field(default=None, min_length=1, max_length=120)
+    output_refs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def fallback_outcome_matches_flag(self) -> "AgentRunRecord":
+        if self.outcome == "fallback" and not self.used_fallback:
+            raise ValueError("fallback outcome requires used_fallback")
+        if len(self.invoked_agents) != len(set(self.invoked_agents)):
+            raise ValueError("invoked_agents must be unique")
         return self
 
 

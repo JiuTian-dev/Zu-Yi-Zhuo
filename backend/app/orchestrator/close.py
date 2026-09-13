@@ -2,7 +2,7 @@
 from collections.abc import Sequence
 import re
 from app.domain import (
-    FollowUpItem, HumanTurn, Level, PersonalCard, SharedBaseline, TableState,
+    FollowUpItem, HumanTurn, Level, PersonalCard, SharedBaseline, StageSummary, TableState,
 )
 from app.domain.schemas import EvidenceStatement, RelationshipSuggestion
 def _evidence(*items) -> list[int]:
@@ -42,26 +42,48 @@ def _suggestion(text: str, evidence_turns: list[int]) -> FollowUpItem | None:
         return None
     return FollowUpItem(item_type="suggestion", text=text, is_commitment=False, evidence_turns=evidence_turns)
 def build_shared_baseline(state: TableState, core_question_before: str | None = None,
-                          turns: Sequence[HumanTurn] | None = None) -> SharedBaseline:
+                          turns: Sequence[HumanTurn] | None = None,
+                          latest_summary: StageSummary | None = None) -> SharedBaseline:
     """Build the shared close card without converting open loops into commitments."""
-    evidence = _evidence(state.open_loops, state.conversation.most_promising_thread)
+    summary = latest_summary if latest_summary is not None and (
+        latest_summary.table_id == state.table_id
+        and latest_summary.summary_id == state.latest_stage_summary_id
+        and latest_summary.revision == state.latest_stage_summary_revision
+    ) else None
+    summary_items = [
+        *(summary.clarified if summary else []),
+        *(summary.disagreements if summary else []),
+        *(summary.missing if summary else []),
+        *([summary.next_focus] if summary and summary.next_focus else []),
+    ]
+    evidence = _evidence(summary_items, state.open_loops, state.conversation.most_promising_thread)
     if not evidence:
         evidence = _state_evidence(state)
     if not evidence:
         raise ValueError("cannot build a baseline without turn evidence")
-    question = state.current_subquestion or state.core_question
+    question = summary.next_focus.text if summary and summary.next_focus else (state.current_subquestion or state.core_question)
     next_steps = [item for loop in state.open_loops if (item := _suggestion(loop.question, list(loop.evidence_turns)))]
-    next_steps += extract_follow_ups(turns) if turns else []
+    # Synthetic demo speech can contain words such as “可以” without being a
+    # commitment by the real participant. Only human speech becomes a take-away.
+    next_steps += extract_follow_ups([turn for turn in turns if turn.source == "human"]) if turns else []
     evolved = EvidenceStatement(text=question, evidence_turns=evidence)
     return SharedBaseline(table_id=state.table_id, state_version=state.version,
-        core_question_before=core_question_before or state.core_question, key_consensus=list(state.consensus),
-        unresolved_disagreements=list(state.disagreements), evolved_question=evolved, collective_next_steps=next_steps)
-def build_personal_card(state: TableState, participant_id: str) -> PersonalCard:
+        core_question_before=core_question_before or state.core_question,
+        key_consensus=list(summary.clarified if summary else state.consensus),
+        unresolved_disagreements=list(summary.disagreements if summary else state.disagreements),
+        evolved_question=evolved, collective_next_steps=next_steps)
+def build_personal_card(state: TableState, participant_id: str,
+                        latest_summary: StageSummary | None = None) -> PersonalCard:
     """Build one participant's view; unknown IDs are rejected rather than guessed."""
     person = state.participants.get(participant_id)
     if person is None:
         raise ValueError(f"unknown participant: {participant_id}")
-    changed = list(state.new_insights)
+    summary = latest_summary if latest_summary is not None and (
+        latest_summary.table_id == state.table_id
+        and latest_summary.summary_id == state.latest_stage_summary_id
+        and latest_summary.revision == state.latest_stage_summary_revision
+    ) else None
+    changed = list(summary.clarified if summary else state.new_insights)
     contribution = list(person.key_contributions)
     if not contribution and person.current_position:
         contribution = [person.current_position]

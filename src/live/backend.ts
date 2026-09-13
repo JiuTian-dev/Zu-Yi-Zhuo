@@ -1,13 +1,14 @@
 import { humanActors } from '../actors'
-import type { ClientHumanMessage, ParticipantSeedLike, ServerEvent } from './contract'
-import { BackendApiError, fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, requestRaw, setProfileConsent, wsUrl } from './api'
-import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike } from './contract'
+import type { ClientHumanMessage, ClientRequestStageSummary, ParticipantSeedLike, ServerEvent } from './contract'
+import { BackendApiError, fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, requestRaw, resumeDemoSession, setProfileConsent, submitStageSummaryFeedback as submitStageSummaryFeedbackApi, wsUrl } from './api'
+import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike, StageSummaryFeedbackKindLike, StageSummaryLike } from './contract'
 import { VIEWER_ID, viewerIdentity } from './identity'
 import * as mock from './mock'
 import { commitMessage, getLiveState, markMessageFailed, markMessagePending, pushMessage, resetLive, setLive, type LiveStatus } from './store'
 
 const DEFAULT_TABLE_ID = 'learning-to-rest'
 const DEFAULT_CORE_QUESTION = '为什么我们越来越不会休息？'
+const CONSENT_STATE_WAITING_NOTICE = '收到授权变化，正在等待完整桌状态…'
 
 const runtime = {
   sockets: new Set<WebSocket>(),
@@ -29,6 +30,39 @@ const runtime = {
 
 let activeTableId = DEFAULT_TABLE_ID
 const ensureRequests = new Map<string, Promise<string | null>>()
+const responseTimers = new Map<string, number>()
+let typingTimer: number | null = null
+let lastTypingSent = 0
+
+function clearResponses() {
+  responseTimers.forEach((timer) => window.clearTimeout(timer))
+  responseTimers.clear()
+  setLive({ responses: {} })
+}
+
+/** Send presence only. Unsent draft contents never leave this browser. */
+export function sendViewerTyping(isTyping: boolean) {
+  if (typingTimer !== null) window.clearTimeout(typingTimer)
+  typingTimer = null
+  if (!runtime.viewerJoined || !runtime.viewerSocket || !getLiveState().tableState?.demo) return
+  const now = Date.now()
+  if (!isTyping || now - lastTypingSent > 1800) {
+    sendVia(runtime.viewerSocket, { type: 'participant_typing', is_typing: isTyping })
+    lastTypingSent = isTyping ? now : 0
+  }
+  if (isTyping) typingTimer = window.setTimeout(() => sendViewerTyping(false), 2800)
+}
+
+export async function retryDemoResponse() {
+  const generation = liveGeneration
+  const tableId = currentTableId()
+  try {
+    await resumeDemoSession(tableId, VIEWER_ID)
+    if (generation === liveGeneration) setLive({ lastError: null })
+  } catch (error) {
+    if (generation === liveGeneration) setLive({ lastError: error instanceof Error ? error.message : '暂时没接上，请重试' })
+  }
+}
 
 export function currentTableId(): string {
   return activeTableId
@@ -73,10 +107,41 @@ function publicServerError(detail: string) {
 
 function handleServerEvent(event: ServerEvent) {
   switch (event.type) {
+    case 'participant_response_status':
+      {
+        if (event.table_id !== currentTableId()) return
+        const responses = { ...getLiveState().responses }
+        if (event.status === 'idle' && responses[event.participant_id]?.response_id !== event.response_id) return
+        window.clearTimeout(responseTimers.get(event.participant_id))
+        responseTimers.delete(event.participant_id)
+        if (event.status === 'idle') delete responses[event.participant_id]
+        else responses[event.participant_id] = event
+        setLive({ responses })
+        if (event.status === 'thinking' || event.status === 'paused') {
+          responseTimers.set(event.participant_id, window.setTimeout(() => {
+            const current = getLiveState().responses[event.participant_id]
+            if (current?.response_id !== event.response_id) return
+            const next = { ...getLiveState().responses }
+            delete next[event.participant_id]
+            setLive({ responses: next })
+            responseTimers.delete(event.participant_id)
+          }, 45000))
+        }
+      }
+      break
     case 'message_committed':
       if (runtime.seenMessageIds.has(event.message.message_id)) return
       runtime.seenMessageIds.add(event.message.message_id)
-      commitMessage(event.message.message_id, { participantId: event.message.participant_id, text: event.message.text, fromHost: false, action: null })
+      commitMessage(event.message.message_id, { participantId: event.message.participant_id, text: event.message.text, turnId: event.message.turn_id, stateVersion: event.message.state_version, source: event.message.source, fromHost: false, action: null })
+      if (event.message.source === 'simulated') {
+        const responses = { ...getLiveState().responses }
+        if (responses[event.message.participant_id]) {
+          window.clearTimeout(responseTimers.get(event.message.participant_id))
+          responseTimers.delete(event.message.participant_id)
+          delete responses[event.message.participant_id]
+          setLive({ responses })
+        }
+      }
       break
     case 'agent_action':
       {
@@ -85,16 +150,49 @@ function handleServerEvent(event: ServerEvent) {
         runtime.seenActionKeys.add(actionKey)
       }
       setLive({ hostAction: { action: event.action, text: event.text, target: event.target_participant_id }, speakingId: event.target_participant_id ?? 'table-host' })
-      if (event.text) pushMessage({ participantId: 'table-host', text: event.text, fromHost: true, action: event.action })
+      if (event.text) pushMessage({ participantId: 'table-host', text: event.text, fromHost: true, action: event.action, messageId: `host:${event.state_version}:${event.action}`, stateVersion: event.state_version })
       break
     case 'table_state_changed':
-      applyTableState(event.state)
+      if (applyTableState(event.state) && event.state.conversation.closed && runtime.viewerJoined) {
+        clearResponses()
+        setLive({ closeState: 'started' })
+        void recoverCloseArtifacts(activeTableId, VIEWER_ID, liveGeneration)
+      }
       break
     case 'grounding_card':
       setLive({ groundingCard: { title: event.title, excerpt: event.excerpt, source_ref: event.source_ref, signal_id: event.signal_id } })
       break
     case 'intervention_reflected':
       setLive({ latestReflection: event.record.reflection ?? null })
+      break
+    case 'stage_summary_requested':
+      if (getLiveState().summaryStatus !== 'running') setLive({ summaryStatus: 'requested', lastError: null })
+      break
+    case 'stage_summary_started':
+      setLive({ summaryStatus: 'running', lastError: null })
+      break
+    case 'stage_summary_published':
+      {
+        const summary = event.summary
+        const currentLatest = getLiveState().latestSummary
+        if (currentLatest && currentLatest.published_state_version > summary.published_state_version) return
+        const history = [
+          ...getLiveState().summaryHistory.filter((item) => !(item.summary_id === summary.summary_id && item.revision === summary.revision)),
+          summary,
+        ].sort((left, right) => left.published_state_version - right.published_state_version)
+        setLive({ latestSummary: summary, summaryHistory: history.slice(-8), summaryStatus: 'idle', lastError: null })
+      }
+      break
+    case 'stage_summary_failed':
+      if ((getLiveState().latestSummary?.published_state_version ?? -1) >= event.input_state_version) return
+      setLive({ summaryStatus: 'failed', lastError: event.detail })
+      break
+    case 'stage_summary_feedback':
+      {
+        const feedback = event.feedback
+        const history = [...getLiveState().summaryFeedback.filter((item) => item.feedback_id !== feedback.feedback_id), feedback]
+        setLive({ summaryFeedback: history.slice(-20) })
+      }
       break
     case 'participant_added':
     case 'participant_left':
@@ -122,17 +220,21 @@ function handleServerEvent(event: ServerEvent) {
         const state = getLiveState().tableState
         if (state?.participants[event.participant_id] && event.state_version === undefined)
           setLive({ tableState: { ...state, participants: { ...state.participants, [event.participant_id]: { ...state.participants[event.participant_id], profile_shared: event.profile_shared } } } })
-        else if (event.state_version !== undefined && state && event.state_version > state.version)
-          setLive({ lastError: '收到授权变化，正在等待完整桌状态…' })
+        // REST consent writes fan out this marker before the authoritative
+        // table_state_changed event. It is not an error and must not become a
+        // persistent toast while the state event is already in flight.
       }
       break
     case 'close_started':
+      clearResponses()
+      sendViewerTyping(false)
       setLive({ closeState: 'started' })
       break
     case 'close_artifact_ready':
       setLive({ closeState: 'ready', baseline: event.shared_baseline, personalCard: event.personal_card })
       break
     case 'table_closed':
+      clearResponses()
       setLive({ closeState: 'started' })
       if (runtime.viewerJoined) void recoverCloseArtifacts(activeTableId, VIEWER_ID, liveGeneration)
       break
@@ -210,6 +312,7 @@ function scheduleReconnect(generation = liveGeneration) {
   if (generation !== liveGeneration || runtime.reconnectTimer !== null) return
   const delay = Math.min(8000, 500 * (2 ** runtime.reconnectAttempt))
   runtime.reconnectAttempt += 1
+  clearResponses()
   setLive({ status: 'connecting', lastError: '实时连接中断，正在重连…' })
   const timer = window.setTimeout(async () => {
     runtime.timers.delete(timer)
@@ -246,11 +349,61 @@ async function hydrateAfterReconnect(generation = liveGeneration) {
     const replay = await fetchReplay(tableId, participantId)
     if (generation !== liveGeneration || tableId !== currentTableId()) return
     reconcilePendingMessages(replay)
+    reconcileConversationFromReplay(replay)
+    reconcileSummariesFromReplay(replay)
+    if (state.demo?.owner_participant_id === VIEWER_ID && !state.conversation.closed) await resumeDemoSession(tableId, VIEWER_ID)
     if (state.conversation.closed && runtime.viewerJoined) await recoverCloseArtifacts(tableId, VIEWER_ID, generation)
   } catch (error) {
     if (generation !== liveGeneration || tableId !== currentTableId()) return
     setLive({ lastError: error instanceof Error ? error.message : '重连后的桌状态恢复失败' })
   }
+}
+
+function reconcileSummariesFromReplay(replay: ReplayResponseLike) {
+  const current = getLiveState()
+  const summariesByKey = new Map<string, StageSummaryLike>()
+  for (const summary of [...current.summaryHistory, ...replay.stage_summaries]) {
+    summariesByKey.set(`${summary.summary_id}:${summary.revision}`, summary)
+  }
+  const summaries = [...summariesByKey.values()].sort((left, right) => left.published_state_version - right.published_state_version)
+  const replayLatest = summaries.filter((summary) => summary.status === 'published').at(-1) ?? summaries.at(-1) ?? null
+  const latestSummary = current.latestSummary && (!replayLatest || current.latestSummary.published_state_version > replayLatest.published_state_version)
+    ? current.latestSummary : replayLatest
+  const feedbackById = new Map(current.summaryFeedback.map((item) => [item.feedback_id, item]))
+  for (const feedback of replay.summary_feedback) feedbackById.set(feedback.feedback_id, feedback)
+  setLive({
+    latestSummary,
+    summaryHistory: summaries.slice(-8),
+    summaryFeedback: [...feedbackById.values()].slice(-20),
+    summaryStatus: current.summaryStatus === 'requested' || current.summaryStatus === 'running' ? current.summaryStatus : 'idle',
+  })
+}
+
+function reconcileConversationFromReplay(replay: ReplayResponseLike) {
+  const current = getLiveState().messages
+  const turnVersion = (turnId: number) => replay.snapshots.find((snapshot) =>
+    Object.values(snapshot.participants).some((participant) => participant.last_spoke_turn === turnId),
+  )?.version ?? turnId
+  const recovered = replay.messages.map((message) => ({
+    participantId: message.participant_id,
+    text: message.text,
+    turnId: message.turn_id,
+    fromHost: false,
+    action: null,
+    messageId: message.message_id ?? undefined,
+    delivery: 'committed' as const,
+    source: message.source,
+    stateVersion: turnVersion(message.turn_id),
+  }))
+  const hosts = replay.interventions.filter((record) => record.text).map((record) => ({
+    participantId: 'table-host', text: record.text!, fromHost: true, action: record.action,
+    messageId: `host:${record.state_version}:${record.action}`, stateVersion: record.state_version,
+    delivery: 'committed' as const,
+  }))
+  const committedIds = new Set([...recovered, ...hosts].map((message) => message.messageId).filter(Boolean))
+  const localOnly = current.filter((message) => !message.messageId || !committedIds.has(message.messageId))
+  for (const message of recovered) if (message.messageId) runtime.seenMessageIds.add(message.messageId)
+  setLive({ messages: [...recovered, ...hosts, ...localOnly].sort((a, b) => (a.stateVersion ?? Infinity) - (b.stateVersion ?? Infinity)).slice(-120) })
 }
 
 function reconcilePendingMessages(replay: ReplayResponseLike) {
@@ -267,6 +420,7 @@ function reconcilePendingMessages(replay: ReplayResponseLike) {
       commitMessage(message.messageId, {
         participantId: committed.participant_id,
         text: committed.text,
+        turnId: committed.turn_id,
         fromHost: false,
         action: null,
       })
@@ -286,6 +440,7 @@ async function reconcileMessageFromReplay(messageId: string, generation = liveGe
       commitMessage(messageId, {
         participantId: committed.participant_id,
         text: committed.text,
+        turnId: committed.turn_id,
         fromHost: false,
         action: null,
       })
@@ -299,7 +454,7 @@ async function reconcileMessageFromReplay(messageId: string, generation = liveGe
   }
 }
 
-function sendVia(socket: WebSocket, payload: ClientHumanMessage | { type: 'request_close' } | { type: 'request_nudge' }): boolean {
+function sendVia(socket: WebSocket, payload: ClientHumanMessage | ClientRequestStageSummary | { type: 'request_close' } | { type: 'request_nudge' } | { type: 'participant_typing'; is_typing: boolean }): boolean {
   if (socket.readyState !== WebSocket.OPEN) return false
   try {
     socket.send(JSON.stringify(payload))
@@ -328,6 +483,7 @@ function acceptStateVersion(version: number): boolean {
 
 function applyTableState(state: NonNullable<LiveStatus['tableState']>): boolean {
   if (!acceptStateVersion(state.version)) return false
+  const waitingForConsentState = getLiveState().lastError === CONSENT_STATE_WAITING_NOTICE
   setLive({
     tableState: state,
     phase: state.phase,
@@ -335,6 +491,7 @@ function applyTableState(state: NonNullable<LiveStatus['tableState']>): boolean 
     subQuestion: state.current_subquestion,
     seatCount: Object.keys(state.participants).length,
     tableMode: state.conversation.mode ?? null,
+    ...(waitingForConsentState ? { lastError: null } : {}),
   })
   return true
 }
@@ -384,6 +541,7 @@ export function ensureTable(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_C
 
 export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAULT_CORE_QUESTION, requestedMode: 'observer' | 'participant' = 'observer'): Promise<void> {
   const generation = ++liveGeneration
+  clearResponses()
   resetLive()
   resetEventDedupe()
   setLive({ status: 'connecting' })
@@ -433,6 +591,12 @@ export async function startLive(tableId = DEFAULT_TABLE_ID, coreQuestion = DEFAU
   try {
     applyTableState(initialState)
     setLive({ viewerJoined: shouldParticipate })
+    const replay = await fetchReplay(readyTableId, shouldParticipate ? VIEWER_ID : undefined)
+    if (generation === liveGeneration && readyTableId === currentTableId()) {
+      reconcileConversationFromReplay(replay)
+      reconcileSummariesFromReplay(replay)
+      if (initialState.demo?.owner_participant_id === VIEWER_ID && !initialState.conversation.closed) await resumeDemoSession(readyTableId, VIEWER_ID)
+    }
     if (initialState.conversation.closed && shouldParticipate) void recoverCloseArtifacts(readyTableId, VIEWER_ID, generation)
   } catch {
     // The observer stream remains authoritative if the initial REST refresh races it.
@@ -526,6 +690,7 @@ export function sendViewerMessage(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
   if (!runtime.viewerJoined) return false
+  sendViewerTyping(false)
   const status = getLiveState().status
   if (status !== 'live' && status !== 'mock') return false
   if (status === 'mock') {
@@ -588,6 +753,38 @@ export function loadReplay(tableId = currentTableId(), participantId?: string): 
   return fetchReplay(tableId, participantId)
 }
 
+export function requestStageSummary(): boolean {
+  if (!runtime.viewerJoined) return false
+  const state = getLiveState()
+  if (state.closeState !== 'idle' || (state.status !== 'live' && state.status !== 'mock')) return false
+  if (state.summaryStatus === 'requested' || state.summaryStatus === 'running') return false
+  if (state.status === 'mock') {
+    setLive({ summaryStatus: 'requested' })
+    window.setTimeout(() => {
+      if (getLiveState().summaryStatus === 'requested') setLive({ summaryStatus: 'idle', lastError: '演示模式暂不生成阶段总结。' })
+    }, 1200)
+    return true
+  }
+  const sent = !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_stage_summary', request_id: `summary-${Date.now()}` })
+  if (sent) setLive({ summaryStatus: 'requested', lastError: null })
+  return sent
+}
+
+export async function submitStageSummaryFeedbackFromViewer(
+  summary: StageSummaryLike,
+  kind: StageSummaryFeedbackKindLike,
+  note?: string,
+  evidenceTurns: number[] = [],
+) {
+  const tableId = currentTableId()
+  const generation = liveGeneration
+  const feedback = await submitStageSummaryFeedbackApi(tableId, summary, VIEWER_ID, kind, note, evidenceTurns)
+  if (generation !== liveGeneration || tableId !== currentTableId()) return feedback
+  const history = [...getLiveState().summaryFeedback.filter((item) => item.feedback_id !== feedback.feedback_id), feedback]
+  setLive({ summaryFeedback: history.slice(-20) })
+  return feedback
+}
+
 export function requestClose(): boolean {
   if (!runtime.viewerJoined) return false
   const state = getLiveState()
@@ -600,6 +797,8 @@ export function requestClose(): boolean {
 }
 
 export function stopLive() {
+  sendViewerTyping(false)
+  clearResponses()
   liveGeneration += 1
   runtime.timers.forEach((timer) => window.clearTimeout(timer))
   runtime.timers.clear()

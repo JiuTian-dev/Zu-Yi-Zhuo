@@ -8,6 +8,15 @@
 
 ## 本地运行
 
+在项目根目录执行下面这一条命令，会同时启动前端和后端；按 `Ctrl+C` 会一起关闭：
+
+```powershell
+cd D:\知乎黑客松
+corepack pnpm dev:stack
+```
+
+如果只调试后端，仍可单独执行：
+
 ```powershell
 cd D:\知乎黑客松\backend
 python -m pip install -r requirements.txt
@@ -272,12 +281,22 @@ Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`�
 默认演示不调用外部模型，`CONVERSATION_PROVIDER` 未设置或为 `deterministic` 时不产生外部请求。
 需要接入 OpenAI Responses 时安装可选依赖并设置运行时变量：
 
+本地联合启动时可直接编辑 `backend/.env.local`。模板位于
+`backend/agent-llm.config.example.env`；`corepack pnpm dev:stack` 会把该文件只注入后端，
+不会把 key 暴露给前端 Vite 进程。
+
 ```powershell
 python -m pip install -e ".[openai]"
 $env:CONVERSATION_PROVIDER = "openai"
 $env:OPENAI_API_KEY = "..."
 $env:OPENAI_MODEL = "gpt-4o-mini"
 ```
+
+OpenAI Next Credits 使用 OpenAI 兼容的 Chat Completions 端点，将 `OPENAI_BASE_URL` 设为
+`https://api.openai-next.com/v1`，并将 `OPENAI_API_STYLE=chat`；Claude Sonnet 4.6 的模型 ID 为
+`claude-sonnet-4-6`。模型 ID、Key 与额度以 [OpenAI Next Credits 资源指南](https://credits.openai-next.com/guide/resources)
+和 [Quickstart](https://credits.openai-next.com/guide/quickstart) 为准。短回复场景建议将
+`OPENAI_THINKING=disabled`，把平台生成的 Key 填入 `OPENAI_API_KEY`。
 
 provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案；Gate、Safety、Router、状态证据、目标人和 GROUND 来源不交给模型决定。
 模型只收到公开问题、当前子问题和确定性草稿，不会收到完整 Table State 或未同意的个人资料。输出为空、超出 120 字、包含系统腔/来源声称/链接或调用失败时自动回退到确定性草稿。

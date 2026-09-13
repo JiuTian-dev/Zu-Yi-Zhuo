@@ -40,9 +40,9 @@ def test_table_lifecycle_returns_serializable_snapshots_and_close_artifact() -> 
 
     closed = client.post("/tables/t-api/close")
     assert closed.status_code == 200
-    assert closed.json()["table_id"] == "t-api" and closed.json()["state_version"] == 3
+    assert closed.json()["table_id"] == "t-api" and closed.json()["state_version"] == 4
     assert client.get("/tables/t-api/state").json()["conversation"]["closed"] is True
-    assert client.post("/tables/t-api/close").json()["state_version"] == 3
+    assert client.post("/tables/t-api/close").json()["state_version"] == 4
     assert repository.get("t-api").phase.value == "close"
     with pytest.raises(ValueError, match="table is closed"):
         repository.append_turn("t-api", HumanTurn(turn_id=2, participant_id="p1", text="不应再写入"))
@@ -189,7 +189,7 @@ def test_follow_up_outcomes_can_be_reported_and_retrieved_after_close() -> None:
         "participant_id": "p1",
         "event_type": "follow_up_outcome",
         "table_id": "echo-api",
-        "state_version": 2,
+            "state_version": 3,
         "detail": "status:completed",
     }
 
@@ -791,6 +791,7 @@ def test_capabilities_describe_runtime_paths_without_secrets() -> None:
         "oauth_configured": False,
         "websocket_available": True,
         "max_table_participants": 5,
+        "judge_demo_available": False,
     }
     assert "token" not in response.text
     assert "command" not in response.text
@@ -813,6 +814,7 @@ def test_capabilities_reflect_injected_provider_sources() -> None:
         "oauth_configured": False,
         "websocket_available": True,
         "max_table_participants": 5,
+        "judge_demo_available": False,
     }
 
 

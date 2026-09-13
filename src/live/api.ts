@@ -18,6 +18,10 @@ import type {
   InvitationResponseLike,
   JoinRequestApprovalLike,
   JoinRequestViewLike,
+  StageSummaryFeedbackKindLike,
+  StageSummaryFeedbackLike,
+  StageSummaryLike,
+  DemoCaseLike,
 } from './contract'
 
 const API_TIMEOUT_MS = 4500
@@ -83,6 +87,21 @@ function query(params: Record<string, string | number | undefined>) {
   })
   const suffix = search.toString()
   return suffix ? `?${suffix}` : ''
+}
+
+export function fetchDemoCase() {
+  return requestJson<DemoCaseLike>('/demo/cases/ai_friendship')
+}
+
+export function createDemoSession(participantId: string, requestId: string) {
+  return requestJson<{ table_id: string; state: TableStateLike }>('/demo/sessions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant_id: participantId, display_name: '你', request_id: requestId }),
+  })
+}
+
+export function resumeDemoSession(tableId: string, participantId: string) {
+  return requestJson<unknown>(`/demo/sessions/${encodeURIComponent(tableId)}/resume${query({ participant_id: participantId })}`, { method: 'POST' })
 }
 
 export function fetchDiscovery(limit = 20) {
@@ -192,6 +211,31 @@ export function leaveTable(tableId: string, participantId: string) {
 export function fetchReplay(tableId: string, participantId?: string) {
   return requestJson<ReplayResponseLike>(
     `/tables/${encodeURIComponent(tableId)}/replay${query({ participant_id: participantId })}`,
+  )
+}
+
+export function requestStageSummary(tableId: string, participantId: string) {
+  return requestJson<{ table_id: string; accepted: boolean; state_version: number }>(
+    `/tables/${encodeURIComponent(tableId)}/stage-summaries/request${query({ participant_id: participantId })}`,
+    { method: 'POST' },
+  )
+}
+
+export function submitStageSummaryFeedback(
+  tableId: string,
+  summary: StageSummaryLike,
+  participantId: string,
+  kind: StageSummaryFeedbackKindLike,
+  note?: string,
+  evidenceTurns: number[] = [],
+) {
+  return requestJson<StageSummaryFeedbackLike>(
+    `/tables/${encodeURIComponent(tableId)}/stage-summaries/${encodeURIComponent(summary.summary_id)}/feedback${query({ participant_id: participantId, summary_revision: summary.revision })}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, note: note?.trim() || undefined, evidence_turns: evidenceTurns }),
+    },
   )
 }
 
