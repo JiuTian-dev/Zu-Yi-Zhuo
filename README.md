@@ -44,7 +44,13 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 
 ## 项目现状
 
-截至 2026-09-05，主流程已经打通：
+### 最新：五角色评委体验桌
+
+评委可从首页的“模拟体验”进入独立体验桌，题目为“如果 AI 比朋友更懂你，你还会找真人聊天吗？”。一桌包含评委、三位模拟桌友（小许、阿周、林林）和一位圆桌主持；桌友会根据评委的真实发言接话，阶段小结可修改并回到原话，收桌后生成本桌记录。模拟身份仅用于演示，不代表知乎真实用户。
+
+体验桌使用后端真实会话、持久化回放和 WebSocket 实时事件，模型响应会在聊天流中显示“正在输入/整理中”等短状态；模型或网络异常时使用可恢复的安全降级，不阻塞评委继续发言。详细合同、任务清单和验收证据见 [`specs/judge-ai-friendship-demo.md`](specs/judge-ai-friendship-demo.md)。
+
+截至 2026-09-13，主流程已经打通：
 
 ```text
 队友首页交接
@@ -106,11 +112,11 @@ Agent 的重点是听和递话：必要时追问、换角度、把观点落到�
 最近一次验证结果：
 
 ```text
-corepack pnpm check          passed
-corepack pnpm build          passed
+corepack pnpm check           passed
+corepack pnpm build           passed
 corepack pnpm verify:frontend passed
-corepack pnpm verify:p0-p2   passed
-backend pytest               507 passed
+corepack pnpm verify:p0-p2    passed
+backend pytest                568 passed
 ```
 
 ## 下一步方向
@@ -166,19 +172,34 @@ docs/                              # 产品上位文档
 corepack pnpm install
 ```
 
-### 2. 启动后端
+### 2. 启动前后端（推荐）
 
-新开一个终端：
+在项目根目录运行，脚本会同时启动 Vite 和 FastAPI：
+
+```powershell
+corepack pnpm dev:stack
+```
+
+打开 `http://127.0.0.1:5174/`。后端地址为 `http://127.0.0.1:8000/`，可用 `/healthz` 和 `/readyz` 检查。
+
+首次运行前仍需安装后端依赖：
 
 ```powershell
 cd backend
 python -m pip install -r requirements.txt
+cd ..
+```
+
+如需分别调试，也可以手动启动后端和前端：
+
+后端终端：
+
+```powershell
+cd backend
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. 启动前端
-
-在项目根目录运行：
+前端终端（项目根目录）：
 
 ```powershell
 corepack pnpm dev
@@ -212,6 +233,7 @@ pytest
 - [`specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md`](specs/NEXT-STAGE-WATER-AND-RUNTIME-CLOSURE.md)：水景恢复与运行时收口记录。
 - [`specs/P0-P2-PRODUCT-TASKS.md`](specs/P0-P2-PRODUCT-TASKS.md)：产品主流程和队友首页、当前匹配页/桌内工作线的分工。
 - [`specs/conversation-orchestrator.md`](specs/conversation-orchestrator.md)：后端 Conversation Orchestrator 规格。
+- [`specs/judge-ai-friendship-demo.md`](specs/judge-ai-friendship-demo.md)：五角色评委体验桌、模拟桌友调度、可视等待、小结纠偏与验收记录。
 - [`specs/ZHIHU-OAUTH-REAL-DATA.md`](specs/ZHIHU-OAUTH-REAL-DATA.md)：知乎 OAuth 与真实数据接入清单。
 
 ## 第三方说明
