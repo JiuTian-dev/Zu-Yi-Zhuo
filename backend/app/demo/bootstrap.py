@@ -46,8 +46,37 @@ def _demo_table_specs() -> tuple[tuple[str, str, tuple[ParticipantSeed, ...]], .
     return (
         (
             "demo-agent",
-            "AI Agent 真正进入企业，卡住的是技术还是采购？",
-            tuple(flagship_participants[:4]),
+            "AI 时代，专业判断会被替代吗？",
+            (
+                _seed(
+                    "judgment-engineer",
+                    "周砚",
+                    "AI 工程师 · 技术视角",
+                    "AI 会替代可标准化的判断，但不能替代责任主体",
+                    "参与过企业知识助手从试点到上线的评估与复盘",
+                ),
+                _seed(
+                    "judgment-doctor",
+                    "林夏",
+                    "临床医生 · 经验视角",
+                    "高风险专业判断来自现场经验，也来自愿意承担后果",
+                    "在临床辅助决策中持续核对模型建议与真实病情",
+                ),
+                _seed(
+                    "judgment-researcher",
+                    "程野",
+                    "认知研究者 · 理论视角",
+                    "专业判断不是答案本身，而是一套可解释、可质疑的过程",
+                    "研究过专家直觉、规则系统与生成式 AI 的判断边界",
+                ),
+                _seed(
+                    "judgment-auditor",
+                    "秦越",
+                    "风控负责人 · 事实视角",
+                    "判断是否可靠，要回到证据、误差和可以追责的记录",
+                    "负责过自动化决策系统上线前后的风险审查",
+                ),
+            ),
         ),
         (
             "demo-rest",
@@ -85,23 +114,8 @@ def _demo_table_specs() -> tuple[tuple[str, str, tuple[ParticipantSeed, ...]], .
         ),
         (
             "demo-gap",
-            "AI 时代，专业判断会被替代吗？",
-            (
-                _seed(
-                    "gap-product",
-                    "方宁",
-                    "产品负责人",
-                    "判断不能只看模型分数，还要看真实使用场景",
-                    "负责过面向真实用户的 AI 产品试点",
-                ),
-                _seed(
-                    "gap-architect",
-                    "顾远",
-                    "专业者",
-                    "模型能力越强，边界和责任越需要被说清楚",
-                    "参与过企业 AI 系统的架构与评审",
-                ),
-            ),
+            "AI Agent 真正进入企业，卡住的是技术还是采购？",
+            tuple(flagship_participants[:2]),
         ),
     )
 

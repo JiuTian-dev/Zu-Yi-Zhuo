@@ -113,7 +113,7 @@ def test_simulated_identity_cannot_be_spoofed_or_joined_or_saved():
 def test_speaker_selection_mentions_and_balance():
     async def exercise():
         service, repo, _, _, tid = await service_fixture()
-        repo.append_message_once(tid, "judge", "小许，你有被 AI 误解过吗？", "judge-1")
+        repo.append_message_once(tid, "judge", "林夏，你在临床里见过 AI 误判吗？", "judge-1")
         assert service.select_speaker(repo.get(tid), repo.turns(tid))["persona_id"] == "xiaoxu"
         other, *_ = await service_fixture()
         assert other.select_speaker(other.repository.get(tid), other.repository.turns(tid))["persona_id"] != "azhou"
@@ -295,7 +295,7 @@ def test_websocket_real_flow_status_commit_replay_and_typing():
         tid = session["table_id"]
         with client.websocket_connect(f"/ws/tables/{tid}?participant_id=judge") as ws:
             ws.send_json({"type": "participant_typing", "is_typing": True})
-            ws.send_json({"type": "human_message", "participant_id": "judge", "message_id": "j1", "text": "小许，你怕不怕打扰朋友？", "client_ts": 1})
+            ws.send_json({"type": "human_message", "participant_id": "judge", "message_id": "j1", "text": "林夏，你在临床里见过 AI 误判吗？", "client_ts": 1})
             events = []
             for _ in range(20):
                 item = ws.receive_json()

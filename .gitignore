@@ -60,6 +60,7 @@ public/assets/campfire-table.png
 *.sqlite3
 *.db
 *.log
+backend/.demo-data/
 
 # Local browser/diag scratch (Playwright Edge profiles, etc.).
 .tmp*/
