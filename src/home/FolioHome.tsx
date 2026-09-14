@@ -4,7 +4,8 @@ import FriendsDock from './FriendsDock'
 import { fetchDiscovery } from '../live/api'
 import './folioHome.css'
 
-const FOLIO_HOME_URL = import.meta.env.VITE_FOLIO_HOME_URL ?? 'http://127.0.0.1:5175/'
+/** Same-origin under the main Vite port (5174); proxied to Folio Vite. */
+const FOLIO_HOME_URL = import.meta.env.VITE_FOLIO_HOME_URL ?? '/folio-home/'
 
 interface FolioHomeProps {
   onOpenProfile(): void

@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const FOLIO_DEV_TARGET = process.env.DEV_FOLIO_TARGET ?? 'http://127.0.0.1:5175'
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -8,6 +10,12 @@ export default defineConfig({
     strictPort: true,
     hmr: { clientPort: 5174 },
     proxy: {
+      // Folio homepage world — browser only talks to 5174; Folio Vite stays internal.
+      '/folio-home': {
+        target: FOLIO_DEV_TARGET,
+        changeOrigin: true,
+        ws: true,
+      },
       '/ws': { target: 'http://127.0.0.1:8000', ws: true },
       '/tables': { target: 'http://127.0.0.1:8000' },
       '/demo': { target: 'http://127.0.0.1:8000' },

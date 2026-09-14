@@ -61,8 +61,7 @@ function stop(code = 0) {
 process.once('SIGINT', () => stop(0))
 process.once('SIGTERM', () => stop(0))
 
-console.log(`前端: http://127.0.0.1:${frontendPort}/`)
-console.log(`首页世界: http://127.0.0.1:${folioPort}/`)
+console.log(`前端+首页: http://127.0.0.1:${frontendPort}/  (Folio iframe → /folio-home/ → :${folioPort})`)
 console.log(`后端: http://127.0.0.1:${backendPort}/`)
 
 const localBackendEnv = Object.fromEntries(
