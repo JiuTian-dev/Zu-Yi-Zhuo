@@ -1,0 +1,106 @@
+.touch-buttons
+    display none
+    position absolute
+    bottom 0
+    left 0
+    height 0
+    width 100%
+    pointer-events none
+    -webkit-user-select none
+    -moz-user-select none
+    user-select none
+
+    &.is-active
+        display block
+    
+    .overlay
+        display none
+        position absolute
+        left 0
+        bottom 0
+        width 100%
+        min-height clamp(64px, 12vh, 120px)
+        height clamp(64px, 15vh, 140px)
+        background radial-gradient(ellipse farthest-side at bottom, #1D1721, #1D172100)
+        background linear-gradient(#1D172100, #1D172199)
+
+        &.is-visible
+            display block
+
+    .list
+        display flex
+        align-items center
+        justify-content center
+        position absolute
+        bottom 0
+        left 0
+        width 100%
+        color #ffffff
+        font-family "Amatic SC", sans-serif
+        font-weight 700
+        // Adaptive type size: tracks shorter viewport edge
+        font-size clamp(28px, 6.5vmin, 64px)
+        min-height clamp(72px, 16vh, 140px)
+        height clamp(72px, 20vh, 160px)
+
+        button
+            display none
+            height clamp(48px, 10vmin, 80px)
+            justify-content center
+            align-items center
+            padding-left clamp(12px, 7vw, 64px)
+            padding-right clamp(12px, 7vw, 64px)
+            pointer-events auto
+
+            &.is-visible
+                display flex
+
+            &.interact
+            &.unstuck
+                padding-left clamp(10px, 3.5vw, 40px)
+                padding-right clamp(10px, 3.5vw, 40px)
+
+        .previous
+            &::after
+                content ''
+                display block
+                width clamp(14px, 2.4vmin, 20px)
+                height clamp(24px, 4.2vmin, 36px)
+                background url('../ui/actions/actions-icon-arrow.webp')
+                background-size contain
+                background-repeat no-repeat
+                background-position center
+
+        .next
+            &::after
+                content ''
+                display block
+                width clamp(14px, 2.4vmin, 20px)
+                height clamp(24px, 4.2vmin, 36px)
+                background url('../ui/actions/actions-icon-arrow.webp')
+                background-size contain
+                background-repeat no-repeat
+                background-position center
+                transform rotate(180deg)
+
+        .close
+            &::after
+                content ''
+                display block
+                width clamp(24px, 4.2vmin, 36px)
+                height clamp(24px, 4.2vmin, 36px)
+                background url('../ui/actions/actions-icon-close.webp')
+                background-size contain
+                background-repeat no-repeat
+                background-position center
+
+        .open
+            &::after
+                content ''
+                display block
+                width clamp(24px, 4.4vmin, 38px)
+                height clamp(24px, 4.4vmin, 38px)
+                background url('../ui/actions/actions-icon-open.webp')
+                background-size contain
+                background-repeat no-repeat
+                background-position center

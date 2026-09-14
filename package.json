@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:folio": "npm --prefix folio-2025 run dev",
+    "dev:home": "npm run dev:folio",
     "dev:stack": "node scripts/dev-stack.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

@@ -6,6 +6,7 @@ import path from 'node:path'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const backendRoot = path.join(root, 'backend')
 const frontendPort = process.env.DEV_FRONTEND_PORT ?? '5174'
+const folioPort = process.env.DEV_FOLIO_PORT ?? '5175'
 const backendPort = process.env.DEV_BACKEND_PORT ?? '8000'
 const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const python = process.platform === 'win32' ? 'py.exe' : 'python3'
@@ -61,12 +62,24 @@ process.once('SIGINT', () => stop(0))
 process.once('SIGTERM', () => stop(0))
 
 console.log(`前端: http://127.0.0.1:${frontendPort}/`)
+console.log(`首页世界: http://127.0.0.1:${folioPort}/`)
 console.log(`后端: http://127.0.0.1:${backendPort}/`)
 
 const localBackendEnv = Object.fromEntries(
   Object.entries(loadLocalEnv(path.join(backendRoot, '.env.local')))
     .filter(([key]) => process.env[key] === undefined),
 )
+
+const folioRoot = path.join(root, 'folio-2025')
+if (existsSync(path.join(folioRoot, 'package.json'))) {
+  const folioExecutable = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : 'npm'
+  const folioArgs = process.platform === 'win32'
+    ? ['/d', '/s', '/c', 'npm', 'run', 'dev']
+    : ['run', 'dev']
+  start('folio-home', folioExecutable, folioArgs, folioRoot)
+} else {
+  console.warn('[folio-home] 未找到 folio-2025/，首页 iframe 将无法加载。请先 junction/复制 D:\\folio-2025。')
+}
 
 start('backend', python, [
   '-m', 'uvicorn', 'app.main:app',

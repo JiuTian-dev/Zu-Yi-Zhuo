@@ -33,22 +33,52 @@ export class Game
         return Game.instance
     }
 
-    constructor()
+    constructor(options = {})
     {
+        const domElement = options.domElement
+            ?? (typeof document !== 'undefined' ? document.querySelector('.bruno-runtime-canvas') : null)
+        const canvasElement = options.canvasElement
+            ?? domElement?.querySelector?.('.js-canvas')
+            ?? null
+
+        // Never reuse a singleton bound to a detached canvas. Home↔match remounts
+        // replace the DOM node; returning the old Game leaves WebGPU drawing nowhere.
         if(Game.instance)
-            return Game.instance
+        {
+            const live = !Game.instance.destroyed
+            const sameCanvas = live
+                && Game.instance.canvasElement === canvasElement
+                && canvasElement?.isConnected
+            if(sameCanvas)
+                return Game.instance
+            try
+            {
+                if(!Game.instance.destroyed)
+                    Game.instance.destroy()
+            }
+            catch
+            {
+                // Teardown must not block a fresh mount.
+            }
+            Game.instance = null
+        }
 
         Game.instance = this
         this.destroyed = false
+        this.mountOptions = { domElement, canvasElement }
         this.ready = this.init()
     }
 
     async init()
     {
-        this.domElement = document.querySelector('.bruno-runtime-canvas')
-        this.canvasElement = this.domElement?.querySelector('.js-canvas')
+        this.domElement = this.mountOptions?.domElement
+            ?? document.querySelector('.bruno-runtime-canvas')
+        this.canvasElement = this.mountOptions?.canvasElement
+            ?? this.domElement?.querySelector('.js-canvas')
         if(!this.domElement || !this.canvasElement)
             throw new Error('BrunoRuntime requires .bruno-runtime-canvas and .js-canvas')
+        if(!this.canvasElement.isConnected)
+            throw new Error('BrunoRuntime canvas is not connected to the document')
 
         this.scene = new THREE.Scene()
         this.debug = new Debug()
@@ -258,19 +288,27 @@ export class Game
     destroy()
     {
         if(this.destroyed)
-            return
-        this.destroyed = true
-        this.cameraOrbit?.destroy?.()
-        this.sceneBridge?.destroy?.()
-        this.view?.destroy?.()
-        this.viewport?.destroy?.()
-        this.rendering?.destroy?.()
-        this.world?.distantLandscape?.destroy?.()
-        this.scene?.traverse((object) =>
         {
-            object.geometry?.dispose?.()
+            Game.instance = null
+            return
+        }
+        this.destroyed = true
+        const safe = (fn) => {
+            try { fn() } catch { /* product shell teardown must survive GPU dispose races */ }
+        }
+        safe(() => this.cameraOrbit?.destroy?.())
+        safe(() => this.sceneBridge?.destroy?.())
+        safe(() => this.view?.destroy?.())
+        safe(() => this.viewport?.destroy?.())
+        safe(() => this.rendering?.destroy?.())
+        safe(() => this.world?.distantLandscape?.destroy?.())
+        safe(() => {
+            this.scene?.traverse((object) =>
+            {
+                object.geometry?.dispose?.()
+            })
         })
-        this.disposeResources()
+        safe(() => this.disposeResources())
         Game.instance = null
     }
 }

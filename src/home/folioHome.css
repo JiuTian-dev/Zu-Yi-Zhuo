@@ -1,0 +1,50 @@
+.folio-home {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  background: #1d1721;
+}
+
+.folio-home-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.folio-home-chrome {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.folio-home-chrome > * {
+  pointer-events: auto;
+}
+
+.folio-home-chrome .home-account {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 80;
+  margin: 0;
+}
+
+.folio-home-brand {
+  margin: 0;
+  font-family: 'Bricolage Grotesque', 'Nunito', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff8f0;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+}

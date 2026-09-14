@@ -185,7 +185,8 @@ export class Rendering
     {
         this.game.ticker?.events?.off?.('tick', this.onTick)
         this.game.viewport?.events?.off?.('change', this.onViewportChange)
-        this.renderer?.setAnimationLoop?.(null)
-        this.renderer?.dispose?.()
+        try { this.renderer?.setAnimationLoop?.(null) } catch { /* ignore */ }
+        try { this.renderer?.dispose?.() } catch { /* WebGPU node dispose can race teardown */ }
+        this.renderer = null
     }
 }

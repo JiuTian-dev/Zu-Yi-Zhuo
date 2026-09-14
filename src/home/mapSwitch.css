@@ -1,0 +1,75 @@
+.map-switch {
+  position: fixed;
+  right: 0;
+  top: 70px;
+  z-index: 45;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.map-switch:hover .map-switch-inner {
+  transform: translateX(-4px);
+}
+
+.map-switch:hover .map-switch-inner::after {
+  opacity: 0.8;
+}
+
+.map-switch:hover .map-switch-icon {
+  opacity: 1;
+}
+
+.map-switch-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% + 4px);
+  height: 100%;
+  background: radial-gradient(ellipse at top right, #c21515, #46123b);
+  transition: transform 0.15s;
+}
+
+.map-switch-inner::after {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 3px;
+  right: 0;
+  bottom: 3px;
+  left: 3px;
+  border: 1px solid #ffffff;
+  border-right: none;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+
+.map-switch-icon {
+  display: flex;
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 3px;
+  opacity: 0.92;
+}
+
+.map-switch-img {
+  display: block;
+  width: 22px;
+  height: auto;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-switch-inner {
+    transition: none;
+  }
+}

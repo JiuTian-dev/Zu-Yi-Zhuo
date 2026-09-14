@@ -20,6 +20,16 @@ import { setAmbient, stopAmbient } from './audio/ambient'
 import TableWorld from './TableWorld'
 import { projectTableAnchor, setDayCycleMode, setRuntimeInteraction, transitionTableCamera, type DayCycleMode } from './bruno-runtime/runtimeController'
 import DrawerToggle from './DrawerToggle'
+import FolioHome from './home/FolioHome'
+import MapSwitchButton from './home/MapSwitchButton'
+import ProfilePage from './home/ProfilePage'
+import { getHomeAccount } from './home/accountStore'
+import LoginPage from './login/LoginPage'
+import './home/home.css'
+import './home/mapSwitch.css'
+import RelationshipPanel from './live/RelationshipPanel'
+
+type ShellView = 'home' | 'profile' | 'match'
 
 type ExperiencePhase = 'discovering' | 'approaching' | 'seated'
 type RoomLayer = 'none' | 'join' | 'menu' | 'settings' | 'history' | 'summary' | 'close_confirm' | 'closing'
@@ -692,6 +702,7 @@ function TransitionCover({ snapshot }: { snapshot: TransitionSnapshot }) {
 }
 export default function App() {
   const activeRoom = readActiveRoom()
+  const [shell, setShell] = useState<ShellView>(() => activeRoom ? 'match' : 'home')
   const [appPhase, setAppPhase] = useState<AppPhase>(() => activeRoom ? 'world' : 'gallery')
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
   const [lobbyTable, setLobbyTable] = useState<TableSummary | null>(() => activeRoom?.table ?? null)
@@ -708,6 +719,8 @@ export default function App() {
   const [homeContextError, setHomeContextError] = useState<string | null>(null)
   const [lobbyInitialJoined, setLobbyInitialJoined] = useState(false)
   const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(() => activeRoom?.intent ?? null)
+  const [relationshipOpen, setRelationshipOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
   const [demoCase, setDemoCase] = useState<DemoCaseLike | null>(null)
   const [demoOpen, setDemoOpen] = useState(false)
   const [demoPending, setDemoPending] = useState(false)
@@ -785,6 +798,7 @@ export default function App() {
       setEntryIntent('join')
       try { sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ table, intent: 'join', joined: true })) } catch { /* Live session works without storage. */ }
       setDemoOpen(false)
+      setShell('match')
       setAppPhase('world')
       demoRequestId.current = null
     } catch (error) {
@@ -854,18 +868,18 @@ export default function App() {
       transitionTimer.current = null
     }, delay)
   }
-  const openLobby = (table: TableSummary, rect: GalleryMediaRect, initiallyJoined = false) => {
-    if (appPhase !== 'gallery' || table.entryMode !== 'immersive') return
+  const openLobby = (table: TableSummary, rect: GalleryMediaRect, initiallyJoined = false, force = false) => {
+    if ((!force && appPhase !== 'gallery') || table.entryMode !== 'immersive') return
     pendingRectRef.current = rect
     setLobbyTable(table)
     setLobbyInitialJoined(initiallyJoined)
     setAppPhase('lobby')
     loadLobbyData(table)
   }
-  const openLobbyById = async (tableId: string, initiallyJoined = false) => {
+  const openLobbyById = async (tableId: string, initiallyJoined = false, force = false) => {
     const preview = await fetchLobby(tableId)
     if (preview.status !== 'open') throw new Error(preview.status === 'closed' ? '这张桌已经收束，暂时不能再次入席。' : '这张桌暂时暂停接收新席位。')
-    openLobby(tableSummaryFromLobby(preview), { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }, initiallyJoined)
+    openLobby(tableSummaryFromLobby(preview), { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }, initiallyJoined, force)
   }
   const openIntentTable = async (tableId: string) => {
     await openLobbyById(tableId)
@@ -878,7 +892,9 @@ export default function App() {
     setIntentInitialQuestion('')
   }
   useEffect(() => {
-    if (!homeContext || appPhase !== 'gallery') return
+    if (!homeContext) return
+    if (shell !== 'match') setShell('match')
+    if (appPhase !== 'gallery') return
     const context = homeContext
     setHomeContext(null)
     clearHomeContext()
@@ -891,9 +907,11 @@ export default function App() {
       return
     }
     if (context.initial_question) setIntentOpen(true)
-  }, [appPhase, homeContext])
+  }, [appPhase, homeContext, shell])
   useEffect(() => {
-    if (!openTableContext || appPhase !== 'gallery') return
+    if (!openTableContext) return
+    if (shell !== 'match') setShell('match')
+    if (appPhase !== 'gallery') return
     const context = openTableContext
     setOpenTableContext(null)
     clearOpenTableContext()
@@ -901,7 +919,67 @@ export default function App() {
     void openLobbyById(context.table_id).catch((error) => {
       setHomeContextError(error instanceof Error ? error.message : '这张桌暂时无法打开')
     })
-  }, [appPhase, openTableContext])
+  }, [appPhase, openTableContext, shell])
+  const enterMatchFromHome = () => {
+    setRelationshipOpen(false)
+    setShell('match')
+    setAppPhase('gallery')
+  }
+  const openPreciseMatchFromHome = () => {
+    setRelationshipOpen(false)
+    setIntentInitialQuestion('')
+    setIntentOpen(true)
+    setShell('match')
+    setAppPhase('gallery')
+  }
+  const openHostTableFromHome = () => {
+    setRelationshipOpen(false)
+    setIntentInitialQuestion('我想开一桌新的讨论')
+    setIntentOpen(true)
+    setShell('match')
+    setAppPhase('gallery')
+  }
+  const openTableFromHome = async (tableId: string) => {
+    setRelationshipOpen(false)
+    setShell('match')
+    setAppPhase('gallery')
+    await openLobbyById(tableId, false, true)
+  }
+  const returnToHome = () => {
+    if (appPhase === 'world' || appPhase === 'lobby' || appPhase === 'expanding') return
+    if (transitionTimer.current !== null) {
+      window.clearTimeout(transitionTimer.current)
+      transitionTimer.current = null
+    }
+    setIntentOpen(false)
+    setIntentInitialQuestion('')
+    setHomeContextError(null)
+    setDemoOpen(false)
+    setTransition(null)
+    setLobbyTable(null)
+    setLobbyData(null)
+    setLobbyFit(null)
+    setLobbyError(null)
+    setLobbyInitialJoined(false)
+    setEntryIntent(null)
+    setAppPhase('gallery')
+    document.documentElement.classList.remove('sea-mode', 'js-has-global-canvas', 'js-global-canvas-error')
+    document.body.classList.remove('sea-mode')
+    setShell('home')
+  }
+  useEffect(() => {
+    const onHome = shell === 'home' || shell === 'profile'
+    document.documentElement.classList.toggle('home-mode', onHome)
+    document.body.classList.toggle('home-mode', onHome)
+    if (onHome) {
+      document.documentElement.classList.remove('sea-mode', 'js-has-global-canvas', 'js-global-canvas-error')
+      document.body.classList.remove('sea-mode')
+    }
+    return () => {
+      document.documentElement.classList.remove('home-mode')
+      document.body.classList.remove('home-mode')
+    }
+  }, [shell])
   const returnMatchDraftToHome = (draft: MatchToHomeDraftLike): boolean => {
     const handedOff = handoffMatchDraft(draft)
     if (handedOff) {
@@ -980,20 +1058,60 @@ export default function App() {
     setAppPhase('collapsing')
     schedulePhase('gallery', reducedMotion ? 160 : 450)
   }
-  const showGallery = appPhase === 'gallery' || appPhase === 'lobby' || appPhase === 'expanding' || appPhase === 'collapsing'
-  const showWorld = appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing'
+  const inMatchShell = shell === 'match'
+  const showGallery = inMatchShell && (appPhase === 'gallery' || appPhase === 'lobby' || appPhase === 'expanding' || appPhase === 'collapsing')
+  const showWorld = inMatchShell && (appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing')
   return (
     <>
-      <TableWorld active />
-      <div inert={demoOpen}>
+      {shell === 'home' && (
+        <div className="home-shell" key="home-shell">
+          <FolioHome
+            onOpenProfile={() => setShell('profile')}
+            onEnterMatch={enterMatchFromHome}
+            onOpenLogin={() => setLoginOpen(true)}
+            onPreciseMatch={openPreciseMatchFromHome}
+            onHostTable={openHostTableFromHome}
+            onOpenTable={(tableId) => { void openTableFromHome(tableId) }}
+          />
+        </div>
+      )}
+      <LoginPage
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onSuccess={() => {
+          setLoginOpen(false)
+          window.dispatchEvent(new CustomEvent('zuoyizhuo:home-account', { detail: getHomeAccount() }))
+        }}
+      />
+      {shell === 'profile' && (
+        <div className="home-shell" key="profile-shell">
+          <ProfilePage
+            onBack={() => setShell('home')}
+            onEnterMatch={enterMatchFromHome}
+            onOpenTable={(tableId) => { void openTableFromHome(tableId) }}
+          />
+        </div>
+      )}
+      {(shell === 'home' || shell === 'profile') && (
+        <RelationshipPanel
+          open={relationshipOpen}
+          onClose={() => setRelationshipOpen(false)}
+          onRevisit={openTableFromHome}
+        />
+      )}
+      <TableWorld active={inMatchShell} />
+      <div inert={demoOpen || !inMatchShell}>
       {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} onOpenDemo={demoCase ? () => { setDemoError(null); setDemoOpen(true) } : undefined} onOpenIntent={() => { setIntentInitialQuestion(''); setIntentOpen(true) }} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
       {homeContextError && <aside className="home-context-error" role="alert"><span>{homeContextError}</span><button type="button" onClick={dismissHomeContextError}>知道了</button></aside>}
       {showWorld && lobbyTable && <ValleyExperience key={lobbyTable.id} table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={lobbyInitialJoined || (activeRoom?.joined ?? false)} onExit={exitTable} onRestartDemo={demoCase ? () => { setDemoError(null); setDemoOpen(true) } : undefined} />}
-      {appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onRetry={retryLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join', lobbyInitialJoined || Boolean(lobbyData?.members.some((member) => member.participant_id === VIEWER_ID)))} />}
-      {appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
-      <IntentPanel open={intentOpen} initialQuestion={intentInitialQuestion} onClose={closeIntent} onSelectTable={openIntentTable} onMatchConfirmed={(tableId) => openMatchedTable(tableId)} onReturnToHomeDraft={returnMatchDraftToHome} />
+      {inMatchShell && appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onRetry={retryLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join', lobbyInitialJoined || Boolean(lobbyData?.members.some((member) => member.participant_id === VIEWER_ID)))} />}
+      {inMatchShell && appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
+      {inMatchShell && <IntentPanel open={intentOpen} initialQuestion={intentInitialQuestion} onClose={closeIntent} onSelectTable={openIntentTable} onMatchConfirmed={(tableId) => openMatchedTable(tableId)} onReturnToHomeDraft={returnMatchDraftToHome} />}
       </div>
       {demoOpen && demoCase && <DemoEntry demoCase={demoCase} pending={demoPending} error={demoError} onStart={() => { void startDemo() }} onClose={closeDemo} />}
+      {inMatchShell && appPhase === 'gallery' && !lobbyTable && !demoOpen && (
+        <MapSwitchButton label="返回首页" onClick={returnToHome} />
+      )}
     </>
   )
 }

@@ -32,10 +32,20 @@ backend/data/
 .pytest_cache/
 .venv/
 venv/
+.python-version
+start_dev.py
+
+# Impeccable local design briefs / surface notes.
+.impeccable/
 
 # Local large assets that are not part of the shipped runtime.
 3D/
 /*.docx
+**/*.docx
+GLB/
+GLB.zip
+assets-cc0/
+public/assets/home/
 
 # Superseded non-Bruno visual prototypes.
 public/assets/sea/
@@ -51,7 +61,26 @@ public/assets/campfire-table.png
 *.db
 *.log
 
+# Local browser/diag scratch (Playwright Edge profiles, etc.).
+.tmp*/
+
 # OS/editor noise.
 .DS_Store
 Thumbs.db
 .idea/
+
+# Local brainstorming scratch.
+.superpowers/
+
+# Vendored Folio homepage (local install / build artifacts only).
+folio-2025/node_modules/
+folio-2025/dist/
+folio-2025/.vite/
+folio-2025/.env
+folio-2025/.env.*
+!folio-2025/.env.example
+
+# Folio Blender sources (not runtime).
+folio-2025/resources/
+folio-2025/static/sounds/
+

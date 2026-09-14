@@ -1,0 +1,462 @@
+/* Friends rail + camp-themed chat windows (popup interaction, lake/pine look). */
+
+.friends-dock {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 36;
+  pointer-events: none;
+}
+
+.friends-rail-btn,
+.friends-sidebar,
+.friends-scrim,
+.friends-list-item,
+.qq-chat-window,
+.qq-chat-dock {
+  pointer-events: auto;
+}
+
+.friends-rail-btn {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 48px;
+  min-height: 128px;
+  padding: 18px 8px;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-left: 0;
+  border-radius: 0 18px 18px 0;
+  background: rgba(250, 252, 253, .86);
+  color: #1d2a24;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: translateY(-50%);
+  cursor: pointer;
+  box-shadow: 10px 0 28px rgba(12, 24, 30, .18);
+  backdrop-filter: blur(16px) saturate(120%);
+}
+
+.friends-rail-btn:hover,
+.friends-dock.is-open .friends-rail-btn {
+  background: #2f6f5e;
+  color: #fff8e8;
+  border-color: rgba(255, 255, 255, .35);
+}
+
+.friends-rail-icon {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2f6f5e;
+  box-shadow: 0 0 0 3px rgba(47, 111, 94, .18);
+  writing-mode: horizontal-tb;
+}
+
+.friends-dock.is-open .friends-rail-icon,
+.friends-rail-btn:hover .friends-rail-icon {
+  background: #fff8e8;
+  box-shadow: 0 0 0 3px rgba(255, 248, 232, .22);
+}
+
+.friends-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 36;
+  border: 0;
+  padding: 0;
+  background: rgba(12, 28, 34, .28);
+  cursor: pointer;
+}
+
+.friends-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 37;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, calc(100vw - 48px));
+  height: 100%;
+  padding: 22px 16px 24px;
+  border-right: 1px solid rgba(255, 255, 255, .55);
+  background:
+    linear-gradient(180deg, rgba(250, 252, 253, .94), rgba(236, 244, 241, .92));
+  color: #1d2a24;
+  box-shadow: 22px 0 60px rgba(8, 20, 26, .22);
+  backdrop-filter: blur(20px) saturate(118%);
+  transform: translateX(-105%);
+  transition: transform .28s cubic-bezier(.16, 1, .3, 1);
+}
+
+.friends-dock.is-open .friends-sidebar {
+  transform: none;
+}
+
+.friends-sidebar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 2px 2px 14px;
+  border-bottom: 1px solid rgba(35, 62, 54, .12);
+}
+
+.friends-sidebar-head b {
+  display: block;
+  color: #122821;
+  font-family: 'Bricolage Grotesque', 'Noto Sans SC', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -.03em;
+}
+
+.friends-sidebar-head small {
+  color: #4d635a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.friends-sidebar-head button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: rgba(47, 111, 94, .12);
+  color: #1f4f42;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.friends-sidebar-head button:hover {
+  background: rgba(47, 111, 94, .18);
+}
+
+.friends-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.friends-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .42);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease, transform .2s cubic-bezier(.16, 1, .3, 1);
+}
+
+.friends-list-item:hover {
+  border-color: rgba(47, 111, 94, .18);
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.friends-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(12, 24, 30, .18);
+}
+
+.friends-list-avatar-wrap {
+  position: relative;
+  flex: none;
+}
+
+.friends-status {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #f4f8f6;
+  border-radius: 50%;
+  background: #8a9a92;
+}
+
+.friends-status.is-online { background: #2f6f5e; }
+.friends-status.is-away { background: #c48a3a; }
+.friends-status.is-offline { background: #8a9a92; }
+
+.friends-list-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.friends-list-copy b {
+  color: #122821;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.friends-list-copy span {
+  overflow: hidden;
+  color: #5a7168;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— Camp chat window (popup behavior, lake/pine look) —— */
+
+.qq-chat-window {
+  position: fixed;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: min(480px, calc(100vw - 32px));
+  height: min(620px, calc(100dvh - 56px));
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .6);
+  border-radius: 22px;
+  background: rgba(250, 252, 253, .96);
+  box-shadow: 0 28px 80px rgba(8, 20, 26, .32);
+  color: #1d2a24;
+  font-family: 'Nunito', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+.qq-chat-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(35, 62, 54, .1);
+  background:
+    linear-gradient(135deg, rgba(47, 111, 94, .16), rgba(142, 182, 200, .12));
+  color: #122821;
+  cursor: default;
+  user-select: none;
+}
+
+.qq-chat-title-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.qq-chat-title-copy b {
+  overflow: hidden;
+  font-family: 'Bricolage Grotesque', 'Noto Sans SC', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qq-chat-title-copy small {
+  color: #4d635a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.qq-chat-title-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.qq-chat-title-actions button {
+  width: 32px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(29, 42, 36, .08);
+  color: #1d2a24;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.qq-chat-title-actions button:hover {
+  background: rgba(47, 111, 94, .16);
+}
+
+.qq-chat-body {
+  overflow: auto;
+  padding: 18px 16px;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(142, 182, 200, .18), transparent 50%),
+    linear-gradient(180deg, rgba(246, 250, 252, .9), rgba(236, 244, 241, .95));
+}
+
+.qq-chat-empty {
+  margin: 48px 0;
+  color: #5a7168;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.qq-chat-bubble-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.qq-chat-bubble-row.is-me {
+  flex-direction: row-reverse;
+}
+
+.qq-chat-bubble {
+  max-width: 74%;
+  padding: 11px 13px;
+  border: 1px solid rgba(35, 62, 54, .08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 8px 20px rgba(12, 24, 30, .08);
+}
+
+.qq-chat-bubble-row.is-me .qq-chat-bubble {
+  border-color: rgba(47, 111, 94, .18);
+  background: rgba(47, 111, 94, .14);
+}
+
+.qq-chat-bubble p {
+  margin: 0;
+  color: #1d2a24;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.qq-chat-bubble time {
+  display: block;
+  margin-top: 6px;
+  color: #6a8076;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.qq-chat-composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px 16px 16px;
+  border-top: 1px solid rgba(35, 62, 54, .1);
+  background: rgba(250, 252, 253, .96);
+}
+
+.qq-chat-composer textarea {
+  resize: none;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid rgba(35, 62, 54, .14);
+  border-radius: 14px;
+  background: #fff;
+  color: #1d2a24;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.qq-chat-composer textarea:focus {
+  outline: 2px solid rgba(47, 111, 94, .35);
+  outline-offset: 1px;
+}
+
+.qq-chat-composer button {
+  height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #2f6f5e;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(40, 18, 28, .12);
+}
+
+.qq-chat-composer button:hover {
+  background: #275c4e;
+}
+
+.qq-chat-dock {
+  position: fixed;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 168px;
+  padding: 8px 14px 8px 8px;
+  border: 1px solid rgba(255, 255, 255, .55);
+  border-radius: 999px;
+  background: rgba(250, 252, 253, .94);
+  color: #1d2a24;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 32px rgba(12, 24, 30, .22);
+  backdrop-filter: blur(14px);
+}
+
+.qq-chat-dock span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friends-rail-btn:focus-visible,
+.friends-sidebar-head button:focus-visible,
+.friends-list-item:focus-visible,
+.qq-chat-title-actions button:focus-visible,
+.qq-chat-composer button:focus-visible,
+.qq-chat-dock:focus-visible {
+  outline: 2px solid #fff8e8;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .friends-sidebar { transition: none; }
+}
+
+@media (max-width: 720px) {
+  .friends-rail-btn {
+    top: auto;
+    bottom: 88px;
+    transform: none;
+  }
+
+  .qq-chat-window {
+    width: calc(100vw - 20px);
+    height: min(70dvh, 560px);
+  }
+}

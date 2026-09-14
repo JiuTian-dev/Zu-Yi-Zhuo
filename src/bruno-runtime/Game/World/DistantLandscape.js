@@ -184,15 +184,24 @@ export class DistantLandscape
 
     destroy()
     {
-        this.clouds?.destroy()
+        this.clouds?.destroy?.()
         const materials = new Set()
-        this.group.traverse(object => {
-            if(object.isMesh && object !== this.clouds?.mesh)
-            {
-                materials.add(object.material)
-                object.geometry.dispose()
+        this.group?.traverse?.((object) => {
+            if (object.isMesh && object !== this.clouds?.mesh) {
+                if (object.material) materials.add(object.material)
+                try {
+                    object.geometry?.dispose?.()
+                } catch {
+                    // Three.js WebGPU node graph may already be torn down.
+                }
             }
         })
-        materials.forEach(material => material.dispose())
+        materials.forEach((material) => {
+            try {
+                material?.dispose?.()
+            } catch {
+                // Returning to the product shell must not crash on GPU dispose races.
+            }
+        })
     }
 }
