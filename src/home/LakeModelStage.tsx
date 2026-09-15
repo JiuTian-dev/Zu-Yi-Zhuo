@@ -150,15 +150,24 @@ export default function LakeModelStage() {
           placeModel(gltf, 1.4, person.position)
         })
 
-        const hostGltf = await loader.loadAsync('/scene/host-agent.glb')
-        prepareCharacterShading(hostGltf.scene)
-        if (disposed) {
-          renderer.dispose()
-          return
+        // A warm, abstract table spirit reads as an Agent without the uncanny valley
+        // of another humanoid face competing with the four real participant avatars.
+        const host = new THREE.Group()
+        const glowMaterial = new THREE.MeshStandardMaterial({ color: 0xf5f2c9, emissive: 0x91b765, emissiveIntensity: .42, roughness: .55 })
+        const hostBody = new THREE.Mesh(new THREE.SphereGeometry(.27, 40, 28), glowMaterial)
+        hostBody.position.y = .39
+        const hostBase = new THREE.Mesh(new THREE.CylinderGeometry(.18, .24, .12, 32), new THREE.MeshStandardMaterial({ color: 0x8ea66f, roughness: .8 }))
+        hostBase.position.y = .12
+        const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x315849 })
+        for (const x of [-.075, .075]) {
+          const eye = new THREE.Mesh(new THREE.SphereGeometry(.022, 16, 12), eyeMaterial)
+          eye.position.set(x, .425, .252)
+          host.add(eye)
         }
-        const host = placeModel(hostGltf, .96, [0, 0, -1.3])
-        const mixers = hostGltf.animations.length ? [new THREE.AnimationMixer(host.raw)] : []
-        mixers[0]?.clipAction(hostGltf.animations[0]!).play()
+        host.add(hostBody, hostBase)
+        host.position.set(0, 0, -1.3)
+        hostBody.castShadow = true
+        stage.add(host)
 
         const halo = new THREE.Mesh(
           new THREE.TorusGeometry(.26, .012, 12, 48),
@@ -204,12 +213,10 @@ export default function LakeModelStage() {
         observer.observe(canvas)
         resize()
 
-        let lastTime = performance.now()
         const render = (time: number) => {
           if (disposed) return
-          const delta = Math.min((time - lastTime) / 1000, .05)
-          lastTime = time
-          mixers.forEach((mixer) => mixer.update(delta))
+          host.position.y = Math.sin(time * .0018) * .025
+          halo.rotation.z = time * .00025
           controls.update()
           renderer.render(scene, camera)
           frame = window.requestAnimationFrame(render)

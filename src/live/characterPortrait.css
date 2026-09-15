@@ -16,7 +16,16 @@
 }
 
 .character-portrait.is-host { --portrait-glow: #ccd5a5; }
-.character-portrait.is-host img { width: 100%; height: 100%; transform: none; }
+.character-portrait.is-host {
+  place-items: center;
+  overflow: visible;
+  background: radial-gradient(circle at 48% 40%, #fffdf0 0 34%, #dce9bd 62%, #9db889 100%);
+  box-shadow: 0 7px 20px rgba(85, 117, 75, .22), inset 0 2px 5px rgba(255,255,255,.92);
+}
+.character-agent-orb { position: relative; display: grid; place-items: center; width: 70%; height: 70%; border: 1px solid rgba(89,118,75,.2); border-radius: 50%; background: linear-gradient(145deg,#fffef4,#dbe8c0); box-shadow: 0 3px 10px rgba(64,92,57,.16); }
+.character-agent-orb > span { position: absolute; top: 31%; display: flex; gap: 6px; }
+.character-agent-orb > span i { width: 3px; height: 4px; border-radius: 50%; background: #3d6252; }
+.character-agent-orb > b { margin-top: 9px; color: #547260; font: 800 8px/1 'Noto Serif SC',serif; }
 .character-agent-badge { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); padding: 2px 5px; border: 1px solid #d4ddc4; border-radius: 999px; background: #f7f8edee; color: #476141; font: 700 8px/1.2 system-ui,sans-serif; letter-spacing: .02em; }
 .character-portrait.is-host > i { bottom: auto; top: 4px; }
 .character-portrait.is-blue { --portrait-glow: #8ebbd5; }

@@ -116,6 +116,11 @@ export default function CharacterPortrait({ character, label, className = '', on
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    if (character === 'host') {
+      setImage(null)
+      setFailed(false)
+      return
+    }
     let active = true
     setImage(null)
     setFailed(false)
@@ -128,8 +133,10 @@ export default function CharacterPortrait({ character, label, className = '', on
   }, [character])
 
   return (
-    <span className={`character-portrait is-${character} ${image ? 'is-ready' : ''} ${className}`} aria-label={label} role="img">
-      {image && !failed ? <img src={image} alt="" /> : <b aria-hidden="true">{CHARACTER_MODELS[character].fallback}</b>}
+    <span className={`character-portrait is-${character} ${image || character === 'host' ? 'is-ready' : ''} ${className}`} aria-label={label} role="img">
+      {character === 'host'
+        ? <span className="character-agent-orb" aria-hidden="true"><span><i /><i /></span><b>桌</b></span>
+        : image && !failed ? <img src={image} alt="" /> : <b aria-hidden="true">{CHARACTER_MODELS[character].fallback}</b>}
       {character === 'host' && <em className="character-agent-badge">Agent</em>}
       {online && <i aria-hidden="true" />}
     </span>

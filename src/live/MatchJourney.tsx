@@ -7,11 +7,11 @@ import type { TagProfile } from '../onboarding/profileStore'
 import type { DemoCaseLike } from './contract'
 import './matchJourney.css'
 
-const ROUTE_DURATION = 9_000
+const ROUTE_DURATION = 6_800
 const PHASES = [
   { at: 0, eyebrow: '01 · 理解你', title: '把刚才的表达，变成找人的线索', note: '不是按相似度复制一个你，而是先确认你能带来什么。' },
-  { at: 2_300, eyebrow: '02 · 补齐视角', title: '正在寻找能让讨论向前走的人', note: '保留话题交集，同时引入经验、技术与理论的差异。' },
-  { at: 5_100, eyebrow: '03 · 前往桌边', title: '匹配完成，Agent 正在带你抵达', note: '到桌以后，你可以先围观，也可以带着身份牌加入。' },
+  { at: 1_800, eyebrow: '02 · 补齐视角', title: '正在寻找能让讨论向前走的人', note: '保留话题交集，同时引入经验、技术与理论的差异。' },
+  { at: 4_000, eyebrow: '03 · 前往桌边', title: '匹配完成，Agent 正在带你抵达', note: '桌边空间正在准备，即使 3D 资源较慢也不会阻塞入桌。' },
 ]
 
 interface MatchJourneyProps {
@@ -82,7 +82,6 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
   const stage = useRef<HTMLDivElement>(null)
   const arrived = useRef(false)
   const arriveHandler = useRef(onArrive)
-  const vehicleReady = useRef(false)
   const [phase, setPhase] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [vehicleLoaded, setVehicleLoaded] = useState(false)
@@ -93,7 +92,6 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
   useEffect(() => {
     if (!open) return
     arrived.current = false
-    vehicleReady.current = false
     setPhase(0)
     setElapsed(0)
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -104,8 +102,8 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
       setElapsed(Math.min(current, duration))
       if (!reduced) setPhase(current >= PHASES[2].at ? 2 : current >= PHASES[1].at ? 1 : 0)
       else setPhase(current >= 1_000 ? 2 : 0)
-      const waitedForVehicle = reduced || vehicleReady.current || current >= duration + 3_500
-      if (current >= duration && waitedForVehicle && !arrived.current) {
+      // Entering the table must never depend on a decorative GLB finishing its download.
+      if (current >= duration && !arrived.current) {
         arrived.current = true
         window.clearInterval(ticker)
         arriveHandler.current()
@@ -207,7 +205,6 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
       carRoot.remove(fallback)
       disposeObject(fallback)
       carRoot.add(model)
-      vehicleReady.current = true
       setVehicleLoaded(true)
     }, undefined, () => setVehicleLoaded(false))
 
@@ -249,11 +246,17 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
     }
   }, [open])
 
+  useEffect(() => {
+    // A failed request must unlock the retry button. Previously `arrived` stayed true,
+    // making the visible "重新连接" action a no-op.
+    if (error) arrived.current = false
+  }, [error])
+
   if (!open) return null
   const activePhase = PHASES[phase]
   const progress = Math.min(100, (elapsed / ROUTE_DURATION) * 100)
   const goNow = () => {
-    if (arrived.current || pending) return
+    if (pending) return
     arrived.current = true
     arriveHandler.current()
   }
@@ -299,7 +302,7 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
         <div className="match-journey-action">
           <p><b>{demoCase.topic}</b><span>3 位预置演示桌友 · 桌上发言由模型实时生成</span></p>
           {error && <strong role="alert">{error}</strong>}
-          <button type="button" disabled={pending} onClick={goNow}>{pending ? '正在打开桌边空间…' : error ? '重新连接这桌' : '直接抵达'}</button>
+          <button type="button" disabled={pending} onClick={goNow}>{pending ? '正在打开桌边空间…' : error ? '再试一次，直接入桌' : phase === 2 ? '立即入桌' : '直接抵达'}</button>
         </div>
       </footer>
     </div>,
