@@ -159,6 +159,8 @@
 }
 .tag-compose button:disabled { cursor: not-allowed; opacity: .42; }
 .tag-compose-meta { display: flex; justify-content: space-between; gap: 12px; color: #85928d; font-size: 11px; }
+.tag-compose-guidance { color: #607b71; }
+.tag-compose-guidance.is-short { color: #ad664c; font-weight: 700; }
 .tag-guide-error { display: grid; gap: 3px; margin: 0; padding: 10px 13px; border-left: 3px solid #d77a58; background: #f7e9e2; color: #994d36; font-size: 12px; }
 
 .tag-review { display: grid; gap: 17px; }
@@ -218,7 +220,7 @@
   .tag-field { grid-template-columns: 58px 1fr; }
   .tag-field button { grid-column: 2; justify-self: start; }
   .tag-forming { align-items: flex-start; flex-direction: column; }
-  .tag-compose-meta span:first-child { display: none; }
+  .tag-compose-meta .tag-compose-guidance { display: block; }
   .tag-guide footer { flex-wrap: wrap; }
 }
 

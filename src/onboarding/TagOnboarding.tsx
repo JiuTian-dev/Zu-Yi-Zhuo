@@ -13,6 +13,7 @@ import {
 import './tagOnboarding.css'
 
 const PERSPECTIVES = ['基于事实', '基于经验', '基于理论', '善于追问']
+const MIN_MESSAGE_LENGTH = 12
 
 interface TagOnboardingProps {
   open: boolean
@@ -48,6 +49,7 @@ export default function TagOnboarding({
   onComplete,
 }: TagOnboardingProps) {
   const titleId = useId()
+  const inputHintId = useId()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [messages, setMessages] = useState<ProfileAgentMessageLike[]>([])
   const [input, setInput] = useState('')
@@ -71,6 +73,7 @@ export default function TagOnboarding({
   const userTurns = useMemo(() => messages.filter((message) => message.role === 'user').length, [messages])
   const draftTags = useMemo(() => visibleDraftTags(draftProfile), [draftProfile])
   const progress = profile ? 3 : userTurns >= 1 ? 2 : 1
+  const inputLength = input.trim().length
 
   if (!open) return null
 
@@ -78,8 +81,7 @@ export default function TagOnboarding({
     event.preventDefault()
     if (pending || profile) return
     const value = input.trim()
-    if (value.length < 4) {
-      setError('再多说一点点，让我能听见真正属于你的细节。')
+    if (value.length < MIN_MESSAGE_LENGTH) {
       return
     }
     const nextMessages: ProfileAgentMessageLike[] = [...messages, { role: 'user', text: value }]
@@ -99,7 +101,9 @@ export default function TagOnboarding({
       }
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : '画像 Agent 暂时没有回应'
-      setError(`${message}。请确认后端已启动，再试一次。`)
+      setMessages(messages)
+      setInput(value)
+      setError(`${message}。你的原话已保留，直接再试一次。`)
     } finally {
       setPending(false)
     }
@@ -215,6 +219,8 @@ export default function TagOnboarding({
                   ref={inputRef}
                   value={input}
                   maxLength={280}
+                  minLength={MIN_MESSAGE_LENGTH}
+                  aria-describedby={inputHintId}
                   disabled={pending}
                   placeholder={userTurns === 0 ? '不用套话，说一件你真的在意的事……' : '顺着刚才的话继续说，你可以纠正 Agent 的理解……'}
                   onChange={(event) => { setInput(event.target.value); setError('') }}
@@ -225,15 +231,17 @@ export default function TagOnboarding({
                     }
                   }}
                 />
-                <button type="submit" disabled={pending || input.trim().length < 4}>
+                <button type="submit" disabled={pending || inputLength < MIN_MESSAGE_LENGTH}>
                   {pending ? '倾听中' : '发送'} <span aria-hidden="true">↗</span>
                 </button>
               </form>
               <div className="tag-compose-meta">
-                <span>Enter 发送 · Shift + Enter 换行</span>
+                <span id={inputHintId} className={`tag-compose-guidance ${inputLength > 0 && inputLength < MIN_MESSAGE_LENGTH ? 'is-short' : ''}`}>
+                  {inputLength >= MIN_MESSAGE_LENGTH ? `这句话够具体了 · ${inputLength} 字` : `至少 ${MIN_MESSAGE_LENGTH} 字，最好带一件真实经历 · ${inputLength}/${MIN_MESSAGE_LENGTH}`}
+                </span>
                 <span>{userTurns}/2 轮自由表达</span>
               </div>
-              {error && <p className="tag-guide-error" role="alert"><b>连接没有完成</b>{error}</p>}
+              {error && <p className="tag-guide-error" role="alert"><b>阿桌暂时没接上</b>{error}</p>}
             </>
           ) : (
             <div className="tag-review">
