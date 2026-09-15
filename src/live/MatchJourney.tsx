@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import * as THREE from 'three'
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { TagProfile } from '../onboarding/profileStore'
 import type { DemoCaseLike } from './contract'
 import './matchJourney.css'
@@ -26,27 +27,50 @@ interface MatchJourneyProps {
 
 function makeFallbackCar() {
   const car = new THREE.Group()
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xf0d0a1, roughness: .7 })
-  const glassMaterial = new THREE.MeshStandardMaterial({ color: 0x325952, roughness: .25, metalness: .15 })
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.7, .38, 3.1), bodyMaterial)
-  body.position.y = .48
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.45, .55, 1.45), glassMaterial)
-  cabin.position.set(0, .88, -.2)
-  car.add(body, cabin)
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xc9623e, roughness: .48, metalness: .08 })
+  const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x263d39, roughness: .56, metalness: .12 })
+  const glassMaterial = new THREE.MeshStandardMaterial({ color: 0x5e8d8c, roughness: .18, metalness: .18 })
+  const lightMaterial = new THREE.MeshStandardMaterial({ color: 0xfff0bb, emissive: 0xffd47d, emissiveIntensity: .8, roughness: .3 })
+  const body = new THREE.Mesh(new RoundedBoxGeometry(1.72, .46, 3.08, 5, .16), bodyMaterial)
+  body.position.y = .53
+  const hood = new THREE.Mesh(new RoundedBoxGeometry(1.54, .22, .9, 4, .12), bodyMaterial)
+  hood.position.set(0, .78, .96)
+  const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.46, .66, 1.55, 5, .16), glassMaterial)
+  cabin.position.set(0, .93, -.22)
+  const roof = new THREE.Mesh(new RoundedBoxGeometry(1.5, .12, 1.68, 4, .06), bodyMaterial)
+  roof.position.set(0, 1.27, -.24)
+  const bumper = new THREE.Mesh(new RoundedBoxGeometry(1.46, .14, .12, 3, .04), trimMaterial)
+  bumper.position.set(0, .43, 1.57)
+  car.add(body, hood, cabin, roof, bumper)
+  for (const x of [-.51, .51]) {
+    const lamp = new THREE.Mesh(new RoundedBoxGeometry(.3, .14, .045, 3, .035), lightMaterial)
+    lamp.position.set(x, .62, 1.62)
+    car.add(lamp)
+  }
+  for (const x of [-.55, .55]) {
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 1.45, 10), trimMaterial)
+    rail.rotation.x = Math.PI / 2
+    rail.position.set(x, 1.39, -.23)
+    car.add(rail)
+  }
   const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x182422, roughness: .9 })
+  const hubMaterial = new THREE.MeshStandardMaterial({ color: 0xc5bca4, roughness: .45, metalness: .38 })
   for (const x of [-.86, .86]) for (const z of [-.92, .92]) {
     const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.29, .29, .18, 16), wheelMaterial)
     wheel.rotation.z = Math.PI / 2
     wheel.position.set(x, .32, z)
     car.add(wheel)
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.13, .13, .185, 16), hubMaterial)
+    hub.rotation.z = Math.PI / 2
+    hub.position.set(x, .32, z)
+    car.add(hub)
   }
   car.scale.setScalar(.7)
   return car
 }
 
-function makeRoad(curve: THREE.CatmullRomCurve3) {
+function makeRoad(curve: THREE.CatmullRomCurve3, width: number, color: number, y: number) {
   const segments = 90
-  const width = 1.35
   const positions: number[] = []
   const indices: number[] = []
   for (let index = 0; index <= segments; index += 1) {
@@ -54,8 +78,8 @@ function makeRoad(curve: THREE.CatmullRomCurve3) {
     const point = curve.getPointAt(t)
     const tangent = curve.getTangentAt(t).normalize()
     const side = new THREE.Vector3(-tangent.z, 0, tangent.x).multiplyScalar(width)
-    positions.push(point.x + side.x, .025, point.z + side.z)
-    positions.push(point.x - side.x, .025, point.z - side.z)
+    positions.push(point.x + side.x, y, point.z + side.z)
+    positions.push(point.x - side.x, y, point.z - side.z)
     if (index < segments) {
       const base = index * 2
       indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2)
@@ -65,7 +89,45 @@ function makeRoad(curve: THREE.CatmullRomCurve3) {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
-  return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xd8d3c2, roughness: 1, transparent: true, opacity: .9 }))
+  return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .94 }))
+}
+
+function makeRouteScenery() {
+  const scenery = new THREE.Group()
+  const trunkGeometry = new THREE.CylinderGeometry(.045, .065, .34, 7)
+  const crownGeometry = new THREE.ConeGeometry(.28, .72, 9)
+  const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x665440, roughness: 1 })
+  const crownMaterial = new THREE.MeshStandardMaterial({ color: 0x315f4d, roughness: .95 })
+  const treePositions = [
+    [-6.4, -1.6, .9], [-5.9, -.5, 1.15], [-5.2, 3.6, .85], [-3.8, 3.5, 1.08],
+    [-2.8, -2.6, .85], [-1.6, -3.4, 1.18], [.1, 2.7, .82], [2.5, 2.4, 1.1],
+    [3.4, .9, .84], [4.1, -1.8, 1.2], [3.2, -4.4, .88], [2.6, -5.5, 1.05],
+  ] as const
+  const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treePositions.length)
+  const crowns = new THREE.InstancedMesh(crownGeometry, crownMaterial, treePositions.length)
+  const dummy = new THREE.Object3D()
+  treePositions.forEach(([x, z, scale], index) => {
+    dummy.position.set(x, .17 * scale, z)
+    dummy.scale.setScalar(scale)
+    dummy.updateMatrix()
+    trunks.setMatrixAt(index, dummy.matrix)
+    dummy.position.set(x, .69 * scale, z)
+    dummy.updateMatrix()
+    crowns.setMatrixAt(index, dummy.matrix)
+  })
+  trunks.instanceMatrix.needsUpdate = true
+  crowns.instanceMatrix.needsUpdate = true
+  scenery.add(trunks, crowns)
+
+  const water = new THREE.Mesh(
+    new THREE.CircleGeometry(3.3, 48),
+    new THREE.MeshStandardMaterial({ color: 0x6ea5a0, roughness: .38, transparent: true, opacity: .5 }),
+  )
+  water.rotation.x = -Math.PI / 2
+  water.scale.y = .55
+  water.position.set(4.3, .015, 3.2)
+  scenery.add(water)
+  return scenery
 }
 
 function disposeObject(object: THREE.Object3D) {
@@ -152,7 +214,9 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
       new THREE.Vector3(1.5, 0, -.7),
       new THREE.Vector3(1.1, 0, -4.8),
     ], false, 'catmullrom', .34)
-    scene.add(makeRoad(curve))
+    scene.add(makeRoad(curve, 1.56, 0xa3b297, .014))
+    scene.add(makeRoad(curve, 1.28, 0x56625e, .028))
+    scene.add(makeRouteScenery())
     const guidePoints = curve.getPoints(80).map((point) => point.clone().setY(.045))
     const guide = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(guidePoints),
@@ -193,7 +257,7 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
     dracoLoader.preload()
     loader.setDRACOLoader(dracoLoader)
     let cancelled = false
-    loader.load('/scene/arrival-suv.glb', (gltf) => {
+    loader.load('/scene/arrival-suv-lite.glb', (gltf) => {
       if (cancelled) return
       const model = gltf.scene
       const box = new THREE.Box3().setFromObject(model)
@@ -288,7 +352,7 @@ export default function MatchJourney({ open, profile, demoCase, pending, error, 
             <span className="is-table-two">桌 27</span>
             <span className="is-table-target">城市与生活选择 <b>最佳匹配</b></span>
           </div>
-          <div className="match-journey-model-note">{vehicleLoaded ? '你的 3D SUV · 自动驾驶中' : '3D SUV 正在载入'}</div>
+          <div className="match-journey-model-note">{vehicleLoaded ? '精细 3D SUV · 自动驾驶中' : '轻量 3D SUV · 已经出发'}</div>
         </section>
       </main>
 

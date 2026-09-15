@@ -39,7 +39,9 @@ export default function CharacterPortrait({ character, label, className = '', on
   return (
     <span className={`character-portrait is-${character} is-ready ${className}`} aria-label={label} role="img">
       {character === 'host'
-        ? <span className="character-agent-orb" aria-hidden="true"><span><i /><i /></span><b>桌</b></span>
+        ? <span className="character-agent-art-frame" aria-hidden="true">
+            <img className="character-agent-art" src="/scene/azhuo-agent-v2.png" alt="" decoding="async" />
+          </span>
         : <img src={CHARACTER_PORTRAITS[character]} alt="" decoding="async" />}
       {character === 'host' && <em className="character-agent-badge">Agent</em>}
       {online && <i aria-hidden="true" />}

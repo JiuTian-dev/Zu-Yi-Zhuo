@@ -35,11 +35,12 @@ export default function LakeModelStage() {
     void (async () => {
       try {
         const THREE = await import('three')
-        const [{ GLTFLoader }, { OrbitControls }, { MeshoptDecoder }, { DRACOLoader }] = await Promise.all([
+        const [{ GLTFLoader }, { OrbitControls }, { MeshoptDecoder }, { DRACOLoader }, { RoomEnvironment }] = await Promise.all([
           import('three/addons/loaders/GLTFLoader.js'),
           import('three/addons/controls/OrbitControls.js'),
           import('three/addons/libs/meshopt_decoder.module.js'),
           import('three/addons/loaders/DRACOLoader.js'),
+          import('three/addons/environments/RoomEnvironment.js'),
         ])
         if (disposed) return
 
@@ -49,15 +50,23 @@ export default function LakeModelStage() {
         camera.lookAt(-.35, .62, 0)
 
         const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' })
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65))
+        renderer.setPixelRatio(Math.min(Math.max(window.devicePixelRatio, 1.5), 2))
         renderer.outputColorSpace = THREE.SRGBColorSpace
         renderer.toneMapping = THREE.ACESFilmicToneMapping
-        renderer.toneMappingExposure = 1
+        renderer.toneMappingExposure = .9
         renderer.shadowMap.enabled = true
         renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
-        scene.add(new THREE.HemisphereLight(0xe9f5ff, 0x443526, 2.1))
-        const sun = new THREE.DirectionalLight(0xfff1d2, 3.2)
+        const environmentScene = new RoomEnvironment()
+        const environmentGenerator = new THREE.PMREMGenerator(renderer)
+        const environment = environmentGenerator.fromScene(environmentScene, .05).texture
+        scene.environment = environment
+        scene.environmentIntensity = .7
+        environmentGenerator.dispose()
+        environmentScene.dispose()
+
+        scene.add(new THREE.HemisphereLight(0xf2f7f3, 0x554a3c, 2.45))
+        const sun = new THREE.DirectionalLight(0xfff3dc, 1.75)
         sun.position.set(-3, 6, 5)
         sun.castShadow = true
         sun.shadow.mapSize.set(1024, 1024)
@@ -150,36 +159,66 @@ export default function LakeModelStage() {
           placeModel(gltf, 1.4, person.position)
         })
 
-        // A warm, abstract table spirit reads as an Agent without the uncanny valley
-        // of another humanoid face competing with the four real participant avatars.
+        // 阿桌 is a purpose-built "table-side guide lamp": the broad tabletop halo,
+        // warm listening face and sprout antenna mirror the 2D Agent mark used by chat.
+        // It stays non-human, but now reads as a designed product character rather
+        // than a generic glowing sphere.
         const host = new THREE.Group()
-        const glowMaterial = new THREE.MeshStandardMaterial({ color: 0xf5f2c9, emissive: 0x91b765, emissiveIntensity: .42, roughness: .55 })
-        const hostBody = new THREE.Mesh(new THREE.SphereGeometry(.27, 40, 28), glowMaterial)
+        const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xfff7df, emissive: 0xb7ca72, emissiveIntensity: .18, roughness: .48 })
+        const greenMaterial = new THREE.MeshStandardMaterial({ color: 0xbfdc74, roughness: .62, metalness: .04 })
+        const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x234d43, roughness: .58 })
+        const limeMaterial = new THREE.MeshBasicMaterial({ color: 0xd8fb82 })
+        const hostBody = new THREE.Mesh(new THREE.SphereGeometry(.25, 40, 28), bodyMaterial)
+        hostBody.scale.set(1, 1.2, .92)
         hostBody.position.y = .39
-        const hostBase = new THREE.Mesh(new THREE.CylinderGeometry(.18, .24, .12, 32), new THREE.MeshStandardMaterial({ color: 0x8ea66f, roughness: .8 }))
-        hostBase.position.y = .12
-        const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x315849 })
+        const tabletop = new THREE.Mesh(new THREE.CylinderGeometry(.37, .39, .075, 40), greenMaterial)
+        tabletop.position.y = .59
+        const face = new THREE.Mesh(new THREE.SphereGeometry(.16, 30, 20), darkMaterial)
+        face.scale.set(1.05, .68, .18)
+        face.position.set(0, .41, .242)
         for (const x of [-.075, .075]) {
-          const eye = new THREE.Mesh(new THREE.SphereGeometry(.022, 16, 12), eyeMaterial)
-          eye.position.set(x, .425, .252)
+          const eye = new THREE.Mesh(new THREE.SphereGeometry(.023, 16, 12), limeMaterial)
+          eye.scale.y = 1.25
+          eye.position.set(x, .43, .278)
           host.add(eye)
         }
-        host.add(hostBody, hostBase)
-        host.position.set(0, 0, -1.3)
-        hostBody.castShadow = true
+        const smile = new THREE.Mesh(new THREE.TorusGeometry(.045, .008, 8, 20, Math.PI), new THREE.MeshBasicMaterial({ color: 0xfff5d5 }))
+        smile.rotation.z = Math.PI
+        smile.position.set(0, .365, .282)
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(.009, .009, .13, 10), darkMaterial)
+        stem.position.y = .71
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(.07, 20, 12), greenMaterial)
+        leaf.scale.set(1, .38, .68)
+        leaf.rotation.z = -.48
+        leaf.position.set(.045, .79, 0)
+        const hostBase = new THREE.Mesh(new THREE.CylinderGeometry(.14, .2, .095, 32), darkMaterial)
+        hostBase.position.y = .105
+        const orbit = new THREE.Mesh(
+          new THREE.TorusGeometry(.43, .011, 10, 56),
+          new THREE.MeshBasicMaterial({ color: 0xe7ff9f, transparent: true, opacity: .76 }),
+        )
+        orbit.rotation.x = Math.PI / 2
+        orbit.position.y = .57
+        host.add(hostBody, tabletop, face, smile, stem, leaf, hostBase, orbit)
+        // Hover above the shared tabletop so the whole silhouette remains
+        // legible from the default judge camera instead of being occluded.
+        const hostBaseY = .94
+        host.position.set(0, hostBaseY, -.42)
+        host.scale.setScalar(1.08)
+        for (const mesh of [hostBody, tabletop, face, stem, leaf, hostBase]) mesh.castShadow = true
         stage.add(host)
 
         const halo = new THREE.Mesh(
-          new THREE.TorusGeometry(.26, .012, 12, 48),
+          new THREE.TorusGeometry(.34, .012, 12, 48),
           new THREE.MeshBasicMaterial({ color: 0xc7f06c, transparent: true, opacity: .7 }),
         )
         halo.rotation.x = Math.PI / 2
-        halo.position.set(0, .012, -1.3)
+        halo.position.set(0, .91, -.42)
         stage.add(halo)
 
         // The vehicle is decorative: render the people immediately and add it later.
         // Waiting for this 4 MB asset previously delayed the entire scene becoming ready.
-        void loader.loadAsync('/scene/arrival-suv.glb').then((carGltf) => {
+        void loader.loadAsync('/scene/arrival-suv-lite.glb').then((carGltf) => {
           if (disposed) {
             return
           }
@@ -216,7 +255,7 @@ export default function LakeModelStage() {
 
         const render = (time: number) => {
           if (disposed) return
-          host.position.y = Math.sin(time * .0018) * .025
+          host.position.y = hostBaseY + Math.sin(time * .0018) * .025
           halo.rotation.z = time * .00025
           controls.update()
           renderer.render(scene, camera)
@@ -229,6 +268,7 @@ export default function LakeModelStage() {
           draco.dispose()
           observer.disconnect()
           controls.dispose()
+          environment.dispose()
           scene.traverse((node) => {
             const mesh = node as typeof node & { geometry?: { dispose(): void }; material?: { dispose(): void } | Array<{ dispose(): void }> }
             mesh.geometry?.dispose()
@@ -259,7 +299,7 @@ export default function LakeModelStage() {
         <em>{state === 'ready' ? '拖动观察' : state === 'error' ? '静态场景' : '正在载入人物'}</em>
       </div>
       <div className="lake-model-seat-labels" aria-hidden="true">
-        <span>林夏 · 亲历</span><span>周砚 · 机会</span><span>程野 · 结构</span><span>你 · 真实立场</span>
+        <span className="is-agent">阿桌 · 桌边 Agent</span><span>林夏 · 亲历</span><span>周砚 · 机会</span><span>程野 · 结构</span><span>你 · 真实立场</span>
       </div>
       {state === 'error' && <img src="/scene/swiss-lake.jpg" alt="湖边圆桌合影，三维场景暂时不可用" />}
     </section>

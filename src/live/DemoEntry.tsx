@@ -16,6 +16,11 @@ export default function DemoEntry({ demoCase, profile, pending, error, onStart, 
   const close = useRef(onClose)
   close.current = onClose
   useEffect(() => {
+    // Warm the short-lived route assets while the judge reads the match proof.
+    // The journey can still start immediately with its authored lightweight car.
+    void fetch('/scene/arrival-suv-lite.glb', { cache: 'force-cache' }).catch(() => undefined)
+    void fetch('/assets/bruno-runtime/draco/draco_wasm_wrapper.js', { cache: 'force-cache' }).catch(() => undefined)
+    void fetch('/assets/bruno-runtime/draco/draco_decoder.wasm', { cache: 'force-cache' }).catch(() => undefined)
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     panel.current?.querySelector<HTMLButtonElement>('[data-start-demo]')?.focus()
     const onKey = (event: KeyboardEvent) => {

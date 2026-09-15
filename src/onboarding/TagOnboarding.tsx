@@ -13,7 +13,7 @@ import {
 import './tagOnboarding.css'
 
 const PERSPECTIVES = ['基于事实', '基于经验', '基于理论', '善于追问']
-const MIN_MESSAGE_LENGTH = 12
+const MIN_MESSAGE_LENGTH = 10
 
 interface TagOnboardingProps {
   open: boolean
@@ -237,7 +237,7 @@ export default function TagOnboarding({
               </form>
               <div className="tag-compose-meta">
                 <span id={inputHintId} className={`tag-compose-guidance ${inputLength > 0 && inputLength < MIN_MESSAGE_LENGTH ? 'is-short' : ''}`}>
-                  {inputLength >= MIN_MESSAGE_LENGTH ? `这句话够具体了 · ${inputLength} 字` : `至少 ${MIN_MESSAGE_LENGTH} 字，最好带一件真实经历 · ${inputLength}/${MIN_MESSAGE_LENGTH}`}
+                  {inputLength >= MIN_MESSAGE_LENGTH ? `这句话够具体了 · ${inputLength} 字` : `不能少于 ${MIN_MESSAGE_LENGTH} 个字 · ${inputLength}/${MIN_MESSAGE_LENGTH}`}
                 </span>
                 <span>{userTurns}/2 轮自由表达</span>
               </div>

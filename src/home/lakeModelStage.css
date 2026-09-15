@@ -107,6 +107,12 @@
   backdrop-filter: blur(8px);
 }
 
+.lake-model-seat-labels .is-agent {
+  border-color: rgba(216, 251, 130, .55);
+  background: rgba(35, 77, 67, .88);
+  color: #d8fb82;
+}
+
 .lake-model-stage > img {
   position: absolute;
   inset: 0;

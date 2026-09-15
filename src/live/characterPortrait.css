@@ -3,7 +3,7 @@
   position: relative;
   display: inline-grid;
   flex: 0 0 auto;
-  place-items: end center;
+  place-items: center;
   width: 46px;
   height: 46px;
   overflow: hidden;
@@ -19,20 +19,37 @@
 .character-portrait.is-host {
   place-items: center;
   overflow: visible;
-  background: radial-gradient(circle at 48% 40%, #fffdf0 0 34%, #dce9bd 62%, #9db889 100%);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 249, 194, .9), transparent 34%),
+    linear-gradient(145deg, #edf3d9, #a9c69a);
   box-shadow: 0 7px 20px rgba(85, 117, 75, .22), inset 0 2px 5px rgba(255,255,255,.92);
 }
-.character-agent-orb { position: relative; display: grid; place-items: center; width: 70%; height: 70%; border: 1px solid rgba(89,118,75,.2); border-radius: 50%; background: linear-gradient(145deg,#fffef4,#dbe8c0); box-shadow: 0 3px 10px rgba(64,92,57,.16); }
-.character-agent-orb > span { position: absolute; top: 31%; display: flex; gap: 6px; }
-.character-agent-orb > span i { width: 3px; height: 4px; border-radius: 50%; background: #3d6252; }
-.character-agent-orb > b { margin-top: 9px; color: #547260; font: 800 8px/1 'Noto Serif SC',serif; }
-.character-agent-badge { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); padding: 2px 5px; border: 1px solid #d4ddc4; border-radius: 999px; background: #f7f8edee; color: #476141; font: 700 8px/1.2 system-ui,sans-serif; letter-spacing: .02em; }
+.character-agent-art-frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border-radius: inherit;
+  animation: azhuoFloat 3.4s ease-in-out infinite;
+}
+.character-agent-art-frame > .character-agent-art {
+  width: 135%;
+  height: 135%;
+  max-width: none;
+  object-fit: contain;
+  object-position: center;
+  opacity: 1;
+  filter: saturate(1.05) drop-shadow(0 7px 7px rgba(28, 70, 57, .2));
+  transform: translateY(13%);
+}
+.character-agent-badge { position: absolute; z-index: 2; right: -5px; bottom: -4px; padding: 3px 6px; border: 1px solid rgba(49,95,80,.28); border-radius: 999px; background: #f8fae9f2; box-shadow: 0 3px 9px rgba(32,65,55,.16); color: #315f50; font: 800 7px/1.2 system-ui,sans-serif; letter-spacing: .08em; text-transform: uppercase; }
 .character-portrait.is-host > i { bottom: auto; top: 4px; }
 .character-portrait.is-blue { --portrait-glow: #8ebbd5; }
 .character-portrait.is-white { --portrait-glow: #d8d1be; }
 .character-portrait.is-orange { --portrait-glow: #e4a76f; }
 .character-portrait.is-green { --portrait-glow: #86b795; }
-.character-portrait img { width: 116%; height: 116%; object-fit: contain; object-position: center bottom; opacity: 0; transform: translateY(4%); transition: opacity .28s ease; }
+.character-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; opacity: 0; transform: none; transition: opacity .28s ease; }
 .character-portrait.is-ready img { opacity: 1; }
 .character-portrait:not(.is-host) > img { filter: saturate(1.1); }
 .character-portrait > b { align-self: center; color: color-mix(in srgb, var(--portrait-glow) 54%, #173f35); font-size: 13px; }
@@ -40,4 +57,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .character-portrait img { transition: none; }
+  .character-agent-art-frame { animation: none; }
+}
+
+@keyframes azhuoFloat {
+  0%, 100% { transform: translateY(1px) rotate(-.7deg); }
+  50% { transform: translateY(-2px) rotate(.7deg); }
 }
