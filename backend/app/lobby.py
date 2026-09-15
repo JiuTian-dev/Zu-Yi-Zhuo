@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from app.domain import LobbyFitPreview, LobbyMemberView, LobbyPreview, ParticipantSeed, TableState
 from app.matching import infer_role_gaps
+from app.api.repository import MAX_TABLE_PARTICIPANTS
 
 MAX_LOBBY_DISCOVERY = 20
 
@@ -11,7 +12,7 @@ MAX_LOBBY_DISCOVERY = 20
 def build_lobby_preview(state: TableState) -> LobbyPreview:
     """Project one table into the bounded contract used by the pre-entry Lobby."""
     participant_count = len(state.participants)
-    available_seats = 5 - participant_count
+    available_seats = MAX_TABLE_PARTICIPANTS - participant_count
     role_gaps = infer_role_gaps(
         participant.role for participant in state.participants.values()
     )
@@ -113,7 +114,7 @@ def build_lobby_fit_preview(
             eligible=False,
             reason="你已经在这桌里。",
         )
-    if len(state.participants) >= 5:
+    if len(state.participants) >= MAX_TABLE_PARTICIPANTS:
         return LobbyFitPreview(
             table_id=state.table_id,
             participant_id=candidate.participant_id,

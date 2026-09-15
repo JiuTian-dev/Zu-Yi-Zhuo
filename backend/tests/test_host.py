@@ -135,6 +135,18 @@ def test_reframe_names_the_structure_and_passes_to_target() -> None:
     assert event.visual_hint["show_structure"] is True
 
 
+def test_professional_judgment_reframe_never_falls_back_to_procurement_copy() -> None:
+    state = build_initial_state("professional", "AI 时代，专业判断会被替代吗？", flagship_participants)
+    state = observe_turn(state, SCENARIOS["flagship"][0])
+    state = observe_turn(state, SCENARIOS["flagship"][1])
+
+    event = generate_host_event(state, decision(Action.REFRAME, [1, 2]))
+
+    assert "判断能够验证" in event.text
+    assert "承担责任" in event.text
+    assert "采购" not in event.text
+
+
 @pytest.mark.parametrize("kind", ["natural", "pass", "experience"])
 def test_probe_asks_for_example_reason_and_boundary(kind: str) -> None:
     state = state_after(kind)

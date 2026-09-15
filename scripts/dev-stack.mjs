@@ -9,7 +9,12 @@ const frontendPort = process.env.DEV_FRONTEND_PORT ?? '5174'
 const folioPort = process.env.DEV_FOLIO_PORT ?? '5175'
 const backendPort = process.env.DEV_BACKEND_PORT ?? '8000'
 const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
-const python = process.platform === 'win32' ? 'py.exe' : 'python3'
+const localPython = process.platform === 'win32'
+  ? path.join(backendRoot, '.venv', 'Scripts', 'python.exe')
+  : path.join(backendRoot, '.venv', 'bin', 'python')
+const python = existsSync(localPython)
+  ? localPython
+  : process.platform === 'win32' ? 'py.exe' : 'python3'
 const children = []
 let stopping = false
 

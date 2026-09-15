@@ -115,6 +115,23 @@ def test_chat_text_maps_responses_options_to_chat_completions() -> None:
     ]
 
 
+def test_stepfun_chat_omits_output_cap_so_reasoning_can_reach_content() -> None:
+    client = _ChatClient()
+    provider = OpenAIResponsesProvider(
+        client,
+        model="step-3.5-flash",
+        base_url="https://api.stepfun.com/step_plan/v1",
+        api_style="chat",
+    )
+
+    result = asyncio.run(
+        provider.text("生成一句主持话", [], {"max_output_tokens": 96})
+    )
+
+    assert result == "可继续追问预算验收。"
+    assert "max_tokens" not in client.chat.completions.calls[0]
+
+
 def test_chat_structured_validates_json_object() -> None:
     client = _ChatClient()
     provider = OpenAIResponsesProvider(client, model="omen-alpha", api_style="chat")

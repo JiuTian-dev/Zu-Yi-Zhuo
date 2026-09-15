@@ -15,7 +15,18 @@ from app.domain import Action, ActionEchoEntry, AgentRunRecord, BehaviorEvent, C
 from app.domain.schemas import DemoSession, ParticipantState, SimulationGeneration
 from app.orchestrator import build_initial_state, build_personal_card, build_shared_baseline, observe_turn
 
-MAX_TABLE_PARTICIPANTS = 5
+def _max_table_participants() -> int:
+    raw = os.environ.get("MAX_TABLE_PARTICIPANTS", "5").strip()
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise RuntimeError("MAX_TABLE_PARTICIPANTS must be an integer between 1 and 5") from error
+    if value < 1 or value > 5:
+        raise RuntimeError("MAX_TABLE_PARTICIPANTS must be between 1 and 5")
+    return value
+
+
+MAX_TABLE_PARTICIPANTS = _max_table_participants()
 MAX_PUBLIC_SOURCE_SIGNALS = 20
 MAX_TABLE_LINEAGE_DEPTH = 10
 MAX_QUESTION_FOOTPRINT_ITEMS = 50

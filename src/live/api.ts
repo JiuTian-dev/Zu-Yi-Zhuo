@@ -93,6 +93,35 @@ export function fetchDemoCase() {
   return requestJson<DemoCaseLike>('/demo/cases/ai_friendship')
 }
 
+export interface ProfileAgentMessageLike {
+  role: 'agent' | 'user'
+  text: string
+}
+
+export interface ProfileAgentResponseLike {
+  reply: string
+  summary: string
+  role_tag: string
+  experience_tag: string
+  interest_tags: string[]
+  perspective_tags: string[]
+  seat_label: string
+  ready: boolean
+  provider: 'configured-llm'
+}
+
+export function chatWithProfileAgent(
+  participantId: string,
+  displayName: string,
+  messages: ProfileAgentMessageLike[],
+) {
+  return requestJson<ProfileAgentResponseLike>('/demo/profile-agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ participant_id: participantId, display_name: displayName, messages }),
+  }, 20_000)
+}
+
 export function createDemoSession(participantId: string, requestId: string) {
   return requestJson<{ table_id: string; state: TableStateLike }>('/demo/sessions', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

@@ -30,7 +30,7 @@ def test_seed_demo_tables_survives_json_restart_without_overwriting_state(tmp_pa
     seed_demo_tables(repository)
     repository.append_message_once(
         "demo-agent",
-        "architect",
+        "judgment-engineer",
         "先把技术验收标准说清楚。",
         "demo-message-1",
     )

@@ -39,7 +39,7 @@ export default function TableSea({ onEnter, onOpenIntent, onOpenDemo, phase, ret
         worldId: 'valley' as const,
         hook: lobby.core_question,
         seatedCount: lobby.participant_count,
-        missingPerspective: lobby.missing_perspective || (lobby.available_seats > 0 ? `还剩 ${lobby.available_seats} 个空席` : '这桌正在进行中'),
+        missingPerspective: lobby.missing_perspective || (lobby.participant_count < 4 ? `还剩 ${4 - lobby.participant_count} 个真人席位` : '四位真人正在讨论'),
         recommendedBecause: lobby.role_gaps[0] ? `这桌正在寻找：${lobby.role_gaps.join('、')}` : undefined,
         previewLines: lobby.members.slice(0, 3).map((member) => `${member.display_name} · ${member.role}`),
       }

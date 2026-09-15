@@ -107,6 +107,22 @@ def _fact_conflict(
         participant_ids=[other_id, speaker_id],
     )
 
+
+def _layer_mismatch_language(state: TableState) -> tuple[str, str, str]:
+    """Keep the deterministic layer signal inside the table's actual topic."""
+    if "专业判断" in state.core_question:
+        return (
+            "讨论同时落在技术可验证性与责任承担层",
+            "哪些判断可以验证，哪些后果必须有人承担？",
+            "可验证性与责任边界",
+        )
+    return (
+        "讨论同时落在技术实现层与采购决策层",
+        "采购决策链如何影响技术进入企业？",
+        "采购决策链",
+    )
+
+
 def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
     """Return a fresh snapshot after one committed human turn."""
     if turn.participant_id not in previous.participants:
@@ -148,15 +164,16 @@ def observe_turn(previous: TableState, turn: HumanTurn) -> TableState:
     buying = next(((pid, item) for pid, item in positions if _layer(item.text) == "buying"), None)
     if tech and buying:
         evidence = sorted(set(tech[1].evidence_turns + buying[1].evidence_turns))
-        disagreement = Disagreement(text="讨论同时落在技术实现层与采购决策层", evidence_turns=evidence,
+        disagreement_text, subquestion, promising_thread = _layer_mismatch_language(state)
+        disagreement = Disagreement(text=disagreement_text, evidence_turns=evidence,
                                     disagreement_type=DisagreementType.LAYER_MISMATCH,
                                     participant_ids=[tech[0], buying[0]])
         state.disagreements = [item for item in state.disagreements if item.disagreement_type != DisagreementType.LAYER_MISMATCH] + [disagreement]
         state.phase = Phase.TENSION
-        state.current_subquestion = "采购决策链如何影响技术进入企业？"
+        state.current_subquestion = subquestion
         state.open_loops = [OpenLoop(question=state.current_subquestion, priority=Level.HIGH, evidence_turns=evidence)]
         state.conversation.state = "layer_mismatch surfaced"
-        state.conversation.most_promising_thread = EvidenceStatement(text="采购决策链", evidence_turns=evidence)
+        state.conversation.most_promising_thread = EvidenceStatement(text=promising_thread, evidence_turns=evidence)
         target = _procurement_expert(state)
         if target:
             target.good_pass_opportunity = True

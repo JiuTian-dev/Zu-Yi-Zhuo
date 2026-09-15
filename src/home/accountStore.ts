@@ -1,5 +1,7 @@
 /** @origin HOME — local demo account for the homepage shell (not Zhihu OAuth). */
 
+export type AvatarCharacter = 'blue' | 'orange' | 'white' | 'green'
+
 export interface HomeAccount {
   loggedIn: boolean
   displayName: string
@@ -8,6 +10,8 @@ export interface HomeAccount {
   avatarInitial: string
   /** Optional remote/local avatar; empty uses generated color disc. */
   avatarUrl: string
+  /** The 3D identity selected on the one-tap welcome screen. */
+  avatarCharacter: AvatarCharacter
 }
 
 export interface AuthResult {
@@ -32,6 +36,7 @@ const GUEST: HomeAccount = {
   avatarHue: 168,
   avatarInitial: '桌',
   avatarUrl: '',
+  avatarCharacter: 'blue',
 }
 
 type Listener = (account: HomeAccount) => void
@@ -67,7 +72,11 @@ function writeCredentials(list: DemoCredential[]) {
   }
 }
 
-function accountFromName(displayName: string): HomeAccount {
+function isAvatarCharacter(value: unknown): value is AvatarCharacter {
+  return value === 'blue' || value === 'orange' || value === 'white' || value === 'green'
+}
+
+function accountFromName(displayName: string, avatarCharacter: AvatarCharacter = 'blue'): HomeAccount {
   const name = displayName.trim().slice(0, 24) || '桌边旅人'
   return {
     loggedIn: true,
@@ -75,6 +84,7 @@ function accountFromName(displayName: string): HomeAccount {
     avatarHue: hashHue(name),
     avatarInitial: name.slice(0, 1),
     avatarUrl: '',
+    avatarCharacter,
   }
 }
 
@@ -96,6 +106,7 @@ function readStored(): HomeAccount {
         ? parsed.avatarInitial.slice(0, 1)
         : displayName.slice(0, 1),
       avatarUrl: typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : '',
+      avatarCharacter: isAvatarCharacter(parsed.avatarCharacter) ? parsed.avatarCharacter : 'blue',
     }
   } catch {
     return { ...GUEST }
@@ -152,8 +163,8 @@ export function subscribeHomeAccount(listener: Listener): () => void {
 }
 
 /** Demo login only — never claims Zhihu identity or stores OAuth tokens. */
-export function loginHomeDemo(displayName: string): HomeAccount {
-  current = accountFromName(displayName)
+export function loginHomeDemo(displayName: string, avatarCharacter: AvatarCharacter = 'blue'): HomeAccount {
+  current = accountFromName(displayName, avatarCharacter)
   writeStored(current, true)
   emit()
   return current

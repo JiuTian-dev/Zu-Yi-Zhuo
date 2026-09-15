@@ -46,8 +46,37 @@ def _demo_table_specs() -> tuple[tuple[str, str, tuple[ParticipantSeed, ...]], .
     return (
         (
             "demo-agent",
-            "AI Agent 真正进入企业，卡住的是技术还是采购？",
-            tuple(flagship_participants[:4]),
+            "离开大城市，是逃避还是重新选择生活？",
+            (
+                _seed(
+                    "judgment-engineer",
+                    "周砚",
+                    "产品工程师 · 机会视角",
+                    "城市不只是压力，也是一张由工作、朋友和信息组成的机会网络",
+                    "认真尝试过半年远程工作，重新理解了线下关系与机会的价值",
+                ),
+                _seed(
+                    "judgment-doctor",
+                    "林夏",
+                    "县城医生 · 亲历视角",
+                    "离开不是退场，而是把有限时间重新分配给想负责的人和事",
+                    "从上海回到家乡工作三年，经历过获得陪伴与失去平台的双重变化",
+                ),
+                _seed(
+                    "judgment-researcher",
+                    "程野",
+                    "城市研究者 · 结构视角",
+                    "走还是留既是个人选择，也受住房、照护和公共服务共同塑造",
+                    "访谈过在大城市与家乡之间反复迁移的年轻人",
+                ),
+                _seed(
+                    "judgment-auditor",
+                    "秦越",
+                    "社区营造者 · 关系视角",
+                    "生活质量也取决于能否建立稳定、互相照应的关系",
+                    "参与过青年共居与社区活动的长期运营",
+                ),
+            ),
         ),
         (
             "demo-rest",
@@ -85,23 +114,8 @@ def _demo_table_specs() -> tuple[tuple[str, str, tuple[ParticipantSeed, ...]], .
         ),
         (
             "demo-gap",
-            "AI 时代，专业判断会被替代吗？",
-            (
-                _seed(
-                    "gap-product",
-                    "方宁",
-                    "产品负责人",
-                    "判断不能只看模型分数，还要看真实使用场景",
-                    "负责过面向真实用户的 AI 产品试点",
-                ),
-                _seed(
-                    "gap-architect",
-                    "顾远",
-                    "专业者",
-                    "模型能力越强，边界和责任越需要被说清楚",
-                    "参与过企业 AI 系统的架构与评审",
-                ),
-            ),
+            "AI Agent 真正进入企业，卡住的是技术还是采购？",
+            tuple(flagship_participants[:2]),
         ),
     )
 

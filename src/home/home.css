@@ -178,6 +178,20 @@ body.home-mode {
   flex: none;
 }
 
+.home-avatar-btn .home-account-character {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.home-account-card .home-account-character.is-lg {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+}
+
 .home-avatar-fallback.is-xl {
   width: 84px;
   height: 84px;

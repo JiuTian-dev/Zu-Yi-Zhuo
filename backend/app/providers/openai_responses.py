@@ -82,7 +82,9 @@ class OpenAIResponsesProvider:
             raise ProviderConfigurationError("OPENAI_MODEL must be non-empty")
         self._default_timeout = timeout
         endpoint = (base_url or os.getenv("OPENAI_BASE_URL") or "").strip()
-        self._is_opencode_go = "opencode.ai/zen/go" in endpoint.lower()
+        normalized_endpoint = endpoint.lower()
+        self._is_opencode_go = "opencode.ai/zen/go" in normalized_endpoint
+        self._is_stepfun = "api.stepfun.com" in normalized_endpoint
         selected_style = (api_style or os.getenv("OPENAI_API_STYLE") or "").strip().lower()
         if not selected_style:
             selected_style = "chat" if self._is_opencode_go else "responses"
@@ -133,7 +135,10 @@ class OpenAIResponsesProvider:
     def _chat_options(self, config: Mapping[str, Any] | None) -> dict[str, Any]:
         options = self._options(config)
         max_output_tokens = options.pop("max_output_tokens", None)
-        if max_output_tokens is not None:
+        # Step 3.5 is a reasoning model. StepFun recommends omitting
+        # max_tokens; a small cap can be consumed by reasoning before any
+        # assistant content is produced.
+        if max_output_tokens is not None and not self._is_stepfun:
             options["max_tokens"] = max_output_tokens
         for key in ("reasoning", "store", "metadata", "verbosity", "previous_response_id", "truncation"):
             options.pop(key, None)

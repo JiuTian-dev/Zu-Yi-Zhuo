@@ -61,7 +61,16 @@ def build_shared_baseline(state: TableState, core_question_before: str | None = 
         evidence = _state_evidence(state)
     if not evidence:
         raise ValueError("cannot build a baseline without turn evidence")
-    question = summary.next_focus.text if summary and summary.next_focus else (state.current_subquestion or state.core_question)
+    summary_focus = summary.next_focus if summary else None
+    # The deterministic safety fallback deliberately says “回应这句话…”. It is
+    # useful as an internal prompt but reads like a system instruction on the
+    # participant's final keepsake. Prefer the evidence-backed subquestion that
+    # the table already formed whenever that fallback reaches the close card.
+    question = (
+        summary_focus.text
+        if summary_focus and not summary_focus.text.startswith("回应这句话：")
+        else (state.current_subquestion or state.core_question)
+    )
     next_steps = [item for loop in state.open_loops if (item := _suggestion(loop.question, list(loop.evidence_turns)))]
     # Synthetic demo speech can contain words such as “可以” without being a
     # commitment by the real participant. Only human speech becomes a take-away.

@@ -11,6 +11,8 @@ import DiscussionPanel from './live/DiscussionPanel'
 import StageSummaryPanel from './live/StageSummaryPanel'
 import ConversationSurface from './live/ConversationSurface'
 import DemoEntry from './live/DemoEntry'
+import MatchJourney from './live/MatchJourney'
+import CharacterPortrait from './live/CharacterPortrait'
 import IntentPanel from './live/IntentPanel'
 import type { DemoCaseLike, HomeToMatchContextLike, LobbyFitPreviewLike, LobbyPreviewLike, MatchToHomeDraftLike, OpenTableContextLike } from './live/contract'
 import { loadLobby, loadLobbyFit, ensureTable } from './live/backend'
@@ -23,8 +25,11 @@ import DrawerToggle from './DrawerToggle'
 import FolioHome from './home/FolioHome'
 import MapSwitchButton from './home/MapSwitchButton'
 import ProfilePage from './home/ProfilePage'
+import FriendsDock from './home/FriendsDock'
 import { getHomeAccount } from './home/accountStore'
 import LoginPage from './login/LoginPage'
+import TagOnboarding from './onboarding/TagOnboarding'
+import { buildMatchPrompt, getTagProfile, type TagProfile } from './onboarding/profileStore'
 import './home/home.css'
 import './home/mapSwitch.css'
 import RelationshipPanel from './live/RelationshipPanel'
@@ -69,7 +74,7 @@ function speakerName(participantId: string, members: Array<{ participant_id: str
   if (participantId === 'table-host' || participantId === 'roundtable-agent') return '圆桌主持'
   if (participantId === viewerParticipantId) return '你'
   const member = members.find((item) => item.participant_id === participantId)
-  if (!viewerParticipantId && member?.display_name === '你') return '第五席'
+  if (!viewerParticipantId && member?.display_name === '你') return '你的席位'
   return member?.display_name ?? participantId
 }
 
@@ -93,7 +98,7 @@ function SettingsIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Zm8 3.8-2-.7a6.2 6.2 0 0 0-.6-1.5l.9-1.9-1.8-1.8-1.9.9a6.2 6.2 0 0 0-1.5-.6l-.7-2h-2.6l-.7 2a6.2 6.2 0 0 0-1.5.6l-1.9-.9L4.9 7.9l.9 1.9a6.2 6.2 0 0 0-.6 1.5l-2 .7v2.6l2 .7c.1.5.3 1 .6 1.5l-.9 1.9 1.8 1.8 1.9-.9c.5.3 1 .5 1.5.6l.7 2h2.6l.7-2c.5-.1 1-.3 1.5-.6l1.9.9 1.8-1.8-.9-1.9c.3-.5.5-1 .6-1.5l2-.7v-2.6Z" /></svg>
 }
 
-function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table, lobby, discovery, initialJoined = false }: { onExit(): void; onRestartDemo?(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; lobby: LobbyPreviewLike | null; discovery: LobbyPreviewLike[]; initialJoined?: boolean }) {
+function ValleyExperience({ onExit, onReturnHome, onRestartDemo, appPhase, entryIntent, table, lobby, discovery, initialJoined = false }: { onExit(): void; onReturnHome?(): void; onRestartDemo?(): void; appPhase: AppPhase; entryIntent: 'listen' | 'join' | null; table: TableSummary; lobby: LobbyPreviewLike | null; discovery: LobbyPreviewLike[]; initialJoined?: boolean }) {
   const reducedMotion = useReducedMotion()
   const [phase, setPhase] = useState<ExperiencePhase>('discovering')
   const [autoApproach, setAutoApproach] = useState(entryIntent === 'join')
@@ -334,7 +339,7 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
       setClosePending(false)
       setActionNotice('暂时没有收到收桌确认，可以稍后重试。')
       closeTimerRef.current = null
-    }, 5000)
+    }, 45000)
   }
 
   const dismissClosingCard = () => {
@@ -495,6 +500,7 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
   const listening = entryIntent === 'listen' && !hasJoined
   const liveActive = liveStatus === 'live' || liveStatus === 'mock'
   const tableInteractive = hasJoined && liveActive && closeState === 'idle'
+  const demoReadyToClose = Boolean(liveTableState?.demo && tableInteractive && liveMessages.some((message) => message.participantId === VIEWER_ID))
   const runtimeNotices = [
     { text: actionNotice, className: '' },
     { text: liveError, className: 'is-error' },
@@ -509,7 +515,8 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
 
       <header className="site-header">
         <button className="brand" type="button" onClick={phase === 'discovering' ? onExit : resetDiscovery} aria-label={phase === 'discovering' ? '回到桌单' : '回到这张桌的远景'}>
-          <span>组一桌</span><i /> <small>湖边这桌</small>
+          <span className="brand-mark" aria-hidden="true">桌</span>
+          <span className="brand-lockup"><b>组一桌</b><small>真人圆桌 · 湖边第 01 桌</small></span>
         </button>
         <div className="header-actions">
           {!seated && <button className={`icon-button ${soundOn ? '' : 'sound-unavailable'}`} type="button" aria-pressed={soundOn} aria-label={soundOn ? '关闭环境音' : '开启环境音'} title={soundOn ? '关闭环境音' : '开启环境音'} onClick={() => { const next = !soundOn; setSoundOn(next); setAmbient(next, 'valley') }}>
@@ -551,12 +558,17 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
       </section>
 
       <button className="seat-hotspot" type="button" data-anchor="viewer" aria-label="靠近湖边的空席" onClick={approachTable} disabled={phase !== 'discovering'}>
-        <span className="seat-pulse" /><span className="seat-label"><b>第五席</b>等一个真正停下来过的人</span>
+        <span className="seat-pulse" /><span className="seat-label"><b>你的席位</b>带着真实经历加入这一桌</span>
       </button>
 
       <div className="approach-cue" role="status" aria-live="polite"><span />镜头正在穿过湖边的光</div>
 
       <section className="seated-hud" aria-hidden={!seated} inert={!seated}>
+        <section className="roundtable-topic" aria-labelledby="roundtable-topic-title">
+          <p><span>LIVE ROUND TABLE</span><i />{liveSeatCount || table.seatedCount} 人与 1 位主持 Agent 在席</p>
+          <h1 id="roundtable-topic-title">{table.hook}</h1>
+          <div><small>阿桌正在推进</small><strong>{liveActive && liveSubQuestion ? liveSubQuestion : lobby?.current_subquestion ?? '先从你的真实经历说起'}</strong></div>
+        </section>
         {liveStatus === 'connecting' && <div className="live-badge" role="status">正在连接这张桌…</div>}
         {liveStatus === 'error' && <div className="live-badge is-error" role="status">实时连接中断，显示最后状态</div>}
         {runtimeNotices.length > 0 && <aside className="runtime-notice-stack" aria-live="polite">
@@ -600,10 +612,7 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
           <b>{selectedActor.display_name}</b><span>{selectedActor.role} · {selectedActor.detail}</span>
           <button type="button" onClick={() => setSelectedActorId(null)}>收起</button>
         </aside>}
-        <div className="question-card">
-          <p>{liveActive && liveSubQuestion ? liveSubQuestion : lobby?.current_subquestion ?? table.hook}</p>
-        </div>
-        <button className="seat-marker" type="button" data-anchor="viewer" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '第五席'}</small>{hasJoined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
+        <button className="seat-marker" type="button" data-anchor="viewer" disabled={hasJoined} onClick={(event) => openJoin(event.currentTarget)}><i /><span><small>{listening ? '旁听中' : '空席'}</small>{hasJoined ? '你已在这一席' : listening ? '这是你的位置 · 随时可坐' : '这是你的位置'}</span></button>
 
         <div className="conversation-dock">
           <ConversationSurface
@@ -628,19 +637,25 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
         {closeConfirmOpen && <div className="close-confirm-root">
           <div className="close-confirm-veil" aria-hidden="true" onClick={() => closeLayer('close_confirm')} />
           <aside className="close-confirm" role="dialog" aria-modal="true" aria-labelledby="close-confirm-title">
-            <h2 id="close-confirm-title">结束这桌讨论？</h2>
-            <p>结束后，大家仍能回看这次讨论。</p>
+            <h2 id="close-confirm-title">生成这桌的总结与关系卡？</h2>
+            <p>Agent 会留下共识、分歧、你的贡献，以及值得继续认识的人。</p>
             <div>
               <button type="button" autoFocus onClick={() => closeLayer('close_confirm')}>继续聊</button>
-              <button type="button" className="is-primary" onClick={() => { requestCloseFromUi(); closeLayer('close_confirm') }}>结束讨论</button>
+              <button type="button" className="is-primary" onClick={() => { requestCloseFromUi(); closeLayer('close_confirm') }}>生成总结卡</button>
             </div>
           </aside>
         </div>}
-        {closeState === 'started' && <div className="closing-progress" role="status">正在收桌…</div>}
-        {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard tableId={table.id} participantId={VIEWER_ID} baseline={liveBaseline} personalCard={livePersonalCard} simulatedParticipantIds={liveTableState?.demo?.simulated_participant_ids} onDismiss={dismissClosingCard} onReturn={onExit} />}
+        {closeState === 'started' && <div className="closing-progress" role="status" aria-live="polite">
+          <CharacterPortrait character="host" label="阿桌" className="closing-progress-avatar" online />
+          <div><small>阿桌正在收桌</small><b>把原话整理成共识、分歧和关系线索</b><span>通常需要 10–30 秒，请不要离开</span><em aria-hidden="true"><i /><i /><i /></em></div>
+        </div>}
+        {closeState === 'ready' && liveBaseline && closingCardOpen && <ClosingCard tableId={table.id} participantId={VIEWER_ID} baseline={liveBaseline} personalCard={livePersonalCard} simulatedParticipantIds={liveTableState?.demo?.simulated_participant_ids} tableMembers={tableMembers} onDismiss={dismissClosingCard} onReturn={onReturnHome ?? onExit} onReturnLabel={liveTableState?.demo ? '带着新桌友回首页' : undefined} />}
         {closeState === 'ready' && liveBaseline && !closingCardOpen && <button ref={reopenClosingCardRef} className="reopen-closing-card" type="button" onClick={() => openLayer('closing')}>查看收桌内容</button>}
         <DiscussionPanel open={historyOpen} tableId={table.id} participantId={hasJoined ? VIEWER_ID : undefined} members={tableMembers} focusTurnId={evidenceTurnId} onClose={() => closeLayer('history')} closeState={closeState} baseline={liveBaseline} personalCard={livePersonalCard} />
         {!hasJoined && <button className="join-table-button" type="button" disabled={closeState !== 'idle'} onClick={(event) => openJoin(event.currentTarget)}><i />坐下</button>}
+        {demoReadyToClose && <button className="demo-complete-cta" type="button" disabled={closePending} onClick={requestCloseFromUi}>
+          <small>讨论已形成回应</small><span>{closePending ? '正在生成总结…' : '生成总结与桌友卡'} <i>→</i></span>
+        </button>}
       </section>
 
       <aside ref={joinPanelRef} className="join-sheet" aria-hidden={!joinOpen} inert={!joinOpen} role="dialog" aria-modal="true" aria-labelledby="join-sheet-title">
@@ -657,7 +672,7 @@ function ValleyExperience({ onExit, onRestartDemo, appPhase, entryIntent, table,
           {tableInteractive && <button type="button" onClick={() => openLayer('summary')}>阶段小结</button>}
           <button type="button" onClick={() => openLayer('history')}>讨论依据</button>
           {tableInteractive && <button type="button" disabled={nudgePending} onClick={() => { requestNudgeFromUi(); closeMenu() }}>{nudgePending ? '主持人正在看' : '请主持人介入'}</button>}
-          {tableInteractive && <button type="button" disabled={closePending} onClick={() => openLayer('close_confirm')}>{closePending ? '正在结束' : '结束这桌'}</button>}
+          {tableInteractive && <button type="button" disabled={closePending} onClick={() => openLayer('close_confirm')}>{closePending ? '正在生成' : '总结这桌'}</button>}
           {liveTableState?.demo && onRestartDemo && <button type="button" onClick={() => { closeMenu(); onRestartDemo() }}>重新体验</button>}
           <button type="button" onClick={liveTableState?.demo ? onExit : resetDiscovery}>离开</button>
         </> : <>
@@ -702,6 +717,9 @@ function TransitionCover({ snapshot }: { snapshot: TransitionSnapshot }) {
 }
 export default function App() {
   const activeRoom = readActiveRoom()
+  const query = new URLSearchParams(window.location.search)
+  const forceWelcome = query.get('welcome') === '1'
+  const captureHome = query.get('capture') === 'home'
   const [shell, setShell] = useState<ShellView>(() => activeRoom ? 'match' : 'home')
   const [appPhase, setAppPhase] = useState<AppPhase>(() => activeRoom ? 'world' : 'gallery')
   const [transition, setTransition] = useState<TransitionSnapshot | null>(null)
@@ -720,9 +738,13 @@ export default function App() {
   const [lobbyInitialJoined, setLobbyInitialJoined] = useState(false)
   const [entryIntent, setEntryIntent] = useState<'listen' | 'join' | null>(() => activeRoom?.intent ?? null)
   const [relationshipOpen, setRelationshipOpen] = useState(false)
-  const [loginOpen, setLoginOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(() => forceWelcome || (!captureHome && !getHomeAccount().loggedIn))
+  const [loginRequired, setLoginRequired] = useState(() => forceWelcome || (!captureHome && !getHomeAccount().loggedIn))
+  const [tagOnboardingOpen, setTagOnboardingOpen] = useState(false)
+  const [pendingProfiledEntry, setPendingProfiledEntry] = useState<'demo' | 'match' | null>(null)
   const [demoCase, setDemoCase] = useState<DemoCaseLike | null>(null)
   const [demoOpen, setDemoOpen] = useState(false)
+  const [journeyOpen, setJourneyOpen] = useState(false)
   const [demoPending, setDemoPending] = useState(false)
   const [demoError, setDemoError] = useState<string | null>(null)
   const demoRequestId = useRef<string | null>(null)
@@ -735,6 +757,7 @@ export default function App() {
   const reducedMotion = useReducedMotion()
   const liveStatus = useLive((state) => state.status)
   const liveTableState = useLive((state) => state.tableState)
+
   const refreshDiscovery = () => {
     const requestId = ++discoveryRequestRef.current
     setDiscovery(null)
@@ -755,7 +778,6 @@ export default function App() {
     void fetchDemoCase().then((data) => {
       if (!active || !data.available) return
       setDemoCase(data)
-      if (new URLSearchParams(window.location.search).get('demo') === 'ai_friendship' && !readActiveRoom()) setDemoOpen(true)
     }).catch(() => { /* The optional demo entry is absent when the server disables it. */ })
     return () => {
       active = false
@@ -766,15 +788,21 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!demoOpen) return
+    if (!demoOpen && !journeyOpen) return
     setRuntimeInteraction(false)
     return () => setRuntimeInteraction(true)
-  }, [demoOpen])
+  }, [demoOpen, journeyOpen])
 
   const closeDemo = () => {
     demoAttempt.current += 1
     setDemoOpen(false)
+    setJourneyOpen(false)
     setDemoPending(false)
+  }
+  const beginDemoJourney = () => {
+    setDemoError(null)
+    setDemoOpen(false)
+    setJourneyOpen(true)
   }
   const startDemo = async () => {
     if (demoInFlight.current) return
@@ -798,6 +826,7 @@ export default function App() {
       setEntryIntent('join')
       try { sessionStorage.setItem(ROOM_SESSION_KEY, JSON.stringify({ table, intent: 'join', joined: true })) } catch { /* Live session works without storage. */ }
       setDemoOpen(false)
+      setJourneyOpen(false)
       setShell('match')
       setAppPhase('world')
       demoRequestId.current = null
@@ -853,7 +882,7 @@ export default function App() {
       mode: liveTableState.conversation.mode ?? current.mode,
       status: liveTableState.conversation.closed ? 'closed' : current.status,
       participant_count: Object.keys(liveTableState.participants).length,
-      available_seats: Math.max(0, 5 - Object.keys(liveTableState.participants).length),
+      available_seats: Math.max(0, 4 - Object.keys(liveTableState.participants).length),
       members: Object.values(liveTableState.participants).map((participant) => ({
         participant_id: participant.participant_id,
         display_name: participant.display_name,
@@ -926,11 +955,37 @@ export default function App() {
     setAppPhase('gallery')
   }
   const openPreciseMatchFromHome = () => {
+    const account = getHomeAccount()
+    if (!account.loggedIn) {
+      setPendingProfiledEntry('match')
+      setLoginRequired(true)
+      setLoginOpen(true)
+      return
+    }
+    const profile = getTagProfile(account.displayName)
+    if (!profile) {
+      setPendingProfiledEntry('match')
+      setTagOnboardingOpen(true)
+      return
+    }
     setRelationshipOpen(false)
-    setIntentInitialQuestion('')
+    setIntentInitialQuestion(buildMatchPrompt(profile))
     setIntentOpen(true)
     setShell('match')
     setAppPhase('gallery')
+  }
+  const openDemoFromHome = () => {
+    if (!demoCase) return
+    const account = getHomeAccount()
+    if (!account.loggedIn) {
+      setPendingProfiledEntry('demo')
+      setLoginRequired(true)
+      setLoginOpen(true)
+      return
+    }
+    setPendingProfiledEntry('demo')
+    setDemoError(null)
+    setTagOnboardingOpen(true)
   }
   const openHostTableFromHome = () => {
     setRelationshipOpen(false)
@@ -955,6 +1010,7 @@ export default function App() {
     setIntentInitialQuestion('')
     setHomeContextError(null)
     setDemoOpen(false)
+    setJourneyOpen(false)
     setTransition(null)
     setLobbyTable(null)
     setLobbyData(null)
@@ -1058,6 +1114,20 @@ export default function App() {
     setAppPhase('collapsing')
     schedulePhase('gallery', reducedMotion ? 160 : 450)
   }
+  const finishTableToHome = () => {
+    lobbyRequestRef.current += 1
+    if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
+    sessionStorage.removeItem(ROOM_SESSION_KEY)
+    setEntryIntent(null)
+    setTransition(null)
+    setLobbyTable(null)
+    setLobbyData(null)
+    setLobbyFit(null)
+    setLobbyError(null)
+    setLobbyInitialJoined(false)
+    setAppPhase('gallery')
+    setShell('home')
+  }
   const inMatchShell = shell === 'match'
   const showGallery = inMatchShell && (appPhase === 'gallery' || appPhase === 'lobby' || appPhase === 'expanding' || appPhase === 'collapsing')
   const showWorld = inMatchShell && (appPhase === 'expanding' || appPhase === 'world' || appPhase === 'collapsing')
@@ -1068,19 +1138,44 @@ export default function App() {
           <FolioHome
             onOpenProfile={() => setShell('profile')}
             onEnterMatch={enterMatchFromHome}
-            onOpenLogin={() => setLoginOpen(true)}
+            onOpenLogin={() => { setLoginRequired(false); setLoginOpen(true) }}
             onPreciseMatch={openPreciseMatchFromHome}
             onHostTable={openHostTableFromHome}
-            onOpenTable={(tableId) => { void openTableFromHome(tableId) }}
+            onOpenDemo={demoCase ? openDemoFromHome : undefined}
           />
         </div>
       )}
       <LoginPage
         open={loginOpen}
-        onClose={() => setLoginOpen(false)}
+        required={loginRequired}
+        onClose={() => { setLoginOpen(false); setLoginRequired(false); setPendingProfiledEntry(null) }}
         onSuccess={() => {
           setLoginOpen(false)
-          window.dispatchEvent(new CustomEvent('zuoyizhuo:home-account', { detail: getHomeAccount() }))
+          setLoginRequired(false)
+          setPendingProfiledEntry(null)
+          const account = getHomeAccount()
+          window.dispatchEvent(new CustomEvent('zuoyizhuo:home-account', { detail: account }))
+        }}
+      />
+      <TagOnboarding
+        open={tagOnboardingOpen}
+        displayName={getHomeAccount().displayName}
+        required={pendingProfiledEntry !== null}
+        fresh={pendingProfiledEntry === 'demo'}
+        onClose={() => { setTagOnboardingOpen(false); setPendingProfiledEntry(null) }}
+        onComplete={(profile: TagProfile) => {
+          setTagOnboardingOpen(false)
+          if (pendingProfiledEntry === 'demo') {
+            setPendingProfiledEntry(null)
+            setDemoError(null)
+            setDemoOpen(true)
+            return
+          }
+          setPendingProfiledEntry(null)
+          setIntentInitialQuestion(buildMatchPrompt(profile))
+          setIntentOpen(true)
+          setShell('match')
+          setAppPhase('gallery')
         }}
       />
       {shell === 'profile' && (
@@ -1099,17 +1194,27 @@ export default function App() {
           onRevisit={openTableFromHome}
         />
       )}
+      {(shell === 'home' || shell === 'profile') && <FriendsDock />}
       <TableWorld active={inMatchShell} />
-      <div inert={demoOpen || !inMatchShell}>
-      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} onOpenDemo={demoCase ? () => { setDemoError(null); setDemoOpen(true) } : undefined} onOpenIntent={() => { setIntentInitialQuestion(''); setIntentOpen(true) }} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
+      <div inert={demoOpen || journeyOpen || !inMatchShell}>
+      {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} onOpenDemo={demoCase ? openDemoFromHome : undefined} onOpenIntent={() => { setIntentInitialQuestion(''); setIntentOpen(true) }} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
       {homeContextError && <aside className="home-context-error" role="alert"><span>{homeContextError}</span><button type="button" onClick={dismissHomeContextError}>知道了</button></aside>}
-      {showWorld && lobbyTable && <ValleyExperience key={lobbyTable.id} table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={lobbyInitialJoined || (activeRoom?.joined ?? false)} onExit={exitTable} onRestartDemo={demoCase ? () => { setDemoError(null); setDemoOpen(true) } : undefined} />}
+      {showWorld && lobbyTable && <ValleyExperience key={lobbyTable.id} table={lobbyTable} lobby={lobbyData} discovery={discovery ?? []} appPhase={appPhase} entryIntent={entryIntent} initialJoined={lobbyInitialJoined || (activeRoom?.joined ?? false)} onExit={exitTable} onReturnHome={finishTableToHome} onRestartDemo={demoCase ? () => { setDemoError(null); setDemoOpen(true) } : undefined} />}
       {inMatchShell && appPhase === 'lobby' && lobbyTable && <Lobby table={lobbyTable} lobby={lobbyData} fit={lobbyFit} loading={lobbyLoading} error={lobbyError} onClose={closeLobby} onRetry={retryLobby} onListen={() => startWorld('listen')} onJoin={() => startWorld('join', lobbyInitialJoined || Boolean(lobbyData?.members.some((member) => member.participant_id === VIEWER_ID)))} />}
       {inMatchShell && appPhase === 'expanding' && transition && <><div className="transition-backdrop" aria-hidden="true" /><TransitionCover snapshot={transition} /></>}
       {inMatchShell && <IntentPanel open={intentOpen} initialQuestion={intentInitialQuestion} onClose={closeIntent} onSelectTable={openIntentTable} onMatchConfirmed={(tableId) => openMatchedTable(tableId)} onReturnToHomeDraft={returnMatchDraftToHome} />}
       </div>
-      {demoOpen && demoCase && <DemoEntry demoCase={demoCase} pending={demoPending} error={demoError} onStart={() => { void startDemo() }} onClose={closeDemo} />}
-      {inMatchShell && appPhase === 'gallery' && !lobbyTable && !demoOpen && (
+      {demoOpen && demoCase && <DemoEntry demoCase={demoCase} profile={getTagProfile(getHomeAccount().displayName)} pending={false} error={null} onStart={beginDemoJourney} onClose={closeDemo} />}
+      {journeyOpen && demoCase && <MatchJourney
+        open={journeyOpen}
+        demoCase={demoCase}
+        profile={getTagProfile(getHomeAccount().displayName)}
+        pending={demoPending}
+        error={demoError}
+        onArrive={() => { void startDemo() }}
+        onBack={() => { if (!demoPending) { setJourneyOpen(false); setDemoOpen(true); setDemoError(null) } }}
+      />}
+      {inMatchShell && appPhase === 'gallery' && !lobbyTable && !demoOpen && !journeyOpen && (
         <MapSwitchButton label="返回首页" onClick={returnToHome} />
       )}
     </>

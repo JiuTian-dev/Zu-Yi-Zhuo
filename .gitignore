@@ -4,6 +4,7 @@ dist/
 *.local
 *.tsbuildinfo
 .playwright-cli/
+.workbuddy/
 output/
 visual-rolls/
 .codex-doc-review/
@@ -11,6 +12,7 @@ __pycache__/
 *.py[cod]
 # Local backend table snapshots may contain participant data.
 runtime/
+.demo-data/
 build.log
 out/
 .v2c/
@@ -40,6 +42,8 @@ start_dev.py
 
 # Local large assets that are not part of the shipped runtime.
 3D/
+图/
+*.egg-info/
 /*.docx
 **/*.docx
 GLB/
@@ -60,6 +64,7 @@ public/assets/campfire-table.png
 *.sqlite3
 *.db
 *.log
+backend/.demo-data/
 
 # Local browser/diag scratch (Playwright Edge profiles, etc.).
 .tmp*/

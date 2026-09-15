@@ -1,330 +1,149 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import AnimatedCharacters, { CHARACTER_HIT_TARGETS, type CharacterMood } from './AnimatedCharacters'
-import {
-  loginWithCredentials,
-  registerDemoAccount,
-} from '../home/accountStore'
+import { getHomeAccount, loginHomeDemo, type AvatarCharacter } from '../home/accountStore'
+import CharacterPortrait from '../live/CharacterPortrait'
+import LoginCharacterStage from './LoginCharacterStage'
+import ZhihuConnectionPreview from '../home/ZhihuConnectionPreview'
 import './login.css'
 
 interface LoginPageProps {
   open: boolean
+  required?: boolean
   onClose(): void
   onSuccess(): void
 }
 
-type AuthMode = 'login' | 'register'
+const ROLES: Array<{ character: AvatarCharacter; title: string; note: string }> = [
+  { character: 'blue', title: '蓝色外套', note: '清爽，自在一点' },
+  { character: 'orange', title: '橙色夹克', note: '带一点阳光出发' },
+  { character: 'white', title: '奶白卫衣', note: '柔和，轻松一点' },
+  { character: 'green', title: '绿色风衣', note: '把好奇心带上' },
+]
+const CAST_ORDER: AvatarCharacter[] = ['white', 'orange', 'green', 'blue']
+const CAST_NAMES = ['林夏', '周砚', '程野']
 
-export default function LoginPage({ open, onClose, onSuccess }: LoginPageProps) {
-  const [mode, setMode] = useState<AuthMode>('login')
-  const [account, setAccount] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [remember, setRemember] = useState(true)
-  const [accountFocused, setAccountFocused] = useState(false)
-  const [mood, setMood] = useState<CharacterMood>('idle')
+export default function LoginPage({ open, required = false, onClose, onSuccess }: LoginPageProps) {
+  const [selected, setSelected] = useState<AvatarCharacter>('blue')
+  const [nickname, setNickname] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [singingId, setSingingId] = useState<string | null>(null)
   const titleId = useId()
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const clickTimer = useRef(0)
-  const lastClickId = useRef<string | null>(null)
+  const nicknameId = useId()
+  const dialogRef = useRef<HTMLElement>(null)
+  const nicknameRef = useRef<HTMLInputElement>(null)
+  const successTimer = useRef<number | null>(null)
 
   useEffect(() => {
     if (!open) return
-    setMode('login')
-    setAccount('')
-    setPassword('')
-    setConfirm('')
-    setShowPassword(false)
-    setRemember(true)
-    setAccountFocused(false)
-    setMood('idle')
+    const current = getHomeAccount()
+    setSelected(current.avatarCharacter ?? 'blue')
+    setNickname(current.loggedIn && !/^(湖蓝|暖橙|雾白|松绿|桌边)旅人$/.test(current.displayName) ? current.displayName : '')
     setError('')
     setBusy(false)
-    setSingingId(null)
-    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus({ preventScroll: true }))
-    return () => window.cancelAnimationFrame(frame)
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.focus({ preventScroll: true })
+      dialogRef.current?.scrollTo({ top: 0 })
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (successTimer.current !== null) window.clearTimeout(successTimer.current)
+    }
   }, [open])
 
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !required && !busy) {
         event.preventDefault()
         onClose()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, open])
-
-  useEffect(() => () => window.clearTimeout(clickTimer.current), [])
+  }, [busy, onClose, open, required])
 
   if (!open) return null
 
-  const triggerSing = (id: string) => {
-    setSingingId(id)
-    window.setTimeout(() => setSingingId((current) => (current === id ? null : current)), 900)
-  }
-
-  const onCharacterPointer = (id: string) => {
-    window.clearTimeout(clickTimer.current)
-    if (lastClickId.current === id) {
-      lastClickId.current = null
-      triggerSing('all')
-      return
-    }
-    lastClickId.current = id
-    clickTimer.current = window.setTimeout(() => {
-      lastClickId.current = null
-      triggerSing(id)
-    }, 280)
-  }
-
-  const submit = async (event: FormEvent) => {
+  const enter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setError('')
+    if (busy) return
+    const name = nickname.trim()
+    if (!name) {
+      setError('先告诉大家怎么称呼你吧。')
+      nicknameRef.current?.focus()
+      return
+    }
     setBusy(true)
-    setMood('idle')
-
-    await new Promise((resolve) => window.setTimeout(resolve, 280))
-
-    if (mode === 'register') {
-      if (password.length < 4) {
-        setError('密码至少 4 位')
-        setMood('sad')
-        setBusy(false)
-        return
-      }
-      if (password !== confirm) {
-        setError('两次输入的密码不一致')
-        setMood('sad')
-        setBusy(false)
-        return
-      }
-      const result = registerDemoAccount(account, password, remember)
-      if (!result.ok) {
-        setError(result.message)
-        setMood('sad')
-        setBusy(false)
-        return
-      }
-      setMood('happy')
-      setBusy(false)
-      window.setTimeout(() => onSuccess(), 700)
-      return
-    }
-
-    const result = loginWithCredentials(account, password, remember)
-    if (!result.ok) {
-      setError(result.message)
-      setMood('sad')
-      setBusy(false)
-      return
-    }
-    setMood('happy')
-    setBusy(false)
-    window.setTimeout(() => onSuccess(), 700)
+    setError('')
+    loginHomeDemo(name, selected)
+    successTimer.current = window.setTimeout(onSuccess, 620)
   }
 
   return createPortal(
-    <div className="login-overlay" role="presentation">
-      <button className="login-scrim" type="button" aria-label="关闭登录窗口" onClick={onClose} />
-      <div
-        ref={dialogRef}
-        className="login-window"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-      >
-        <header className="login-window-bar">
-          <div className="login-window-dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <p className="login-window-title">组一桌 · 登录</p>
-          <button
-            ref={closeButtonRef}
-            className="login-window-close"
-            type="button"
-            aria-label="关闭"
-            onClick={onClose}
-          >
-            ×
-          </button>
+    <div className={'login-overlay ' + (busy ? 'is-success' : '')} role="presentation">
+      {!required && <button className="login-scrim" type="button" aria-label="关闭登录窗口" disabled={busy} onClick={onClose} />}
+      <section ref={dialogRef} tabIndex={-1} className="login-experience" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="login-lake" aria-hidden="true" />
+        <header className="login-topbar">
+          <div className="login-lockup"><i>桌</i><span><b>组一桌</b><small>从一个真实的你开始</small></span></div>
+          <p>选个形象，留个昵称，就能出发</p>
+          {!required && <button type="button" aria-label="关闭" disabled={busy} onClick={onClose}>×</button>}
         </header>
-
-        <div className="login-page">
-          <section className="login-stage" aria-label="角色舞台">
-            <p className="login-brand">组一桌</p>
-            <div className="login-stage-cast">
-              <AnimatedCharacters
-                mood={mood}
-                accountFocused={accountFocused}
-                showPassword={showPassword}
-                passwordLength={password.length}
-                singingId={singingId}
-              />
-              <div className="login-hit-layer">
-                {CHARACTER_HIT_TARGETS.map((target) => (
-                  <button
-                    key={target.id}
-                    type="button"
-                    className={`login-hit login-hit-${target.id}`}
-                    aria-label={`${target.label}：单击唱歌，双击齐唱`}
-                    onClick={() => onCharacterPointer(target.id)}
-                  />
+        <div className="login-body">
+          <div className="login-left">
+            <div className="login-hero-copy">
+              <p>一场相遇，从认识你开始</p>
+              <h1 id={titleId}>从湖边出发，<br />遇见值得聊的人。</h1>
+              <blockquote>形象由你选，名字由你定。<br />至于你的故事，留给阿桌慢慢听。</blockquote>
+            </div>
+            <form className="login-role-panel" onSubmit={enter}>
+              <div className="login-role-heading"><span>01</span><h2>选一个喜欢的样子</h2><small>不预设你的性格</small></div>
+              <div className="login-role-grid" role="group" aria-label="选择人物形象">
+                {ROLES.map((role) => (
+                  <button key={role.character}
+                    type="button" className={selected === role.character ? 'is-selected' : ''}
+                    aria-pressed={selected === role.character} disabled={busy} onClick={() => setSelected(role.character)}>
+                    <CharacterPortrait character={role.character} label={role.title} className="login-role-avatar" />
+                    <span><b>{role.title}</b><small>{role.note}</small></span>
+                    <i aria-hidden="true">{selected === role.character ? '✓' : '+'}</i>
+                  </button>
                 ))}
               </div>
-            </div>
-            <p className="login-stage-note">眼睛会跟着你 · 点角色会唱歌</p>
-          </section>
-
-          <section className="login-panel">
-            <div className="login-card">
-              <header className="login-card-head">
-                <h1 id={titleId}>{mode === 'login' ? '欢迎回来' : '加入桌边'}</h1>
-                <p>{mode === 'login' ? '请填写你的账号信息' : '创建一个演示账号，稍后再换成正式登录'}</p>
-              </header>
-
-              <form className="login-form" onSubmit={submit} noValidate>
-                <label className="login-field">
-                  <span>账号</span>
-                  <input
-                    type="text"
-                    name="account"
-                    autoComplete="username"
-                    placeholder="邮箱或昵称"
-                    value={account}
-                    maxLength={48}
-                    onChange={(event) => setAccount(event.target.value)}
-                    onFocus={() => {
-                      setAccountFocused(true)
-                      if (mood === 'idle') setMood('curious')
-                    }}
-                    onBlur={() => {
-                      setAccountFocused(false)
-                      if (mood === 'curious') setMood('idle')
-                    }}
-                    required
-                  />
-                </label>
-
-                <label className="login-field">
-                  <span>密码</span>
-                  <span className="login-password-wrap">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      name="password"
-                      autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                      placeholder="至少 4 位"
-                      value={password}
-                      maxLength={64}
-                      onChange={(event) => setPassword(event.target.value)}
-                      required
-                    />
-                    <button
-                      className="login-eye-toggle"
-                      type="button"
-                      aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                      onClick={() => setShowPassword((open) => !open)}
-                    >
-                      {showPassword ? (
-                        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 6a9.8 9.8 0 0 1 9.5 6 9.8 9.8 0 0 1-19 0A9.8 9.8 0 0 1 12 6Zm0 2a7.8 7.8 0 0 0-7.3 4A7.8 7.8 0 0 0 12 16a7.8 7.8 0 0 0 7.3-4A7.8 7.8 0 0 0 12 8Zm0 1.5A2.5 2.5 0 1 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/></svg>
-                      ) : (
-                        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3.3 2.3 21 20l-1.4 1.4-3.1-3.1A11.5 11.5 0 0 1 12 18c-5 0-9.3-3.1-11-7.5a12.4 12.4 0 0 1 4.6-5.3L2 3.7 3.3 2.3ZM12 8a4 4 0 0 1 4 4c0 .5-.1 1-.3 1.4l-5.1-5.1c.4-.2.9-.3 1.4-.3Zm0-2c1.2 0 2.3.3 3.3.7l-1.6 1.6A5.9 5.9 0 0 0 12 8a6 6 0 0 0-6 6c0 .6.1 1.1.2 1.6L4.4 17A11.6 11.6 0 0 1 1 12.5C2.7 8.1 7 5 12 5c1.1 0 2.2.2 3.2.5L13.6 7A6 6 0 0 0 12 6.9Z"/></svg>
-                      )}
-                    </button>
-                  </span>
-                </label>
-
-                {mode === 'register' && (
-                  <label className="login-field">
-                    <span>确认密码</span>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      name="confirm"
-                      autoComplete="new-password"
-                      placeholder="再输入一次"
-                      value={confirm}
-                      maxLength={64}
-                      onChange={(event) => setConfirm(event.target.value)}
-                      required
-                    />
-                  </label>
-                )}
-
-                <div className="login-row">
-                  <label className="login-check">
-                    <input
-                      type="checkbox"
-                      checked={remember}
-                      onChange={(event) => setRemember(event.target.checked)}
-                    />
-                    <span>30 天内保持登录</span>
-                  </label>
-                  {mode === 'login' && (
-                    <button
-                      className="login-text-link"
-                      type="button"
-                      onClick={() => setError('演示模式暂未开通找回密码，请直接注册一个新账号。')}
-                    >
-                      忘记密码？
-                    </button>
-                  )}
-                </div>
-
-                {error && (
-                  <p className="login-error" role="alert">{error}</p>
-                )}
-
-                <button className="login-submit" type="submit" disabled={busy}>
-                  {busy ? '请稍候…' : mode === 'login' ? '登录' : '注册并进入'}
-                </button>
-              </form>
-
-              <p className="login-switch">
-                {mode === 'login' ? (
-                  <>
-                    还没有账号？
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('register')
-                        setError('')
-                        setMood('idle')
-                      }}
-                    >
-                      去注册
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    已有账号？
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode('login')
-                        setError('')
-                        setMood('idle')
-                      }}
-                    >
-                      去登录
-                    </button>
-                  </>
-                )}
+              <div className="login-nickname-heading"><span>02</span><label htmlFor={nicknameId}>大家怎么称呼你？</label></div>
+              <div className={'login-nickname-field ' + (error ? 'has-error' : '')}>
+                <input ref={nicknameRef} id={nicknameId} name="nickname" value={nickname} maxLength={24}
+                  autoComplete="nickname" placeholder="起一个你喜欢的昵称" disabled={busy}
+                  aria-invalid={Boolean(error)} aria-describedby={nicknameId + '-hint'}
+                  onChange={(event) => { setNickname(event.target.value); setError('') }} />
+                <span>{nickname.length}/24</span>
+              </div>
+              <p id={nicknameId + '-hint'} className="login-nickname-hint" role={error ? 'alert' : undefined}>
+                {error || '只用昵称就好，进入后也可以修改。'}
               </p>
-              <p className="login-footnote">演示登录 · 正式知乎账号尚未开放</p>
+              <button className="login-enter" type="submit" disabled={busy}>
+                <span>{busy ? '欢迎你，' + nickname.trim() : '就这样，去组一桌'}</span><b aria-hidden="true">→</b>
+              </button>
+              <p className="login-local-note">无需密码 · 昵称和形象保存在当前浏览器</p>
+            </form>
+            <ZhihuConnectionPreview light />
+          </div>
+          <aside className="login-right" aria-label="人物形象展示">
+            <div className="login-scene-caption"><span>湖边已经留好位置</span><p>带上你自己，就够了。</p></div>
+            <div className="login-cast-art">
+              <LoginCharacterStage selected={selected} />
             </div>
-          </section>
+            <p className="login-model-note">实时 3D · 拖动转身，选择你的样子</p>
+            <div className="login-cast-legend" aria-live="polite">
+              <span className="is-you">你 · {nickname.trim() || '等待你的昵称'}</span>
+              <p>另外三位，由阿桌来介绍</p>
+              <div>{CAST_ORDER.filter((character) => character !== selected).map((character, index) => (
+                <span key={character}><CharacterPortrait character={character} label={CAST_NAMES[index]} />{CAST_NAMES[index]}</span>
+              ))}</div>
+              <small>演示桌友 · 形象自动顺延，不会与你重复</small>
+            </div>
+          </aside>
         </div>
-      </div>
-    </div>,
-    document.body,
+      </section>
+    </div>, document.body,
   )
 }

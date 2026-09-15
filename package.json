@@ -8,6 +8,7 @@
     "dev:folio": "npm --prefix folio-2025 run dev",
     "dev:home": "npm run dev:folio",
     "dev:stack": "node scripts/dev-stack.mjs",
+    "dev:demo": "node scripts/dev-track-one.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "check": "tsc -b",

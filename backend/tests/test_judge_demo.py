@@ -23,6 +23,20 @@ class Provider:
         return self.text_value
 
 
+class ProfileProvider(Provider):
+    async def structured(self, task, messages, schema, config=None):
+        self.calls.append((task, messages, config))
+        return schema(
+            reply="你提到医院试点里模型和医生判断冲突。那次经历里，哪一刻最改变你的判断？",
+            summary="带着医疗 AI 试点经验，关注判断责任边界的产品学生",
+            role_tag="医疗 AI 产品学生",
+            experience_tag="经历过问诊模型冲突",
+            interest_tags=["AI 专业判断", "医疗责任"],
+            perspective_tags=["基于经验", "善于追问"],
+            seat_label="医疗 AI 实践者",
+        )
+
+
 FAST = DemoTiming(debounce=0.005, reply_gap=0.01, idle=0.08, typing_ttl=0.08, timeout=0.15)
 
 
@@ -57,6 +71,37 @@ def test_demo_disabled_and_missing_provider_are_explicit():
     with TestClient(create_app(enable_judge_demo=True)) as client:
         assert client.get("/demo/cases/ai_friendship").json()["available"] is False
         assert client.post("/demo/sessions", json={"participant_id": "j", "request_id": "r"}).status_code == 503
+
+
+def test_profile_agent_is_open_conversation_and_code_owns_readiness():
+    provider = ProfileProvider()
+    with TestClient(create_app(provider=provider, enable_judge_demo=True)) as client:
+        first = client.post("/demo/profile-agent", json={
+            "participant_id": "judge",
+            "display_name": "评委体验",
+            "messages": [
+                {"role": "agent", "text": "最近有什么事让你特别想找人聊聊？"},
+                {"role": "user", "text": "我在做医疗 AI 产品，参加医院试点时遇到模型和医生判断冲突。"},
+            ],
+        })
+        assert first.status_code == 200
+        assert first.json()["ready"] is False
+        assert first.json()["provider"] == "configured-llm"
+        assert first.json()["interest_tags"] == ["AI 专业判断", "医疗责任"]
+
+        final = client.post("/demo/profile-agent", json={
+            "participant_id": "judge",
+            "display_name": "评委体验",
+            "messages": [
+                {"role": "agent", "text": "最近有什么事让你特别想找人聊聊？"},
+                {"role": "user", "text": "我在做医疗 AI 产品，参加医院试点时遇到模型和医生判断冲突。"},
+                {"role": "agent", "text": first.json()["reply"]},
+                {"role": "user", "text": "医生承担后果，而模型没有责任，所以我想听临床和技术两边的真实看法。"},
+            ],
+        })
+        assert final.status_code == 200
+        assert final.json()["ready"] is True
+        assert all("不是面试官" in call[0] for call in provider.calls)
 
 
 def test_session_isolation_idempotency_and_json_reload(tmp_path):
@@ -113,7 +158,7 @@ def test_simulated_identity_cannot_be_spoofed_or_joined_or_saved():
 def test_speaker_selection_mentions_and_balance():
     async def exercise():
         service, repo, _, _, tid = await service_fixture()
-        repo.append_message_once(tid, "judge", "小许，你有被 AI 误解过吗？", "judge-1")
+        repo.append_message_once(tid, "judge", "林夏，你在临床里见过 AI 误判吗？", "judge-1")
         assert service.select_speaker(repo.get(tid), repo.turns(tid))["persona_id"] == "xiaoxu"
         other, *_ = await service_fixture()
         assert other.select_speaker(other.repository.get(tid), other.repository.turns(tid))["persona_id"] != "azhou"
@@ -295,7 +340,7 @@ def test_websocket_real_flow_status_commit_replay_and_typing():
         tid = session["table_id"]
         with client.websocket_connect(f"/ws/tables/{tid}?participant_id=judge") as ws:
             ws.send_json({"type": "participant_typing", "is_typing": True})
-            ws.send_json({"type": "human_message", "participant_id": "judge", "message_id": "j1", "text": "小许，你怕不怕打扰朋友？", "client_ts": 1})
+            ws.send_json({"type": "human_message", "participant_id": "judge", "message_id": "j1", "text": "林夏，你在临床里见过 AI 误判吗？", "client_ts": 1})
             events = []
             for _ in range(20):
                 item = ws.receive_json()

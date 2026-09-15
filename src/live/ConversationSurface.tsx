@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import type { ParticipantResponseStatusLike, StageSummaryLike } from './contract'
 import type { LiveMessage } from './store'
+import CharacterPortrait, { characterForPerson } from './CharacterPortrait'
 
 interface ConversationSurfaceProps {
   messages: LiveMessage[]
@@ -90,12 +91,17 @@ export default function ConversationSurface({ messages, summary, summaryPending,
       {messages.length === 0 && <p className="conversation-empty">从你真正想说的地方开始。</p>}
       {messages.map((message, index) => {
         const showSummaryAfter = Boolean(summaryAfterTurn && message.turnId === summaryAfterTurn)
+        const displayName = speakerName(message.participantId)
+        const character = message.fromHost ? 'host' : characterForPerson(displayName, message.participantId, viewerId)
         return <div key={message.messageId ?? `${message.participantId}-${message.turnId ?? index}`}>
           <article className={`conversation-message ${message.fromHost ? 'is-host' : ''} ${message.participantId === viewerId ? 'is-self' : ''}`} data-turn-id={message.turnId} tabIndex={message.turnId ? -1 : undefined}>
-            <header>{speakerName(message.participantId)}</header>
-            <p>{message.text}</p>
-            {message.delivery === 'pending' && <small>发送中</small>}
-            {message.delivery === 'failed' && message.messageId && <button type="button" onClick={() => onRetry(message.messageId!)} disabled={retryingMessageId === message.messageId}>{retryingMessageId === message.messageId ? '重试中' : '重新发送'}</button>}
+            <CharacterPortrait character={character} label={displayName} className="conversation-character" online={message.fromHost} />
+            <div className="conversation-message-body">
+              <header>{message.fromHost ? '阿桌 · 桌边 Agent' : displayName}</header>
+              <p>{message.text}</p>
+              {message.delivery === 'pending' && <small>发送中</small>}
+              {message.delivery === 'failed' && message.messageId && <button type="button" onClick={() => onRetry(message.messageId!)} disabled={retryingMessageId === message.messageId}>{retryingMessageId === message.messageId ? '重试中' : '重新发送'}</button>}
+            </div>
           </article>
           {showSummaryAfter && renderSummary()}
         </div>
@@ -105,6 +111,12 @@ export default function ConversationSurface({ messages, summary, summaryPending,
     {!followingLatest && unreadCount > 0 && <button className="conversation-unread" type="button" onClick={() => scrollToLatest()}>{unreadCount} 条新消息</button>}
     <div className="conversation-response" role="status" aria-live="polite" aria-atomic="true">
       {responses.some((response) => response.status === 'thinking') ? <>
+        {(() => {
+          const thinking = responses.find((response) => response.status === 'thinking')
+          if (!thinking) return null
+          const name = speakerName(thinking.participant_id)
+          return <CharacterPortrait character={characterForPerson(name, thinking.participant_id, viewerId)} label={`${name}正在输入`} className="response-character" />
+        })()}
         <span className="response-dots" aria-hidden="true"><i /><i /><i /></span>
         <span>{responses.filter((response) => response.status === 'thinking').map((response) => speakerName(response.participant_id)).join('、')}正在输入</span>
       </> : responses.some((response) => response.status === 'failed') ? <>

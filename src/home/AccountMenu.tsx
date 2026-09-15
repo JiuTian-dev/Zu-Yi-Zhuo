@@ -5,6 +5,7 @@ import {
   subscribeHomeAccount,
   type HomeAccount,
 } from './accountStore'
+import CharacterPortrait from '../live/CharacterPortrait'
 
 interface AccountMenuProps {
   onOpenProfile(): void
@@ -89,17 +90,13 @@ export default function AccountMenu({ onOpenProfile, onOpenLogin }: AccountMenuP
         {account.avatarUrl ? (
           <img src={account.avatarUrl} alt="" />
         ) : (
-          <span className="home-avatar-fallback" style={{ background: `hsl(${account.avatarHue} 42% 48%)` }} aria-hidden="true">
-            {account.avatarInitial}
-          </span>
+          <CharacterPortrait character={account.avatarCharacter} label={account.displayName} className="home-account-character" online />
         )}
       </button>
 
       <div id={menuId} className="home-account-dropdown" role="menu" hidden={!menuOpen}>
         <div className="home-account-card">
-          <span className="home-avatar-fallback is-lg" style={{ background: `hsl(${account.avatarHue} 42% 48%)` }} aria-hidden="true">
-            {account.avatarInitial}
-          </span>
+          <CharacterPortrait character={account.avatarCharacter} label={account.displayName} className="home-account-character is-lg" online />
           <div>
             <b>{account.displayName}</b>
             <small>个人主页</small>

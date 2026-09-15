@@ -8,6 +8,8 @@ import {
 } from './api'
 import type { ActiveIntentSessionViewLike, MatchPlanLike, MatchToHomeDraftLike } from './contract'
 import { VIEWER_ID } from './identity'
+import { getHomeAccount } from '../home/accountStore'
+import { getTagProfile } from '../onboarding/profileStore'
 
 const FRONTEND_INTENT_TURN_LIMIT = 3
 
@@ -46,6 +48,8 @@ export default function IntentPanel({
   const [selectionId, setSelectionId] = useState<string | null>(null)
   const [handoffError, setHandoffError] = useState<string | null>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
+  const account = getHomeAccount()
+  const matchProfile = account.loggedIn ? getTagProfile(account.displayName) : null
 
   useEffect(() => {
     if (!open) return
@@ -199,6 +203,13 @@ export default function IntentPanel({
         </header>
 
         <div className="intent-body">
+          {matchProfile && (
+            <section className="intent-profile-context" aria-label="本次匹配参考标签">
+              <small>本次匹配会参考</small>
+              <div>{matchProfile.tags.filter((item) => item.visible).map((item) => <span key={item.id}>{item.label}</span>)}</div>
+              <p>身份牌：{matchProfile.seatLabel} · 你仍可以修改下面这次想聊的问题。</p>
+            </section>
+          )}
           <form className="intent-form" onSubmit={submit}>
             <label htmlFor="active-intent-input">先说你的真实需求</label>
             <textarea
@@ -242,7 +253,7 @@ export default function IntentPanel({
                   {session.preview.candidates.map((candidate) => (
                     <article className="intent-candidate" key={candidate.table_id}>
                       <div>
-                        <small>{candidate.participant_count} 人 · 还剩 {candidate.available_seats} 个空席</small>
+                        <small>{candidate.participant_count} 位真人 · 还剩 {Math.max(0, 4 - candidate.participant_count)} 个真人席位</small>
                         <h4>{candidate.core_question}</h4>
                         <p>{candidate.reason}</p>
                       </div>

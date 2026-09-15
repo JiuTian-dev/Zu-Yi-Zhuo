@@ -30,8 +30,8 @@ export const viewerIdentity: AccountSession = {
   observerId: `observer-${VIEWER_ID.replace(/^guest-/, '')}`,
   // The UI resolves this session back to “你”; the backend-facing label must
   // stay meaningful to other observers instead of leaking a self-relative label.
-  displayName: '第五席',
-  role: '第五席',
+  displayName: '桌边新成员',
+  role: '新加入的讨论者',
   provider: 'guest',
   authenticated: false,
 } as const

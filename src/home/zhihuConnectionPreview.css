@@ -1,0 +1,42 @@
+.zhihu-connection { width: 100%; max-width: 560px; margin-top: 22px; border: 1px solid #b8d6ec35; border-radius: 16px; color: #edf6f8; background: #102b394d; backdrop-filter: blur(12px); }
+.zhihu-connection summary { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; list-style: none; }
+.zhihu-connection summary::-webkit-details-marker { display: none; }
+.zhihu-connection-mark { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border: 1px solid #8dc9ed60; border-radius: 11px; color: #b8ddf5; background: #4994c322; font: 700 19px Georgia,serif; }
+.zhihu-connection summary > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
+.zhihu-connection summary b { font-size: 12px; font-weight: 600; }
+.zhihu-connection summary small { color: #c0d3daaa; font-size: 10px; }
+.zhihu-connection summary em { margin-left: auto; white-space: nowrap; padding: 4px 7px; border-radius: 6px; background: #b6d3e51c; color: #c5d8e0; font: normal 10px system-ui,sans-serif; }
+.zhihu-connection summary i { font-style: normal; color: #bfd2d4; }
+.zhihu-connection[open] summary i { transform: rotate(45deg); }
+.zhihu-connection summary:focus-visible { outline: 2px solid #a8d5f4; outline-offset: 3px; border-radius: 16px; }
+.zhihu-connection-body { padding: 0 17px 16px; }
+.zhihu-connection-body > p { color: #d8e6e7; font-size: 11px; line-height: 1.8; }
+.zhihu-connection-body ol { display: grid; gap: 10px; padding: 0; list-style: none; }
+.zhihu-connection-body li { display: grid; gap: 4px; font-size: 11px; line-height: 1.7; }
+.zhihu-connection-body li b { color: #d6eabf; }
+.zhihu-connection-body li span { color: #cedadc; }
+.zhihu-connection-body > small { display: block; padding: 9px 0; border-top: 1px solid #c6dfe02b; color: #bad0d2; font-size: 10px; line-height: 1.7; }
+.zhihu-connection-body .zhihu-connection-demo { margin-bottom: 0; color: #b9c9c3; font-size: 10px; }
+.zhihu-example-choices { display: grid; gap: 7px; margin: 12px 0; }
+.zhihu-example-choices button { padding: 10px 12px; border: 1px solid #aec8d445; border-radius: 10px; background: #d7e9f009; color: inherit; text-align: left; font: inherit; font-size: 12px; font-weight: 500; line-height: 1.6; cursor: pointer; }
+.zhihu-example-choices button[aria-pressed=true] { border-color: #80b8bc; background: #8acbd51c; }
+.zhihu-example-choices button:focus-visible { outline: 2px solid #79b7b1; outline-offset: 2px; }
+.zhihu-example-result { padding: 13px; border-radius: 12px; background: #d8e8e90c; }
+.zhihu-example-result > b { display: block; margin-top: 11px; font-size: 12px; }
+.zhihu-example-result p { font-size: 11px; line-height: 1.8; }
+.zhihu-example-result ol { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.zhihu-example-result li { padding: 7px; border: 1px solid #a4bdb92e; border-radius: 8px; font-size: 10px; }
+.zhihu-example-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.zhihu-example-tags span { padding: 4px 8px; border-radius: 999px; background: #9dbfba22; font-size: 10px; }
+.zhihu-source-results { display: grid; gap: 8px; margin: 12px 0; }
+.zhihu-source-results > small { font-size: 10px; opacity: .75; }
+.zhihu-source-results a { display: grid; gap: 5px; padding: 11px; border: 1px solid #8ab4c44a; border-radius: 10px; color: inherit; font-size: 12px; line-height: 1.6; text-decoration: none; background: #9abdd211; }
+.zhihu-source-results a span { color: #639db7; font-size: 10px; }
+.zhihu-connection.is-light { max-width: 610px; margin-top: 15px; background: #ffffff24; border-color: #abc4b54d; color: #33574b; backdrop-filter: none; }
+.zhihu-connection.is-light summary { padding: 10px 12px; gap: 9px; }
+.zhihu-connection.is-light .zhihu-connection-mark { color: #437fa1; border-color: #77a8c342; background: #acd3ea1f; }
+.zhihu-connection.is-light summary small, .zhihu-connection.is-light summary i { color: #738c83; }
+.zhihu-connection.is-light summary em { background: #8bb0a21c; color: #678377; }
+.zhihu-connection.is-light .zhihu-connection-body p, .zhihu-connection.is-light .zhihu-connection-body li span, .zhihu-connection.is-light .zhihu-connection-body > small { color: #677f73; }
+.zhihu-connection.is-light .zhihu-connection-body li b { color: #325c48; }
+@media (max-width: 400px) { .zhihu-connection summary { gap: 8px; padding: 11px 10px; } .zhihu-connection summary b { font-size: 11px; } .zhihu-connection summary em { font-size: 9px; padding: 4px; } }

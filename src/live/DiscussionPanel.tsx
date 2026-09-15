@@ -19,7 +19,7 @@ function speakerName(participantId: string, members: DiscussionPanelProps['membe
   if (participantId === 'table-host') return '圆桌主持'
   if (participantId === viewerParticipantId) return '你'
   const member = members.find((item) => item.participant_id === participantId)
-  if (!viewerParticipantId && member?.display_name === '你') return member.role ?? '第五席'
+  if (!viewerParticipantId && member?.display_name === '你') return member.role ?? '你的席位'
   return member?.display_name ?? participantId
 }
 

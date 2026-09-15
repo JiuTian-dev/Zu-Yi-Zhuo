@@ -16,7 +16,7 @@ export interface ChatMessage {
   at: number
 }
 
-const FRIENDS: FriendProfile[] = [
+const DEFAULT_FRIENDS: FriendProfile[] = [
   { id: 'blue', displayName: '蓝衣桌友', avatarHue: 205, avatarInitial: '蓝', status: 'online', motto: '今晚还在湖边吗' },
   { id: 'girl', displayName: '白衣桌友', avatarHue: 320, avatarInitial: '白', status: 'online', motto: '想听你上次那桌的收束' },
   { id: 'orange', displayName: '橙衣桌友', avatarHue: 28, avatarInitial: '橙', status: 'away', motto: '稍后再看那桌记得叫我' },
@@ -24,6 +24,7 @@ const FRIENDS: FriendProfile[] = [
 ]
 
 const THREADS_KEY = 'zuoyizhuo.demo-friend-threads'
+const CONNECTIONS_KEY = 'zuoyizhuo.demo-table-friends'
 
 type ThreadMap = Record<string, ChatMessage[]>
 
@@ -64,18 +65,72 @@ function writeThreads(map: ThreadMap) {
 }
 
 let threads = readThreads()
+let connectedFriends = readConnectedFriends()
 const listeners = new Set<() => void>()
+
+function readConnectedFriends(): FriendProfile[] {
+  try {
+    const raw = localStorage.getItem(CONNECTIONS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as FriendProfile[]
+    return Array.isArray(parsed)
+      ? parsed.filter((friend) => friend && typeof friend.id === 'string' && typeof friend.displayName === 'string').slice(0, 12)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function writeConnectedFriends() {
+  try {
+    localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(connectedFriends))
+  } catch {
+    // The connection remains available in memory for this demo session.
+  }
+}
 
 function emit() {
   for (const listener of listeners) listener()
 }
 
 export function getFriends(): FriendProfile[] {
-  return FRIENDS.map((friend) => ({ ...friend }))
+  return [...connectedFriends, ...DEFAULT_FRIENDS.filter((friend) => !connectedFriends.some((item) => item.id === friend.id))]
+    .map((friend) => ({ ...friend }))
 }
 
 export function getFriend(id: string): FriendProfile | undefined {
-  return FRIENDS.find((friend) => friend.id === id)
+  return getFriends().find((friend) => friend.id === id)
+}
+
+export function connectDemoFriend(person: { id: string; displayName: string; role: string }): FriendProfile {
+  const id = `table-${person.id}`
+  const existing = connectedFriends.find((friend) => friend.id === id)
+  if (existing) return { ...existing }
+  const hues = [24, 158, 204, 328]
+  const friend: FriendProfile = {
+    id,
+    displayName: person.displayName,
+    avatarHue: hues[connectedFriends.length % hues.length]!,
+    avatarInitial: person.displayName.slice(0, 1) || '友',
+    status: 'online',
+    motto: `从“离开大城市”那桌认识 · ${person.role}`,
+  }
+  connectedFriends = [friend, ...connectedFriends]
+  writeConnectedFriends()
+  if (!(threads[id]?.length)) {
+    threads = {
+      ...threads,
+      [id]: [{
+        id: `hello-${Date.now()}`,
+        from: 'friend',
+        text: '刚才那桌很有意思。关于“判断之后谁来承担后果”，我还想听听你的经历。要不要下次继续？',
+        at: Date.now(),
+      }],
+    }
+    writeThreads(threads)
+  }
+  emit()
+  return { ...friend }
 }
 
 export function getThread(friendId: string): ChatMessage[] {

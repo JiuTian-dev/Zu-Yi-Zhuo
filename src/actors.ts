@@ -53,7 +53,7 @@ export const tableHost: SeatActor = {
 }
 
 export const viewerSeat: SeatActor = {
-  id: 'viewer', seatId: 'seat-south', actorType: 'viewer', displayName: '第五席', role: '等待入席',
+  id: 'viewer', seatId: 'seat-south', actorType: 'viewer', displayName: '你的席位', role: '等待入席',
   whyHere: '这一桌还缺一个真正尝试停下来的人。', accent: '#ffd58c', hotspotClass: 'actor-viewer',
   plateCenter: [0.49, 0.78], plateRadius: [0.07, 0.12],
 }

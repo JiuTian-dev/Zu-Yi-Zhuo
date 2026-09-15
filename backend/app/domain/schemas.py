@@ -1,3 +1,4 @@
+import os
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PositiveInt, model_validator
@@ -191,8 +192,9 @@ class LobbyPreview(ContractModel):
             raise ValueError("lobby member participant_id values must be unique")
         if len(self.members) != self.participant_count:
             raise ValueError("lobby member count must match participant_count")
-        if self.available_seats != 5 - self.participant_count:
-            raise ValueError("lobby available_seats must match the five-seat cap")
+        configured_capacity = int(os.environ.get("MAX_TABLE_PARTICIPANTS", "5"))
+        if self.available_seats != configured_capacity - self.participant_count:
+            raise ValueError("lobby available_seats must match the configured seat cap")
         return self
 
 

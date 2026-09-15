@@ -53,7 +53,10 @@ def _reframe_text(state: TableState, participant_id: str | None, evidence_turns:
     disagreement = disagreement or (state.disagreements[0] if state.disagreements else None)
     kind = disagreement.disagreement_type if disagreement else None
     if kind is DisagreementType.LAYER_MISMATCH:
-        text = "我们现在把技术实现和采购决策放在同一层比较了。先把两条链拆开：技术回答“能不能做”，采购回答“谁来承担”。"
+        if "专业判断" in state.core_question:
+            text = "我们先把两条线拆开：一条是哪些判断能够验证，另一条是谁为判断的后果承担责任。"
+        else:
+            text = "我们现在把技术实现和采购决策放在同一层比较了。先把两条链拆开：技术回答“能不能做”，采购回答“谁来承担”。"
     elif kind is DisagreementType.DEFINITION_MISMATCH:
         text = "我们对关键概念的指向还没对齐。先把定义说清，再比较不同答案。"
     elif kind is DisagreementType.CAUSAL_DISAGREEMENT:

@@ -158,12 +158,15 @@ function QqChatWindow({
 
 export default function FriendsDock() {
   const [open, setOpen] = useState(false)
-  const [friends] = useState(() => getFriends())
+  const [friends, setFriends] = useState(() => getFriends())
   const [, setTick] = useState(0)
   const [chats, setChats] = useState<OpenChat[]>([])
   const zCounter = useRef(40)
 
-  useEffect(() => subscribeFriendThreads(() => setTick((value) => value + 1)), [])
+  useEffect(() => subscribeFriendThreads(() => {
+    setFriends(getFriends())
+    setTick((value) => value + 1)
+  }), [])
 
   useEffect(() => {
     if (!open) return
@@ -229,7 +232,7 @@ export default function FriendsDock() {
           <header className="friends-sidebar-head">
             <div>
               <b>好友</b>
-              <small>演示名单 · 本地聊天</small>
+              <small>桌上认识的人 · 可继续聊天</small>
             </div>
             <button type="button" aria-label="收起侧栏" onClick={() => setOpen(false)}>收起</button>
           </header>

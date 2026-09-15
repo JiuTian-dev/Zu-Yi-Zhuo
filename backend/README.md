@@ -282,7 +282,7 @@ Vite 开发源默认允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`�
 需要接入 OpenAI Responses 时安装可选依赖并设置运行时变量：
 
 本地联合启动时可直接编辑 `backend/.env.local`。模板位于
-`backend/agent-llm.config.example.env`；`corepack pnpm dev:stack` 会把该文件只注入后端，
+`backend/agent-llm.config.example.env`；`corepack pnpm dev:stack` 会把本地配置只注入后端，
 不会把 key 暴露给前端 Vite 进程。
 
 ```powershell
@@ -292,11 +292,12 @@ $env:OPENAI_API_KEY = "..."
 $env:OPENAI_MODEL = "gpt-4o-mini"
 ```
 
-OpenAI Next Credits 使用 OpenAI 兼容的 Chat Completions 端点，将 `OPENAI_BASE_URL` 设为
-`https://api.openai-next.com/v1`，并将 `OPENAI_API_STYLE=chat`；Claude Sonnet 4.6 的模型 ID 为
-`claude-sonnet-4-6`。模型 ID、Key 与额度以 [OpenAI Next Credits 资源指南](https://credits.openai-next.com/guide/resources)
-和 [Quickstart](https://credits.openai-next.com/guide/quickstart) 为准。短回复场景建议将
-`OPENAI_THINKING=disabled`，把平台生成的 Key 填入 `OPENAI_API_KEY`。
+阶跃星辰 Step Plan 可直接复用这一适配器：将 `OPENAI_BASE_URL` 设为
+`https://api.stepfun.com/step_plan/v1`，`OPENAI_API_STYLE=chat`，模型使用
+`step-3.5-flash`，再把阶跃星辰 Key 填入 `OPENAI_API_KEY`。普通开放平台额度则将
+Base URL 改为 `https://api.stepfun.com/v1`。变量仍以
+`OPENAI_*` 命名只是因为底层复用 OpenAI 兼容适配器，Key 只保存在
+`backend/.env.local`，不能提交 Git。
 
 provider 只改写确定性 Host 已经生成的 PASS/PROBE/REFRAME/CLOSE 文案；Gate、Safety、Router、状态证据、目标人和 GROUND 来源不交给模型决定。
 模型只收到公开问题、当前子问题和确定性草稿，不会收到完整 Table State 或未同意的个人资料。输出为空、超出 120 字、包含系统腔/来源声称/链接或调用失败时自动回退到确定性草稿。

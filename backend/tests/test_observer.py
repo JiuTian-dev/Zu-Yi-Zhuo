@@ -70,6 +70,20 @@ def test_flagship_detects_layer_mismatch() -> None:
     assert state.conversation.most_promising_thread.text == "采购决策链"
 
 
+def test_professional_judgment_layer_mismatch_stays_on_topic() -> None:
+    state = build_initial_state(
+        "professional-judgment",
+        "AI 时代，专业判断会被替代吗？",
+        flagship_participants,
+    )
+    state = observe_turn(state, HumanTurn(turn_id=1, participant_id="architect", text="模型可以替代可标准化的技术判断。"))
+    state = observe_turn(state, HumanTurn(turn_id=2, participant_id="product", text="但责任必须由专业者承担。"))
+
+    assert state.current_subquestion == "哪些判断可以验证，哪些后果必须有人承担？"
+    assert state.disagreements[-1].text == "讨论同时落在技术可验证性与责任承担层"
+    assert state.conversation.most_promising_thread.text == "可验证性与责任边界"
+
+
 def test_explicit_opposite_fact_assertions_create_grounding_candidate() -> None:
     state = initial()
     state = observe_turn(state, HumanTurn(turn_id=1, participant_id="product", text="采购需要预算。"))

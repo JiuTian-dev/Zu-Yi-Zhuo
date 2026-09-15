@@ -1,0 +1,34 @@
+.character-portrait {
+  --portrait-glow: #a7c7b7;
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: end center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 50% 82%, color-mix(in srgb, var(--portrait-glow) 84%, white), transparent 54%),
+    linear-gradient(145deg, rgba(255,255,255,.9), color-mix(in srgb, var(--portrait-glow) 28%, #e7ece5));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--portrait-glow) 22%, transparent), inset 0 1px rgba(255,255,255,.7);
+}
+
+.character-portrait.is-host { --portrait-glow: #ccd5a5; }
+.character-portrait.is-host img { width: 100%; height: 100%; transform: none; }
+.character-agent-badge { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); padding: 2px 5px; border: 1px solid #d4ddc4; border-radius: 999px; background: #f7f8edee; color: #476141; font: 700 8px/1.2 system-ui,sans-serif; letter-spacing: .02em; }
+.character-portrait.is-host > i { bottom: auto; top: 4px; }
+.character-portrait.is-blue { --portrait-glow: #8ebbd5; }
+.character-portrait.is-white { --portrait-glow: #d8d1be; }
+.character-portrait.is-orange { --portrait-glow: #e4a76f; }
+.character-portrait.is-green { --portrait-glow: #86b795; }
+.character-portrait img { width: 116%; height: 116%; object-fit: contain; object-position: center bottom; opacity: 0; transform: translateY(4%); transition: opacity .28s ease; }
+.character-portrait.is-ready img { opacity: 1; }
+.character-portrait:not(.is-host) > img { filter: saturate(1.1); }
+.character-portrait > b { align-self: center; color: color-mix(in srgb, var(--portrait-glow) 54%, #173f35); font-size: 13px; }
+.character-portrait > i { position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border: 2px solid #f8f6ed; border-radius: 50%; background: #68bd83; }
+
+@media (prefers-reduced-motion: reduce) {
+  .character-portrait img { transition: none; }
+}

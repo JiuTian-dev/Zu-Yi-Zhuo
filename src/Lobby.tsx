@@ -30,7 +30,8 @@ export default function Lobby({ table, onClose, onListen, onJoin, onRetry, lobby
   // participants that look like real people.
   const members = lobby?.members ?? []
   const viewerAlreadySeated = members.some((member) => member.participant_id === VIEWER_ID)
-  const hasOpenSeat = Boolean(lobby && lobby.available_seats > 0)
+  const visibleOpenSeats = lobby ? Math.max(0, 4 - lobby.participant_count) : 0
+  const hasOpenSeat = Boolean(lobby && visibleOpenSeats > 0)
   const lobbyStateLabel = loading
     ? '正在同步'
     : lobby?.status === 'open'
@@ -99,7 +100,7 @@ export default function Lobby({ table, onClose, onListen, onJoin, onRetry, lobby
 
         <div className="lobby-context" aria-live="polite">
           <span><small>现在聊到</small>{lobby?.current_subquestion ?? '问题刚刚摆上桌面'}</span>
-            <span><small>空席</small>{loading ? '读取中…' : lobby ? `${lobby.available_seats} 个` : '—'}</span>
+            <span><small>真人空席</small>{loading ? '读取中…' : lobby ? `${visibleOpenSeats} 个` : '—'}</span>
         </div>
 
         <div className="lobby-members" aria-label="桌上的成员">
@@ -117,7 +118,7 @@ export default function Lobby({ table, onClose, onListen, onJoin, onRetry, lobby
           </div>
           {hasOpenSeat && !viewerAlreadySeated && <div className="lobby-member is-empty">
             <i aria-hidden="true" />
-            <span><b>第五席 · 空着</b><small>{missingPerspective}</small></span>
+            <span><b>第 4 位真人 · 等你加入</b><small>{missingPerspective}</small></span>
           </div>}
         </div>
 

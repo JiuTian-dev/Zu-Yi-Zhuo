@@ -1,4 +1,6 @@
 import { humanActors } from '../actors'
+import { getHomeAccount } from '../home/accountStore'
+import { getTagProfile } from '../onboarding/profileStore'
 import type { ClientHumanMessage, ClientRequestStageSummary, ParticipantSeedLike, ServerEvent } from './contract'
 import { BackendApiError, fetchCloseArtifacts, fetchLobby, fetchReplay, fetchTableState, previewLobbyFit, requestRaw, resumeDemoSession, setProfileConsent, submitStageSummaryFeedback as submitStageSummaryFeedbackApi, wsUrl } from './api'
 import type { LobbyFitPreviewLike, LobbyPreviewLike, ReplayResponseLike, StageSummaryFeedbackKindLike, StageSummaryLike } from './contract'
@@ -78,15 +80,28 @@ function actorSeeds() {
   }))
 }
 
-export const viewerSeed = (openingText = ''): ParticipantSeedLike => ({
-  participant_id: VIEWER_ID,
-  display_name: viewerIdentity.displayName,
-  role: viewerIdentity.role,
-  declared_position: openingText.trim() || '一个正在尝试真正停下来的人',
-  relevant_experience: openingText.trim()
-    ? [{ text: openingText.trim(), source_ref: 'ui:viewer:opening' }]
-    : [],
-})
+export const viewerSeed = (openingText = ''): ParticipantSeedLike => {
+  const account = getHomeAccount()
+  const profile = account.loggedIn ? getTagProfile(account.displayName) : null
+  const visibleTags = profile?.tags.filter((item) => item.visible) ?? []
+  const visibleExperience = visibleTags.find((item) => item.kind === 'experience')?.label
+  const visibleInterests = visibleTags
+    .filter((item) => item.kind === 'interest' || item.kind === 'perspective')
+    .map((item) => item.label)
+  return {
+    participant_id: VIEWER_ID,
+    display_name: account.loggedIn ? account.displayName : viewerIdentity.displayName,
+    role: profile?.seatLabel.trim() || viewerIdentity.role,
+    declared_position: openingText.trim() || (visibleInterests.length
+      ? `愿意从${visibleInterests.join('、')}出发参与讨论`
+      : '愿意带着真实问题参与讨论'),
+    relevant_experience: visibleExperience
+      ? [{ text: visibleExperience, source_ref: 'local:profile-tag:experience' }]
+      : openingText.trim()
+        ? [{ text: openingText.trim(), source_ref: 'ui:viewer:opening' }]
+        : [],
+  }
+}
 
 function trackSocket(socket: WebSocket) {
   runtime.sockets.add(socket)
@@ -100,6 +115,7 @@ function closeSocket(socket: WebSocket | null) {
 }
 
 function publicServerError(detail: string) {
+  if (detail.includes("latest speaker's first human turn")) return '冷启动已经过去，先让真人接住这一轮；稍后可请主持人做阶段小结。'
   if (detail.includes('cold-start nudge')) return '主持人还在等桌面上的第一句真实表达。'
   if (detail.includes('table_soft_expired')) return '这张桌已经暂停接收新表达。'
   return detail
@@ -153,7 +169,7 @@ function handleServerEvent(event: ServerEvent) {
       if (event.text) pushMessage({ participantId: 'table-host', text: event.text, fromHost: true, action: event.action, messageId: `host:${event.state_version}:${event.action}`, stateVersion: event.state_version })
       break
     case 'table_state_changed':
-      if (applyTableState(event.state) && event.state.conversation.closed && runtime.viewerJoined) {
+      if (applyTableState(event.state) && event.state.conversation.closed) {
         clearResponses()
         setLive({ closeState: 'started' })
         void recoverCloseArtifacts(activeTableId, VIEWER_ID, liveGeneration)
@@ -236,26 +252,47 @@ function handleServerEvent(event: ServerEvent) {
     case 'table_closed':
       clearResponses()
       setLive({ closeState: 'started' })
-      if (runtime.viewerJoined) void recoverCloseArtifacts(activeTableId, VIEWER_ID, liveGeneration)
+      // Closing the server-side conversation can close/reconnect the socket
+      // before runtime.viewerJoined is refreshed. The participant-scoped REST
+      // read is the authority here; observers simply receive 403 and are ignored.
+      void recoverCloseArtifacts(activeTableId, VIEWER_ID, liveGeneration)
       break
     default:
       break
   }
 }
 
-async function recoverCloseArtifacts(tableId: string, participantId: string, generation = liveGeneration) {
+async function recoverCloseArtifacts(tableId: string, participantId: string, generation = liveGeneration): Promise<boolean> {
   try {
     const artifacts = await fetchCloseArtifacts(tableId, participantId)
-    if (generation !== liveGeneration || tableId !== currentTableId()) return
+    if (generation !== liveGeneration || tableId !== currentTableId()) return false
     setLive({
       closeState: 'ready',
       baseline: artifacts.shared_baseline as LiveStatus['baseline'],
       personalCard: artifacts.personal_card as LiveStatus['personalCard'],
     })
+    return true
   } catch {
     // The live close event remains the first source. Recovery is best effort
     // because a viewer may not be a member and therefore cannot read a card.
+    return false
   }
+}
+
+function scheduleCloseRecovery(tableId: string, generation: number) {
+  ;[10000, 24000, 45000].forEach((delay, index, delays) => {
+    const timer = window.setTimeout(() => {
+      runtime.timers.delete(timer)
+      if (generation !== liveGeneration || tableId !== currentTableId() || getLiveState().closeState !== 'started') return
+      void recoverCloseArtifacts(tableId, VIEWER_ID, generation).then((recovered) => {
+        if (recovered || index !== delays.length - 1) return
+        if (generation === liveGeneration && tableId === currentTableId() && getLiveState().closeState === 'started') {
+          setLive({ closeState: 'idle', lastError: '总结生成时间较长，请点击“生成总结与桌友卡”重试。' })
+        }
+      })
+    }, delay)
+    runtime.timers.add(timer)
+  })
 }
 
 function openPuppet(tableId: string, participantId: string, mode: 'participant' | 'observer' = 'participant', generation = liveGeneration): Promise<WebSocket | null> {
@@ -793,7 +830,12 @@ export function requestClose(): boolean {
     mock.requestClose()
     return true
   }
-  return !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_close' })
+  const sent = !!runtime.viewerSocket && sendVia(runtime.viewerSocket, { type: 'request_close' })
+  if (sent) {
+    setLive({ closeState: 'started', lastError: null })
+    scheduleCloseRecovery(currentTableId(), liveGeneration)
+  }
+  return sent
 }
 
 export function stopLive() {

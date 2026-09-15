@@ -3,6 +3,8 @@
 Run from ``backend/`` with ``uvicorn app.main:app``. Set
 ``TABLE_REPOSITORY_PATH`` to opt into the atomic JSON repository; leaving it
 unset keeps the lightweight in-memory mode used by tests and local demos.
+``ENABLE_TRACK_ONE_DEMO=1`` adds one clearly labelled, restart-safe first-track
+table with three asynchronous participant records for judge walkthroughs.
 ``CONVERSATION_PROVIDER`` defaults to ``deterministic``; ``openai`` opts into
 the optional OpenAI Responses adapter.  Set ``TABLE_REPOSITORY_PATH`` for a
 restart-safe shared JSON repository; ``SHARED_EPHEMERAL_STORE_PATH``,
@@ -15,9 +17,10 @@ import os
 import json
 
 from app.api.app import create_app
-from app.api.repository import JsonTableRepository
+from app.api.repository import InMemoryTableRepository, JsonTableRepository
 from app.api.event_bus import SQLiteEventBus
 from app.auth.zhihu import build_zhihu_oauth_service
+from app.demo.track_one import seed_track_one_demo
 from app.providers import OpenAIResponsesProvider, ProviderConfigurationError
 from app.sources import (
     CommandCandidateSource,
@@ -161,7 +164,9 @@ def _build_sync_window() -> float:
 
 def _build_app():
     path = os.environ.get("TABLE_REPOSITORY_PATH", "").strip()
-    repository = JsonTableRepository(path) if path else None
+    repository = JsonTableRepository(path) if path else InMemoryTableRepository()
+    if os.environ.get("ENABLE_TRACK_ONE_DEMO", "0").strip().lower() in {"1", "true", "yes"}:
+        seed_track_one_demo(repository)
     event_bus = _build_optional_event_bus()
     shared_ephemeral_store_path = os.environ.get("SHARED_EPHEMERAL_STORE_PATH", "").strip() or None
     oauth_service = build_zhihu_oauth_service()

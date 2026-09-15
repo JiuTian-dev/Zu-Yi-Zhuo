@@ -1,0 +1,488 @@
+.tag-guide-root {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: #173d35;
+  font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+.tag-guide-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(11, 30, 27, .68);
+  backdrop-filter: blur(14px) saturate(.75);
+}
+
+.tag-guide {
+  position: relative;
+  width: min(790px, calc(100vw - 28px));
+  max-height: min(820px, calc(100dvh - 28px));
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, .7);
+  border-radius: 30px;
+  background: rgba(248, 246, 237, .98);
+  box-shadow: 0 34px 100px rgba(5, 24, 20, .46);
+  isolation: isolate;
+}
+
+.tag-guide-landscape {
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: 160px;
+  overflow: hidden;
+  border-radius: 30px 30px 0 0;
+  background:
+    linear-gradient(180deg, rgba(248, 246, 237, .06), rgba(248, 246, 237, .88) 78%, #f8f6ed),
+    linear-gradient(90deg, rgba(20, 69, 59, .44), rgba(84, 126, 111, .08)),
+    url('/scene/swiss-lake.jpg') center 54% / cover;
+  opacity: .58;
+}
+
+.tag-guide-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 15px;
+  padding: 25px 27px 16px;
+}
+
+.tag-agent-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50% 50% 43% 57%;
+  background: #1f6554;
+  color: #fff8dd;
+  font-weight: 800;
+  box-shadow: 0 10px 25px rgba(31, 101, 84, .28);
+}
+
+.tag-agent-mark span { transform: translateY(-1px); }
+.tag-agent-mark i {
+  position: absolute;
+  right: 1px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border: 3px solid #f8f6ed;
+  border-radius: 50%;
+  background: #69bd87;
+}
+
+.tag-guide-head small { color: #54736a; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.tag-guide-head h2 { margin: 4px 0 0; color: #123c32; font-size: clamp(23px, 4vw, 32px); font-weight: 750; letter-spacing: -.03em; }
+.tag-guide-close { border: 0; background: transparent; color: #526e65; font-size: 29px; cursor: pointer; }
+
+.tag-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  margin: 4px 27px 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(41, 99, 84, .13);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .62);
+  box-shadow: 0 7px 28px rgba(32, 72, 61, .06);
+}
+
+.tag-progress > div { display: flex; align-items: center; gap: 8px; color: #82928c; font-size: 12px; }
+.tag-progress > div:not(:last-child)::after { content: ''; flex: 1; height: 1px; margin-right: 8px; background: #cdd7d0; }
+.tag-progress span { display: grid; flex: 0 0 auto; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #e2e6df; font-size: 11px; }
+.tag-progress b { white-space: nowrap; }
+.tag-progress .is-active { color: #1f6554; }
+.tag-progress .is-active span { background: #1f6554; color: #fff; }
+.tag-progress .is-active::after { background: #72a795; }
+
+.tag-guide-body { display: grid; gap: 14px; padding: 19px 27px 24px; }
+.tag-conversation { display: grid; max-height: 275px; gap: 12px; overflow-y: auto; padding: 4px 4px 4px 0; scrollbar-width: thin; }
+.tag-message { display: flex; align-items: flex-end; gap: 9px; }
+.tag-message p { max-width: 78%; margin: 0; padding: 11px 15px; border-radius: 6px 17px 17px; background: #e5ece5; color: #24473e; line-height: 1.65; box-shadow: 0 5px 18px rgba(28, 67, 57, .05); }
+.tag-message.is-user { justify-content: flex-end; }
+.tag-message.is-user p { border-radius: 17px 17px 6px 17px; background: #1f6554; color: #fffef8; }
+.tag-message-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 29px; height: 29px; border-radius: 50%; background: #d2e4da; color: #1f6554; font-size: 11px; font-weight: 800; }
+
+.tag-message.is-typing p { display: flex; align-items: center; gap: 5px; }
+.tag-message.is-typing p > i { width: 6px; height: 6px; border-radius: 50%; background: #6f9387; animation: tagTyping 1.1s infinite ease-in-out; }
+.tag-message.is-typing p > i:nth-child(2) { animation-delay: .12s; }
+.tag-message.is-typing p > i:nth-child(3) { animation-delay: .24s; }
+.tag-message.is-typing em { margin-left: 6px; color: #6d8079; font-size: 12px; font-style: normal; }
+@keyframes tagTyping { 0%, 70%, 100% { transform: translateY(0); opacity: .5; } 35% { transform: translateY(-4px); opacity: 1; } }
+
+.tag-forming {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 10px 13px;
+  border: 1px solid #d4dfd6;
+  border-radius: 14px;
+  background: #f0f3ec;
+}
+.tag-forming > span { flex: 0 0 auto; color: #6f8179; font-size: 11px; font-weight: 800; }
+.tag-forming > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-forming b { padding: 4px 8px; border-radius: 999px; background: #fff; color: #35695b; font-size: 11px; font-weight: 700; }
+
+.tag-compose { position: relative; display: grid; }
+.tag-compose textarea {
+  min-height: 102px;
+  resize: vertical;
+  padding: 14px 68px 14px 16px;
+  border: 1px solid #bfcec5;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, .86);
+  color: inherit;
+  font: inherit;
+  line-height: 1.65;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+.tag-compose textarea:focus, .tag-field input:focus, .tag-seat-label input:focus { outline: 3px solid rgba(31, 101, 84, .14); border-color: #1f6554; }
+.tag-compose button {
+  position: absolute;
+  right: 11px;
+  bottom: 11px;
+  min-width: 52px;
+  height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: #1f6554;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tag-compose button:disabled { cursor: not-allowed; opacity: .42; }
+.tag-compose-meta { display: flex; justify-content: space-between; gap: 12px; color: #85928d; font-size: 11px; }
+.tag-guide-error { display: grid; gap: 3px; margin: 0; padding: 10px 13px; border-left: 3px solid #d77a58; background: #f7e9e2; color: #994d36; font-size: 12px; }
+
+.tag-review { display: grid; gap: 17px; }
+.tag-insight-card { padding: 16px 18px; border: 1px solid #c9d9ce; border-radius: 17px; background: linear-gradient(135deg, #e7eee4, #f6f2e7); }
+.tag-insight-card small { color: #397062; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.tag-insight-card p { margin: 7px 0 5px; color: #173f35; font-family: "Noto Serif SC", serif; font-size: 18px; line-height: 1.65; }
+.tag-insight-card span { color: #6d8078; font-size: 11px; }
+.tag-fields { display: grid; gap: 9px; }
+.tag-field { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 9px; }
+.tag-field > span, .tag-seat-label > span, .tag-perspectives > span { color: #536b63; font-size: 12px; font-weight: 800; }
+.tag-field input, .tag-seat-label input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #c5d0c8;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .84);
+  color: inherit;
+  font: inherit;
+}
+.tag-field button, .tag-perspectives button, .tag-guide-actions button {
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: #dfe5df;
+  color: #60716b;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tag-field button.is-visible { background: #d9ebdf; color: #1f6554; }
+.tag-perspectives { display: grid; gap: 9px; }
+.tag-perspectives > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-perspectives button.is-selected { background: #1f6554; color: #fff; }
+.tag-seat-label { display: grid; gap: 8px; }
+.tag-match-rule { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; padding: 10px 13px; border-radius: 12px; background: #ebeee7; color: #557068; font-size: 12px; }
+.tag-match-rule b { color: #1f6554; }
+.tag-guide-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.tag-guide-actions.is-final { margin-top: 2px; }
+.tag-guide-actions button { padding: 12px 19px; background: #1f6554; color: #fff; }
+.tag-guide-actions button.is-ghost { border: 1px solid #bdcbc2; background: transparent; color: #48655d; }
+.tag-guide footer { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 13px 24px 16px; border-top: 1px solid rgba(31, 75, 64, .1); color: #7c8a85; font-size: 10px; }
+.tag-guide footer span { color: #2d6e5d; font-weight: 800; }
+.tag-guide footer i { width: 3px; height: 3px; border-radius: 50%; background: #9bab9f; }
+
+@media (max-width: 640px) {
+  .tag-guide-root { padding: 7px; }
+  .tag-guide { width: calc(100vw - 14px); max-height: calc(100dvh - 14px); border-radius: 22px; }
+  .tag-guide-landscape { border-radius: 22px 22px 0 0; }
+  .tag-guide-head, .tag-guide-body { padding-left: 17px; padding-right: 17px; }
+  .tag-progress { margin-left: 17px; margin-right: 17px; padding: 10px; }
+  .tag-progress > div { justify-content: center; }
+  .tag-progress b, .tag-progress > div::after { display: none; }
+  .tag-conversation { max-height: 245px; }
+  .tag-message p { max-width: 86%; }
+  .tag-field { grid-template-columns: 58px 1fr; }
+  .tag-field button { grid-column: 2; justify-self: start; }
+  .tag-forming { align-items: flex-start; flex-direction: column; }
+  .tag-compose-meta span:first-child { display: none; }
+  .tag-guide footer { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-message.is-typing p > i { animation: none; }
+}
+
+/* The same GLB cast continues into the quiet 2D conversation layer. */
+.tag-guide {
+  width: min(1040px, calc(100vw - 32px));
+  max-height: min(840px, calc(100dvh - 28px));
+  background:
+    linear-gradient(125deg, rgba(255, 253, 244, .98), rgba(241, 244, 233, .97)),
+    url('/scene/swiss-lake.jpg') center / cover;
+}
+
+.tag-guide-head {
+  padding: 24px 30px 17px;
+}
+
+.tag-guide-main {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 0;
+  min-height: 560px;
+  margin: 0 22px 20px;
+  overflow: hidden;
+  border: 1px solid rgba(54, 91, 77, .14);
+  border-radius: 24px;
+  background: rgba(255, 254, 249, .66);
+  box-shadow: 0 18px 58px rgba(35, 66, 55, .09);
+}
+
+.tag-agent-presence {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 22px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(25, 76, 64, .05), rgba(25, 76, 64, .8)),
+    url('/scene/swiss-lake.jpg') 42% center / cover;
+  color: #fffdf5;
+  text-align: center;
+}
+
+.tag-agent-presence::after {
+  content: '';
+  position: absolute;
+  inset: 46% 0 0;
+  background: linear-gradient(180deg, transparent, rgba(15, 52, 43, .62));
+  pointer-events: none;
+}
+
+.tag-agent-scene,
+.tag-agent-presence > small,
+.tag-agent-presence > h3,
+.tag-agent-presence > p,
+.tag-safety-notes {
+  position: relative;
+  z-index: 1;
+}
+
+.tag-agent-scene {
+  display: grid;
+  place-items: center;
+  width: 196px;
+  height: 220px;
+  margin-bottom: 10px;
+}
+
+.tag-agent-halo {
+  position: absolute;
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 249, 217, .78), rgba(193, 227, 201, .22) 56%, transparent 72%);
+  filter: blur(1px);
+}
+
+.tag-agent-hero.character-portrait {
+  width: 190px;
+  height: 210px;
+  border: 0;
+  border-radius: 56px 56px 42px 42px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tag-agent-hero.character-portrait img {
+  width: 124%;
+  height: 124%;
+}
+
+.tag-agent-hero.character-portrait > i {
+  right: 22px;
+  bottom: 20px;
+  width: 13px;
+  height: 13px;
+  border-width: 3px;
+}
+
+.tag-agent-presence > small {
+  color: rgba(255, 253, 245, .7);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+.tag-agent-presence h3 {
+  margin: 4px 0 9px;
+  color: #fffbed;
+  font: 600 25px/1.2 "Noto Serif SC", serif;
+}
+
+.tag-agent-presence > p {
+  max-width: 192px;
+  margin: 0;
+  color: rgba(255, 253, 245, .85);
+  font: 400 12px/1.8 "Noto Serif SC", serif;
+}
+
+.tag-safety-notes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 18px;
+}
+
+.tag-safety-notes span {
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .09);
+  color: rgba(255, 253, 245, .82);
+  font-size: 9px;
+}
+
+.tag-dialog-column {
+  min-width: 0;
+  background: rgba(250, 249, 242, .9);
+}
+
+.tag-dialog-column .tag-progress {
+  margin: 18px 24px 0;
+  background: rgba(255, 255, 255, .8);
+}
+
+.tag-dialog-column .tag-guide-body {
+  padding: 18px 24px 23px;
+}
+
+.tag-conversation {
+  max-height: 292px;
+  gap: 15px;
+  padding: 4px 8px 4px 1px;
+}
+
+.tag-message {
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.tag-message > div {
+  display: grid;
+  justify-items: start;
+  max-width: min(78%, 500px);
+}
+
+.tag-message > div > small {
+  margin: 0 0 4px 6px;
+  color: #71867d;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tag-message > div > p,
+.tag-message p {
+  max-width: none;
+  margin: 0;
+  padding: 11px 15px;
+  border: 1px solid rgba(61, 103, 87, .1);
+  border-radius: 7px 18px 18px;
+  background: #edf1e8;
+  color: #24473e;
+  line-height: 1.65;
+  box-shadow: 0 7px 22px rgba(28, 67, 57, .06);
+}
+
+.tag-message.is-user > div {
+  justify-items: end;
+}
+
+.tag-message.is-user > div > small {
+  margin: 0 6px 4px 0;
+}
+
+.tag-message.is-user > div > p,
+.tag-message.is-user p {
+  border-color: transparent;
+  border-radius: 18px 18px 7px 18px;
+  background: #256653;
+  color: #fffef8;
+}
+
+.tag-message-avatar.character-portrait {
+  width: 43px;
+  height: 43px;
+  border-radius: 14px;
+}
+
+.tag-message.is-typing > div > p {
+  display: flex;
+  align-items: center;
+  min-height: 43px;
+  gap: 5px;
+}
+
+.tag-forming {
+  border-color: rgba(64, 108, 91, .13);
+  background: rgba(231, 239, 229, .78);
+}
+
+.tag-insight-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 18px;
+  background: linear-gradient(135deg, #e5eee5, #f7f2e6);
+}
+
+.tag-profile-portrait.character-portrait {
+  width: 76px;
+  height: 76px;
+  border-radius: 24px;
+}
+
+.tag-insight-card > div {
+  min-width: 0;
+}
+
+.tag-insight-card > div > p {
+  margin-top: 5px;
+}
+
+@media (max-width: 760px) {
+  .tag-guide { width: min(620px, calc(100vw - 18px)); }
+  .tag-guide-head { padding: 19px 20px 13px; }
+  .tag-guide-main { grid-template-columns: 1fr; min-height: 0; margin: 0 10px 12px; }
+  .tag-agent-presence { display: grid; grid-template-columns: auto 1fr; justify-items: start; min-height: 102px; padding: 12px 16px; text-align: left; }
+  .tag-agent-scene { grid-row: 1 / 5; width: 92px; height: 92px; margin: 0 12px 0 -4px; }
+  .tag-agent-halo { width: 84px; height: 84px; }
+  .tag-agent-hero.character-portrait { width: 88px; height: 94px; border-radius: 28px; }
+  .tag-agent-hero.character-portrait > i { right: 7px; bottom: 8px; }
+  .tag-agent-presence h3 { margin: 2px 0 3px; font-size: 18px; }
+  .tag-agent-presence > p { max-width: none; font-size: 10px; line-height: 1.5; }
+  .tag-safety-notes { justify-content: flex-start; margin-top: 6px; }
+  .tag-dialog-column .tag-progress { margin: 12px 13px 0; }
+  .tag-dialog-column .tag-guide-body { padding: 14px 13px 18px; }
+  .tag-message > div { max-width: calc(100% - 53px); }
+  .tag-message-avatar.character-portrait { width: 39px; height: 39px; }
+  .tag-profile-portrait.character-portrait { width: 62px; height: 62px; }
+}

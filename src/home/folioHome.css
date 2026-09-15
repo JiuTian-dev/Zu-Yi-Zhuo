@@ -1,50 +1,383 @@
 .folio-home {
+  --ink: #f4f0e8;
+  --muted: rgba(231, 234, 226, .68);
+  --line: rgba(255, 255, 255, .13);
+  --acid: #c7f06c;
   position: fixed;
   inset: 0;
   z-index: 20;
-  overflow: hidden;
-  background: #1d1721;
+  overflow: auto;
+  min-width: 320px;
+  color: var(--ink);
+  background:
+    linear-gradient(90deg, rgba(8, 20, 22, .8) 0%, rgba(8, 20, 22, .46) 43%, rgba(8, 20, 22, .04) 75%),
+    linear-gradient(180deg, rgba(7, 18, 21, .06), rgba(7, 18, 21, .28)),
+    url('/scene/swiss-lake.jpg') 50% 52% / cover fixed no-repeat,
+    #101b1d;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  isolation: isolate;
 }
 
-.folio-home-frame {
-  position: absolute;
+.folio-home::before {
+  content: '';
+  position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
+  z-index: -2;
+  opacity: .24;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, #000, transparent 86%);
 }
 
-.folio-home-chrome {
-  position: absolute;
-  top: 12px;
-  left: 16px;
-  right: 16px;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
+.folio-home-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
   pointer-events: none;
 }
 
-.folio-home-chrome > * {
-  pointer-events: auto;
+.folio-orbit {
+  position: absolute;
+  border: 1px solid rgba(199, 240, 108, .14);
+  border-radius: 50%;
+  transform: rotate(-18deg);
 }
 
-.folio-home-chrome .home-account {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 80;
-  margin: 0;
+.folio-orbit-one { width: 680px; height: 680px; top: 5%; right: -165px; }
+.folio-orbit-two { width: 520px; height: 220px; right: -30px; bottom: 2%; }
+
+.folio-signal {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--acid);
+  box-shadow: 0 0 0 7px rgba(199, 240, 108, .08), 0 0 30px rgba(199, 240, 108, .35);
+}
+
+.folio-signal-one { top: 24%; right: 16%; }
+.folio-signal-two { top: 59%; right: 41%; }
+.folio-signal-three { bottom: 11%; left: 11%; }
+
+.folio-home-chrome {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 84px;
+  padding: 0 clamp(24px, 5vw, 72px);
+  border-bottom: 1px solid var(--line);
+}
+
+.folio-home-brand-lockup { display: flex; align-items: center; gap: 12px; }
+
+.folio-home-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(199, 240, 108, .55);
+  border-radius: 50%;
+  color: var(--acid);
+  font: 700 13px/1 Georgia, serif;
 }
 
 .folio-home-brand {
   margin: 0;
-  font-family: 'Bricolage Grotesque', 'Nunito', sans-serif;
-  font-size: 1.05rem;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: 27px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #fff8f0;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  letter-spacing: .08em;
+}
+
+.folio-home-edition {
+  margin-left: 8px;
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+  color: rgba(231, 234, 226, .48);
+  font-size: 11px;
+  letter-spacing: .12em;
+}
+
+.folio-home-chrome .home-account {
+  position: relative;
+  inset: auto;
+  z-index: 80;
+  margin: 0;
+}
+
+.folio-home-layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(360px, .72fr);
+  gap: clamp(32px, 4vw, 70px);
+  align-items: center;
+  width: min(1420px, calc(100% - clamp(48px, 10vw, 144px)));
+  min-height: calc(100dvh - 168px);
+  margin: 0 auto;
+  padding: clamp(32px, 4vh, 54px) 0;
+}
+
+.folio-home-hero { min-width: 0; }
+
+.folio-home-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  color: var(--acid);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.folio-home-kicker i { width: 28px; height: 1px; background: currentColor; }
+
+.folio-home-hero h1 {
+  max-width: 900px;
+  margin: 0;
+  color: var(--ink);
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: clamp(46px, 4.5vw, 70px);
+  font-weight: 500;
+  letter-spacing: -.055em;
+  line-height: 1.2;
+  text-wrap: balance;
+  text-shadow: 0 5px 34px rgba(0, 0, 0, .44);
+}
+
+.folio-home-lede {
+  max-width: 690px;
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: clamp(15px, 1.25vw, 18px);
+  line-height: 1.8;
+}
+
+.folio-home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+
+.folio-primary-action,
+.folio-secondary-action,
+.folio-card-action,
+.folio-home-footer button { font: inherit; cursor: pointer; }
+
+.folio-primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 34px;
+  min-height: 54px;
+  padding: 0 18px 0 22px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--acid);
+  color: #101410;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 18px 50px rgba(111, 147, 53, .2);
+  transition: transform .2s ease, filter .2s ease;
+}
+
+.folio-primary-action b { font-size: 20px; font-weight: 500; }
+.folio-primary-action:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.05); }
+.folio-primary-action:disabled { opacity: .48; cursor: wait; }
+
+.folio-secondary-action {
+  min-height: 54px;
+  padding: 0 22px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 4px;
+  background: rgba(255,255,255,.035);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.folio-secondary-action:hover { border-color: rgba(199,240,108,.55); background: rgba(199,240,108,.05); }
+
+.folio-value-chain {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  max-width: 760px;
+  margin: 28px 0 0;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.folio-value-chain li { display: grid; grid-template-columns: 32px 1fr; gap: 2px 9px; padding-right: 20px; }
+.folio-value-chain li + li { padding-left: 20px; border-left: 1px solid var(--line); }
+.folio-value-chain span { grid-row: 1 / 3; color: rgba(199,240,108,.55); font: 500 11px/1.5 ui-monospace, monospace; }
+.folio-value-chain b { font-size: 13px; font-weight: 750; }
+.folio-value-chain small { color: rgba(231,234,226,.48); font-size: 11px; line-height: 1.5; }
+
+.folio-demo-card {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(24, 39, 35, .91), rgba(11, 24, 23, .88));
+  box-shadow: 0 36px 100px rgba(0,0,0,.38);
+  backdrop-filter: blur(15px) saturate(118%);
+}
+
+.folio-demo-card::after {
+  content: '';
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  top: 110px;
+  right: -100px;
+  border: 1px solid rgba(199,240,108,.17);
+  border-radius: 50%;
+}
+
+.folio-demo-card-content {
+  position: relative;
+  z-index: 3;
+  padding: clamp(24px, 2.6vw, 34px);
+}
+
+.folio-demo-card-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.folio-demo-card-head span { color: rgba(231,234,226,.52); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+.folio-demo-card-head em { padding: 5px 8px; border: 1px solid rgba(199,240,108,.22); border-radius: 999px; color: var(--acid); font-size: 10px; font-style: normal; }
+
+.folio-demo-question {
+  margin: 22px 0 22px;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: clamp(27px, 2.4vw, 38px);
+  letter-spacing: -.035em;
+  line-height: 1.25;
+}
+
+.folio-demo-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.folio-demo-seat { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 11px; border: 1px solid rgba(255,255,255,.09); background: rgba(255,255,255,.025); }
+.folio-demo-seat i { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.08); color: rgba(231,234,226,.66); font: normal 600 10px/1 ui-monospace, monospace; }
+.folio-demo-seat.is-viewer { border-color: rgba(199,240,108,.25); background: rgba(199,240,108,.055); }
+.folio-demo-seat.is-viewer i { background: var(--acid); color: #111; font-family: inherit; }
+.folio-demo-seat span { display: grid; min-width: 0; }
+.folio-demo-seat b { overflow: hidden; font-size: 12px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.folio-demo-seat small { overflow: hidden; margin-top: 3px; color: rgba(231,234,226,.45); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+.folio-demo-outcome { margin-top: 22px; padding: 18px; border-left: 2px solid var(--acid); background: rgba(0,0,0,.2); }
+.folio-demo-outcome > span { color: rgba(231,234,226,.42); font-size: 10px; letter-spacing: .1em; }
+.folio-demo-outcome p { margin: 8px 0 0; color: rgba(231,234,226,.7); font-size: 12px; line-height: 1.65; }
+.folio-demo-outcome strong { color: var(--ink); font-weight: 650; }
+
+.folio-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  padding: 0 16px;
+  border: 1px solid rgba(255,255,255,.15);
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.folio-card-action:hover:not(:disabled) { border-color: var(--acid); color: var(--acid); }
+.folio-card-action:disabled { opacity: .42; cursor: wait; }
+
+.folio-home-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 84px;
+  padding: 0 clamp(24px, 5vw, 72px);
+  border-top: 1px solid var(--line);
+  color: rgba(231,234,226,.46);
+}
+
+.folio-home-footer p { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 11px; }
+.folio-home-footer p span { color: rgba(231,234,226,.75); font-weight: 700; }
+.folio-home-footer p i { width: 3px; height: 3px; border-radius: 50%; background: var(--acid); }
+.folio-home-footer nav { display: flex; gap: 20px; }
+.folio-home-footer button { padding: 4px 0; border: 0; border-bottom: 1px solid transparent; background: transparent; color: rgba(231,234,226,.68); font-size: 11px; }
+.folio-home-footer button:hover { border-color: var(--acid); color: var(--ink); }
+
+.folio-primary-action:focus-visible,
+.folio-secondary-action:focus-visible,
+.folio-card-action:focus-visible,
+.folio-home-footer button:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; }
+
+@media (max-width: 980px) {
+  .folio-home-layout { grid-template-columns: 1fr; width: min(760px, calc(100% - 40px)); }
+  .folio-home-hero h1 { font-size: clamp(43px, 7vw, 60px); }
+  .folio-demo-card { max-width: 620px; }
+  .folio-home-footer { flex-direction: column; align-items: flex-start; padding-top: 22px; padding-bottom: 22px; }
+}
+
+@media (max-width: 620px) {
+  .folio-home-chrome { min-height: 70px; padding: 0 18px; }
+  .folio-home-edition { display: none; }
+  .folio-home-layout { width: calc(100% - 32px); gap: 34px; padding: 42px 0; }
+  .folio-home-hero h1 { font-size: clamp(39px, 12vw, 56px); line-height: 1.12; }
+  .folio-home-lede { margin-top: 22px; font-size: 14px; }
+  .folio-home-actions { display: grid; }
+  .folio-primary-action,
+  .folio-secondary-action { width: 100%; }
+  .folio-value-chain { grid-template-columns: 1fr; gap: 14px; margin-top: 44px; }
+  .folio-value-chain li,
+  .folio-value-chain li + li { padding: 0; border: 0; }
+  .folio-demo-seats { grid-template-columns: 1fr; }
+  .folio-demo-card-content { padding: 22px 18px 20px; }
+  .folio-home-footer { padding-left: 18px; padding-right: 18px; }
+  .folio-home-footer p { align-items: flex-start; flex-wrap: wrap; line-height: 1.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folio-primary-action { transition: none; }
+}
+
+
+/* The live scene belongs to the first viewport; details follow below. */
+.folio-home::before { display: none; }
+.folio-home-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; padding-top: 26px; align-items: start; }
+.folio-home-hero { display: flex; flex-direction: column; justify-content: center; min-height: 0; padding: 12px 0 20px; box-sizing: border-box; }
+.folio-home-hero h1 { font-size: clamp(44px, 4.4vw, 68px); letter-spacing: -.03em; }
+.folio-home-hero h1 > span { color: #f1f0de; }
+.folio-home-lede { max-width: 490px; color: #e4e9de; font-size: 15px; }
+.folio-home-actions { margin-top: 30px; }
+.folio-primary-action, .folio-secondary-action { border-radius: 12px; }
+.folio-secondary-action { background: #172b2466; backdrop-filter: blur(8px); }
+.folio-home-chat-note { margin: 13px 0 0; color: #d5dfccc9; font-size: 11px; line-height: 1.7; }
+.folio-value-chain { margin-top: 35px; }
+.folio-value-chain small { color: #e0e8d5b5; }
+.folio-value-chain li { grid-template-columns: 22px 1fr; padding-right: 10px; gap: 5px; }
+.folio-value-chain li + li { padding-left: 10px; }
+.folio-first-scene { min-width: 0; overflow: hidden; border: 1px solid #dce9da66; border-radius: 24px; background: #153328bb; box-shadow: 0 24px 60px #07181335; }
+.folio-first-scene .lake-model-stage { height: clamp(320px, 54dvh, 550px); min-height: 0; }
+.folio-first-scene > p { display: flex; align-items: center; gap: 10px; margin: 0; padding: 15px 18px; color: #d9e5d6; font-size: 11px; line-height: 1.6; }
+.folio-first-scene > p span { color: #c7f06c; font-size: 9px; letter-spacing: .12em; }
+.folio-demo-card { grid-column: 1 / -1; display: block; max-width: none; background: #172b24ed; }
+.folio-demo-seat .folio-seat-portrait { width: 48px; height: 54px; border-radius: 13px; }
+.folio-home-footer { background: #152821bb; backdrop-filter: blur(12px); }
+@media (max-width: 980px) {
+  .folio-home-layout { grid-template-columns: minmax(0, 1fr); }
+  .folio-first-scene { grid-row: 1; }
+  .folio-first-scene .lake-model-stage { height: clamp(240px, 36dvh, 360px); }
+  .folio-home-hero { max-width: none; }
+}
+@media (max-width: 620px) {
+  .folio-home { background-position: center, center, 60% center; }
+  .folio-home-layout { padding-top: 16px; gap: 20px; }
+  .folio-home-hero { min-height: 0; padding: 0 0 20px; }
+  .folio-home-hero h1 { font-size: clamp(34px, 9.3vw, 50px); line-height: 1.25; }
+  .folio-value-chain { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 24px; }
+  .folio-value-chain li, .folio-value-chain li + li { display: flex; flex-direction: column; padding: 0; }
+  .folio-value-chain small { font-size: 10px; }
+  .folio-first-scene .lake-model-stage { height: 240px; }
 }

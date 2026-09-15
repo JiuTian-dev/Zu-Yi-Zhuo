@@ -5,6 +5,7 @@ import re
 
 from app.domain import ActiveIntentPreview, ActiveIntentTableCandidate, TableState
 from app.lobby import build_lobby_preview
+from app.api.repository import MAX_TABLE_PARTICIPANTS
 
 MAX_INTENT_CANDIDATES = 5
 MAX_INTENT_QUESTION_LENGTH = 120
@@ -106,7 +107,7 @@ def build_active_intent_preview(
     ranked: list[tuple[int, str, TableState, set[str]]] = []
     for table in tables:
         participant_count = len(table.participants)
-        if participant_count >= 5:
+        if participant_count >= MAX_TABLE_PARTICIPANTS:
             continue
         table_text = " ".join(
             value
@@ -124,7 +125,7 @@ def build_active_intent_preview(
             current_subquestion=table.current_subquestion,
             mode=table.conversation.mode,
             participant_count=len(table.participants),
-            available_seats=5 - len(table.participants),
+            available_seats=MAX_TABLE_PARTICIPANTS - len(table.participants),
             reason=(
                 "与你提到的公开问题词项相近："
                 + "、".join(sorted(overlap)[:3])

@@ -1,6 +1,6 @@
 import pytest
 from app.demo import SCENARIOS, flagship_participants
-from app.domain import Action, HumanTurn, Level, RouteDecision
+from app.domain import Action, HumanTurn, Level, RouteDecision, StageSummary
 from app.domain.schemas import EvidenceStatement, ParticipantState
 from app.orchestrator import (build_initial_state, build_personal_card, build_shared_baseline, compute_close_readiness, evaluate_reflection, extract_follow_ups, observe_turn, record_intervention, refresh_close_readiness)
 def flagship():
@@ -56,6 +56,33 @@ def test_shared_baseline_preserves_q0_q1_and_unresolved_work():
     assert baseline.core_question_before == "Q0 原问题" and baseline.evolved_question.text == state.current_subquestion
     assert baseline.unresolved_disagreements == state.disagreements and any(item.is_commitment for item in baseline.collective_next_steps)
     assert all(not item.is_commitment for item in baseline.collective_next_steps[:1])
+
+def test_shared_baseline_hides_internal_fallback_prompt_from_close_card():
+    state = flagship()
+    summary = StageSummary(
+        input_state_version=state.version,
+        phase=state.phase,
+        trigger="pre_close",
+        covered_turn_start=1,
+        covered_turn_end=3,
+        next_focus=EvidenceStatement(text="回应这句话：我认为责任不能消失。", evidence_turns=[3]),
+        summary_id="summary-fallback",
+        table_id=state.table_id,
+        revision=1,
+        published_state_version=state.version + 1,
+        created_at=1.0,
+        model="deterministic-fallback",
+        used_fallback=True,
+    )
+    state = state.model_copy(update={
+        "latest_stage_summary_id": summary.summary_id,
+        "latest_stage_summary_revision": summary.revision,
+    })
+
+    baseline = build_shared_baseline(state, latest_summary=summary)
+
+    assert baseline.evolved_question.text == state.current_subquestion
+    assert not baseline.evolved_question.text.startswith("回应这句话：")
 
 @pytest.mark.parametrize("participant_id", ["architect", "product", "buyer", "founder"])
 def test_personal_card_is_scoped_to_each_real_participant(participant_id):
