@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import AccountMenu from './AccountMenu'
 import ZhihuConnectionPreview from './ZhihuConnectionPreview'
 import LakeModelStage from './LakeModelStage'
@@ -11,6 +12,7 @@ interface FolioHomeProps {
   onPreciseMatch(): void
   onHostTable(): void
   onOpenDemo?(): void
+  deferLiveScene?: boolean
 }
 
 const demoSeats = [
@@ -31,7 +33,19 @@ export default function FolioHome({
   onPreciseMatch,
   onHostTable,
   onOpenDemo,
+  deferLiveScene = false,
 }: FolioHomeProps) {
+  const [sceneReady, setSceneReady] = useState(false)
+  useEffect(() => {
+    if (deferLiveScene) {
+      setSceneReady(false)
+      return
+    }
+    // Let buttons and text become interactive before parsing the large showcase GLBs.
+    const timer = window.setTimeout(() => setSceneReady(true), 900)
+    return () => window.clearTimeout(timer)
+  }, [deferLiveScene])
+
   return (
     <main className="folio-home" aria-label="组一桌首页">
 
@@ -72,8 +86,10 @@ export default function FolioHome({
         </section>
 
         <section className="folio-first-scene" aria-label="首屏实时三维场景">
-          <LakeModelStage />
-          <p><span>LIVE 3D</span> 湖边的这一桌，给你留了一个位置。</p>
+          {sceneReady
+            ? <LakeModelStage />
+            : <div className="folio-scene-poster"><img src="/scene/swiss-lake.jpg" alt="湖边圆桌场景正在准备" /><span>3D 场景正在准备</span></div>}
+          <p><span>{sceneReady ? 'LIVE 3D' : 'READY'}</span> 湖边的这一桌，给你留了一个位置。</p>
         </section>
 
         <aside className="folio-demo-card" aria-label="评委体验桌预览">

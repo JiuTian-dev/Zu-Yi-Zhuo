@@ -177,14 +177,15 @@ export default function LakeModelStage() {
         halo.position.set(0, .012, -1.3)
         stage.add(halo)
 
-        // Keep the arrival vehicle beside the group, entirely inside the framing.
-        const carGltf = await loader.loadAsync('/scene/arrival-suv.glb')
-        if (disposed) {
-          renderer.dispose()
-          return
-        }
-        const car = placeModel(carGltf, .64, [-1.92, 0, .05])
-        car.pivot.rotation.y = -.38
+        // The vehicle is decorative: render the people immediately and add it later.
+        // Waiting for this 4 MB asset previously delayed the entire scene becoming ready.
+        void loader.loadAsync('/scene/arrival-suv.glb').then((carGltf) => {
+          if (disposed) {
+            return
+          }
+          const car = placeModel(carGltf, .64, [-1.92, 0, .05])
+          car.pivot.rotation.y = -.38
+        }).catch(() => { /* The social scene remains complete without the parked SUV. */ })
 
         const controls = new OrbitControls(camera, canvas)
         controls.target.set(-.35, .62, 0)

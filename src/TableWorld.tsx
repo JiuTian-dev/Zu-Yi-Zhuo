@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getLiveState, useLive } from './live/store'
 import { VIEWER_ID } from './live/identity'
 import { attachRuntime, detachRuntime } from './bruno-runtime/runtimeController'
@@ -17,6 +17,14 @@ type RuntimeGame = {
  * Home↔match only toggles visibility — remounting WebGPU after destroy is unreliable.
  */
 export default function TableWorld({ active }: { active: boolean }) {
+  const [started, setStarted] = useState(active)
+  useEffect(() => {
+    if (active) setStarted(true)
+  }, [active])
+  return started ? <TableWorldRuntime active={active} /> : null
+}
+
+function TableWorldRuntime({ active }: { active: boolean }) {
   const holder = useRef<HTMLDivElement>(null)
   const gameRef = useRef<RuntimeGame | null>(null)
   const tableState = useLive((state) => state.tableState)

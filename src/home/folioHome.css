@@ -360,6 +360,9 @@
 .folio-value-chain li + li { padding-left: 10px; }
 .folio-first-scene { min-width: 0; overflow: hidden; border: 1px solid #dce9da66; border-radius: 24px; background: #153328bb; box-shadow: 0 24px 60px #07181335; }
 .folio-first-scene .lake-model-stage { height: clamp(320px, 54dvh, 550px); min-height: 0; }
+.folio-scene-poster { position: relative; height: clamp(320px, 54dvh, 550px); overflow: hidden; background: #23483d; }
+.folio-scene-poster img { width: 100%; height: 100%; object-fit: cover; opacity: .78; }
+.folio-scene-poster span { position: absolute; right: 16px; bottom: 14px; padding: 6px 10px; border-radius: 999px; background: rgba(20,52,43,.72); color: #e8f2e3; font-size: 9px; letter-spacing: .08em; }
 .folio-first-scene > p { display: flex; align-items: center; gap: 10px; margin: 0; padding: 15px 18px; color: #d9e5d6; font-size: 11px; line-height: 1.6; }
 .folio-first-scene > p span { color: #c7f06c; font-size: 9px; letter-spacing: .12em; }
 .folio-demo-card { grid-column: 1 / -1; display: block; max-width: none; background: #172b24ed; }
@@ -369,6 +372,7 @@
   .folio-home-layout { grid-template-columns: minmax(0, 1fr); }
   .folio-first-scene { grid-row: 1; }
   .folio-first-scene .lake-model-stage { height: clamp(240px, 36dvh, 360px); }
+  .folio-scene-poster { height: clamp(240px, 36dvh, 360px); }
   .folio-home-hero { max-width: none; }
 }
 @media (max-width: 620px) {
@@ -380,4 +384,5 @@
   .folio-value-chain li, .folio-value-chain li + li { display: flex; flex-direction: column; padding: 0; }
   .folio-value-chain small { font-size: 10px; }
   .folio-first-scene .lake-model-stage { height: 240px; }
+  .folio-scene-poster { height: 240px; }
 }

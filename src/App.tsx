@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { tableHost } from './actors'
 import TableSea, { type GalleryMediaRect } from './TableSea'
 import Lobby from './Lobby'
@@ -11,7 +11,6 @@ import DiscussionPanel from './live/DiscussionPanel'
 import StageSummaryPanel from './live/StageSummaryPanel'
 import ConversationSurface from './live/ConversationSurface'
 import DemoEntry from './live/DemoEntry'
-import MatchJourney from './live/MatchJourney'
 import CharacterPortrait from './live/CharacterPortrait'
 import IntentPanel from './live/IntentPanel'
 import type { DemoCaseLike, HomeToMatchContextLike, LobbyFitPreviewLike, LobbyPreviewLike, MatchToHomeDraftLike, OpenTableContextLike } from './live/contract'
@@ -33,6 +32,8 @@ import { buildMatchPrompt, getTagProfile, type TagProfile } from './onboarding/p
 import './home/home.css'
 import './home/mapSwitch.css'
 import RelationshipPanel from './live/RelationshipPanel'
+
+const MatchJourney = lazy(() => import('./live/MatchJourney'))
 
 type ShellView = 'home' | 'profile' | 'match'
 
@@ -1136,6 +1137,7 @@ export default function App() {
       {shell === 'home' && (
         <div className="home-shell" key="home-shell">
           <FolioHome
+            deferLiveScene={loginOpen || tagOnboardingOpen || demoOpen || journeyOpen}
             onOpenProfile={() => setShell('profile')}
             onEnterMatch={enterMatchFromHome}
             onOpenLogin={() => { setLoginRequired(false); setLoginOpen(true) }}
@@ -1195,7 +1197,7 @@ export default function App() {
         />
       )}
       {(shell === 'home' || shell === 'profile') && <FriendsDock />}
-      <TableWorld active={inMatchShell} />
+      <TableWorld active={inMatchShell || journeyOpen} />
       <div inert={demoOpen || journeyOpen || !inMatchShell}>
       {showGallery && <TableSea phase={appPhase} returnFocusId={transition?.table.id ?? null} onEnter={openLobby} onOpenDemo={demoCase ? openDemoFromHome : undefined} onOpenIntent={() => { setIntentInitialQuestion(''); setIntentOpen(true) }} discovery={discovery} loading={discovery === null} backendUnavailable={discoveryUnavailable} onRetry={refreshDiscovery} />}
       {homeContextError && <aside className="home-context-error" role="alert"><span>{homeContextError}</span><button type="button" onClick={dismissHomeContextError}>知道了</button></aside>}
@@ -1205,15 +1207,17 @@ export default function App() {
       {inMatchShell && <IntentPanel open={intentOpen} initialQuestion={intentInitialQuestion} onClose={closeIntent} onSelectTable={openIntentTable} onMatchConfirmed={(tableId) => openMatchedTable(tableId)} onReturnToHomeDraft={returnMatchDraftToHome} />}
       </div>
       {demoOpen && demoCase && <DemoEntry demoCase={demoCase} profile={getTagProfile(getHomeAccount().displayName)} pending={false} error={null} onStart={beginDemoJourney} onClose={closeDemo} />}
-      {journeyOpen && demoCase && <MatchJourney
-        open={journeyOpen}
-        demoCase={demoCase}
-        profile={getTagProfile(getHomeAccount().displayName)}
-        pending={demoPending}
-        error={demoError}
-        onArrive={() => { void startDemo() }}
-        onBack={() => { if (!demoPending) { setJourneyOpen(false); setDemoOpen(true); setDemoError(null) } }}
-      />}
+      {journeyOpen && demoCase && <Suspense fallback={<div role="status" style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', background: '#173c31', color: '#f8f5e9', font: '600 14px system-ui' }}>正在准备 3D 找桌路线…</div>}>
+        <MatchJourney
+          open={journeyOpen}
+          demoCase={demoCase}
+          profile={getTagProfile(getHomeAccount().displayName)}
+          pending={demoPending}
+          error={demoError}
+          onArrive={() => { void startDemo() }}
+          onBack={() => { if (!demoPending) { setJourneyOpen(false); setDemoOpen(true); setDemoError(null) } }}
+        />
+      </Suspense>}
       {inMatchShell && appPhase === 'gallery' && !lobbyTable && !demoOpen && !journeyOpen && (
         <MapSwitchButton label="返回首页" onClick={returnToHome} />
       )}

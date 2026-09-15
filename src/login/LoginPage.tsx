@@ -76,7 +76,7 @@ export default function LoginPage({ open, required = false, onClose, onSuccess }
     setBusy(true)
     setError('')
     loginHomeDemo(name, selected)
-    successTimer.current = window.setTimeout(onSuccess, 620)
+    successTimer.current = window.setTimeout(onSuccess, 280)
   }
 
   return createPortal(
